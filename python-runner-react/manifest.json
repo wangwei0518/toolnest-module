@@ -1,0 +1,61 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "python-runner",
+  "name": "Python 工具",
+  "version": "2.0.0",
+  "description": "本地 Python 项目运行、调度和环境管理。",
+  "author": "ToolNest",
+  "icon": "code",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "node",
+    "entry": "backend/dist/main.js",
+    "transport": "http",
+    "startup": "lazy",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 120000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": []
+  },
+  "api": {
+    "base_path": "/api/v1/modules/python-runner"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@tanstack/react-query",
+      "@toolnest/react-module-sdk"
+    ]
+  },
+  "permissions": [
+    "python.execution.read",
+    "python.execution.create",
+    "python.execution.stop",
+    "python.execution.delete",
+    "python.project.read",
+    "python.project.write",
+    "python.schedule.read",
+    "python.schedule.write",
+    "python.persistent.read",
+    "python.persistent.write"
+  ],
+  "capabilities": ["python-runner.execution", "python-runner.project", "python-runner.scheduler"],
+  "menus": [
+    {
+      "key": "python-runner",
+      "label": "Python 工具",
+      "path": "",
+      "icon": "code",
+      "order": 20
+    }
+  ],
+  "settings": []
+}
