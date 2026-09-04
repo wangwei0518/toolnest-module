@@ -22,9 +22,21 @@ React 模块必须通过 `@toolnest/react-module-sdk` 接入宿主，不能依�
 
 - [Python Runner React](./python-runner-react/)
 
+新模块请从仓库根目录使用 `templates/react-module` 生成，不要复制示例模块的业务代码：
+
+```bash
+pnpm create:react-module --id demo-module --name 示例模块 --description "示例 React 模块"
+```
+
+开发、打包和验收规范见：
+
+- [React 模块开发指南](../docs/modules/runtime/react-module-development-guide.md)
+- [Vue / Python Runner 到 React 模块迁移指南](../docs/modules/runtime/react-module-migration-guide.md)
+
 常用命令：
 
 ```bash
 pnpm build:modules-react
 pnpm package:python-runner-react
+pnpm package:react-module --id <module-id>
 ```

@@ -1,0 +1,977 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+.tn-workflow-tickets-react {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  max-width: 90rem;
+  margin: 0 auto;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 5);
+  padding: calc(var(--spacing) * 6);
+  color: var(--foreground);
+}
+
+.tn-workflow-tickets-react *,
+.tn-workflow-tickets-react *::before,
+.tn-workflow-tickets-react *::after {
+  box-sizing: border-box;
+}
+
+.tn-workflow-tickets-react__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 4);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: calc(var(--spacing) * 3);
+}
+
+.tn-workflow-tickets-react__identity,
+.tn-workflow-tickets-react__navigation {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing) * 3);
+}
+
+.tn-workflow-tickets-react__identity {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-react__mark {
+  display: grid;
+  width: calc(var(--spacing) * 9);
+  height: calc(var(--spacing) * 9);
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.tn-workflow-tickets-react__mark svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.tn-workflow-tickets-react__title,
+.tn-workflow-tickets-react__description {
+  margin: 0;
+}
+
+.tn-workflow-tickets-react__title {
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.tn-workflow-tickets-react__description,
+.tn-workflow-tickets-react__muted {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.tn-workflow-tickets-react__content {
+  display: grid;
+  min-width: 0;
+  gap: calc(var(--spacing) * 4);
+}
+
+.tn-workflow-tickets-react__workspace-divider {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .tn-workflow-tickets-react__workspace-divider {
+    display: block;
+  }
+}
+
+@media (max-width: 760px) {
+  .tn-workflow-tickets-react {
+    padding: calc(var(--spacing) * 4);
+  }
+
+  .tn-workflow-tickets-react__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tn-workflow-tickets-react__navigation {
+    flex-wrap: wrap;
+  }
+}
+
+/* Workflow designer: keep the legacy Vue workspace geometry while using the React token set. */
+.tn-workflow-tickets-react:has(.tn-workflow-tickets-workflow-designer-page) {
+  max-width: none;
+  gap: 0;
+  padding: 0;
+}
+
+.tn-workflow-tickets-workflow-designer-page {
+  position: relative;
+  display: block;
+  min-height: calc(100dvh - 9rem);
+  height: calc(100dvh - 9rem);
+}
+
+.tn-workflow-tickets-designer-commandbar {
+  position: absolute;
+  z-index: 15;
+  top: calc(var(--spacing) * 3);
+  right: calc(var(--spacing) * 3);
+  left: calc(var(--spacing) * 3);
+  display: flex;
+  min-width: 0;
+  min-height: calc(2.5rem + var(--spacing) * 3);
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 4);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+.tn-workflow-tickets-designer-commandbar-main,
+.tn-workflow-tickets-designer-commandbar-actions,
+.tn-workflow-tickets-designer-meta,
+.tn-workflow-tickets-designer-heading,
+.tn-workflow-tickets-section-heading-main,
+.tn-workflow-tickets-inspector-header-title,
+.tn-workflow-tickets-inspector-section-heading,
+.tn-workflow-tickets-inspector-field-item,
+.tn-workflow-tickets-predecessor-item,
+.tn-workflow-tickets-edge-editor-header,
+.tn-workflow-tickets-action-item-header,
+.tn-workflow-tickets-version-overview-header,
+.tn-workflow-tickets-version-overview-note-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.tn-workflow-tickets-designer-commandbar-main {
+  flex: 1;
+  gap: calc(var(--spacing) * 4);
+}
+
+.tn-workflow-tickets-designer-commandbar-actions {
+  flex: 0 0 auto;
+  gap: calc(var(--spacing) * 2);
+}
+
+.tn-workflow-tickets-designer-commandbar-divider {
+  width: 1px;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  background: var(--border);
+}
+
+.tn-workflow-tickets-designer-heading {
+  gap: calc(var(--spacing) * 2);
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-designer-heading .tn-workflow-tickets-page-title {
+  min-width: 0;
+  margin: 0;
+  overflow: clip;
+  font-size: 1.125rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-designer-meta {
+  flex: 0 0 auto;
+}
+
+.tn-workflow-tickets-designer {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.tn-workflow-tickets-designer-panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(var(--spacing) * 3 + 3.25rem + var(--spacing) * 3);
+  bottom: calc(var(--spacing) * 3);
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.tn-workflow-tickets-designer-left {
+  left: calc(var(--spacing) * 3);
+  display: flex;
+  width: clamp(12.5rem, 14vw, 15.5rem);
+  flex-direction: column;
+  gap: calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 3);
+}
+
+.tn-workflow-tickets-designer-inspector {
+  right: calc(var(--spacing) * 3);
+  width: clamp(20rem, 25vw, 26.25rem);
+  padding: 0;
+  background: transparent;
+}
+
+.tn-workflow-tickets-section-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 2);
+}
+
+.tn-workflow-tickets-section-heading-main {
+  gap: calc(var(--spacing) * 1);
+}
+
+.tn-workflow-tickets-section-header h2,
+.tn-workflow-tickets-inspector-header h2,
+.tn-workflow-tickets-inspector-section h3 {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.tn-workflow-tickets-section-header h2 {
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.tn-workflow-tickets-designer-left > [data-slot="input"] {
+  flex: 0 0 auto;
+}
+
+.tn-workflow-tickets-designer-list {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  align-content: start;
+  gap: var(--spacing);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.tn-workflow-tickets-designer-list-item {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+}
+
+.tn-workflow-tickets-designer-list-item:hover,
+.tn-workflow-tickets-designer-list-item.is-active {
+  border-color: color-mix(in oklch, var(--primary), var(--border) 72%);
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.tn-workflow-tickets-designer-list-handle {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.tn-workflow-tickets-designer-list-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: var(--spacing);
+}
+
+.tn-workflow-tickets-designer-list-copy strong,
+.tn-workflow-tickets-designer-list-copy small {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-designer-list-copy strong {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tn-workflow-tickets-designer-list-copy small,
+.tn-workflow-tickets-muted {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+}
+
+.tn-workflow-tickets-designer-add-node {
+  flex: 0 0 auto;
+  width: 100%;
+  border-style: dashed;
+}
+
+.tn-workflow-tickets-designer-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background-color: color-mix(in oklch, var(--muted), var(--background) 42%);
+  background-image: radial-gradient(color-mix(in oklch, var(--muted-foreground), transparent 72%) 1px, transparent 1px), linear-gradient(color-mix(in oklch, var(--border), transparent 72%) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--border), transparent 72%) 1px, transparent 1px);
+  background-position: 0 0, 0 0, 0 0;
+  background-size: 20px 20px, 100px 100px, 100px 100px;
+  cursor: grab;
+  overflow: clip;
+  touch-action: none;
+}
+
+.tn-workflow-tickets-designer-canvas:active {
+  cursor: grabbing;
+}
+
+.tn-workflow-tickets-canvas-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1400px;
+  height: 1000px;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.tn-workflow-tickets-canvas-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tn-workflow-tickets-canvas-edge-path {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 2;
+  stroke-linecap: butt;
+  pointer-events: none;
+  transition: stroke 160ms ease, stroke-width 160ms ease;
+}
+
+.tn-workflow-tickets-canvas-edge-path.is-selected {
+  stroke: var(--primary);
+  stroke-width: 3;
+}
+
+.tn-workflow-tickets-canvas-edge-hit-area {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.tn-workflow-tickets-node-card {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: 210px;
+  min-height: 152px;
+  align-content: start;
+  gap: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--card-foreground);
+  cursor: grab;
+  user-select: none;
+}
+
+.tn-workflow-tickets-node-card:hover,
+.tn-workflow-tickets-node-card.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary), transparent 76%);
+}
+
+.tn-workflow-tickets-node-card:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.tn-workflow-tickets-node-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: calc(var(--spacing) * 2);
+  overflow: clip;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-node-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.tn-workflow-tickets-node-summary {
+  display: grid;
+  gap: calc(var(--spacing) * 2);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.tn-workflow-tickets-card-footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 2);
+}
+
+.tn-workflow-tickets-card-footer > .tn-workflow-tickets-muted {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-canvas-tools {
+  position: absolute;
+  z-index: 5;
+  bottom: calc(var(--spacing) * 4);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+  padding: var(--spacing) calc(var(--spacing) * 2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--card), transparent 8%);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in oklch, var(--foreground), transparent 92%);
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.tn-workflow-tickets-canvas-tools [data-slot="separator"] {
+  height: 1.25rem;
+}
+
+.tn-workflow-tickets-canvas-zoom-value {
+  min-width: 3.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tn-workflow-tickets-inspector-card {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+.tn-workflow-tickets-inspector-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
+  border-bottom: 1px solid var(--border);
+}
+
+.tn-workflow-tickets-inspector-header-title {
+  gap: var(--spacing);
+}
+
+.tn-workflow-tickets-inspector-header h2 {
+  overflow: clip;
+  font-size: 1rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-inspector-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.tn-workflow-tickets-inspector-scroll {
+  min-height: 0;
+  flex: 1;
+  padding: calc(var(--spacing) * 4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.tn-workflow-tickets-inspector-section {
+  display: grid;
+  gap: calc(var(--spacing) * 3);
+  padding-bottom: calc(var(--spacing) * 5);
+}
+
+.tn-workflow-tickets-inspector-section + .tn-workflow-tickets-inspector-section {
+  padding-top: calc(var(--spacing) * 5);
+  border-top: 1px solid var(--border);
+}
+
+.tn-workflow-tickets-inspector-section h3 {
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.tn-workflow-tickets-inspector-section-heading {
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 3);
+  align-items: flex-start;
+}
+
+.tn-workflow-tickets-inspector-section-heading > div {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-inspector-section-heading p {
+  margin: var(--spacing) 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.tn-workflow-tickets-inspector-summary,
+.tn-workflow-tickets-inspector-version-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  text-align: center;
+}
+
+.tn-workflow-tickets-inspector-summary strong,
+.tn-workflow-tickets-inspector-version-stats strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 1rem;
+}
+
+.tn-workflow-tickets-inspector-field-list,
+.tn-workflow-tickets-predecessor-list,
+.tn-workflow-tickets-action-list,
+.tn-workflow-tickets-edge-config {
+  display: grid;
+  gap: var(--spacing);
+}
+
+.tn-workflow-tickets-inspector-field-item {
+  width: 100%;
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+}
+
+.tn-workflow-tickets-inspector-field-item:hover:not(:disabled),
+.tn-workflow-tickets-inspector-field-item:focus-visible {
+  border-color: var(--border);
+  background: var(--accent);
+  outline: none;
+}
+
+.tn-workflow-tickets-inspector-field-item > span,
+.tn-workflow-tickets-predecessor-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: var(--spacing);
+}
+
+.tn-workflow-tickets-inspector-field-item strong,
+.tn-workflow-tickets-inspector-field-item small,
+.tn-workflow-tickets-predecessor-copy strong,
+.tn-workflow-tickets-predecessor-copy small {
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-inspector-field-item strong,
+.tn-workflow-tickets-predecessor-copy strong {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.tn-workflow-tickets-inspector-field-item small,
+.tn-workflow-tickets-predecessor-copy small {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+}
+
+.tn-workflow-tickets-inspector-empty {
+  margin: 0;
+  padding: calc(var(--spacing) * 4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.tn-workflow-tickets-predecessor-item {
+  min-width: 0;
+  gap: calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.tn-workflow-tickets-predecessor-icon {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--primary);
+}
+
+.tn-workflow-tickets-edge-editor,
+.tn-workflow-tickets-action-item,
+.tn-workflow-tickets-version-overview-note {
+  display: grid;
+  gap: calc(var(--spacing) * 2);
+  min-width: 0;
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.tn-workflow-tickets-edge-editor.is-selected {
+  border-color: var(--primary);
+}
+
+.tn-workflow-tickets-edge-editor-header,
+.tn-workflow-tickets-action-item-header,
+.tn-workflow-tickets-version-overview-header,
+.tn-workflow-tickets-version-overview-note-header {
+  justify-content: space-between;
+  gap: calc(var(--spacing) * 2);
+}
+
+.tn-workflow-tickets-edge-editor-header strong,
+.tn-workflow-tickets-action-item-header strong {
+  min-width: 0;
+  overflow: clip;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-workflow-tickets-version-overview {
+  display: grid;
+  gap: calc(var(--spacing) * 4);
+}
+
+.tn-workflow-tickets-version-overview-header > div {
+  display: grid;
+  gap: var(--spacing);
+}
+
+.tn-workflow-tickets-version-overview-eyebrow,
+.tn-workflow-tickets-version-overview-meta {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+}
+
+.tn-workflow-tickets-version-overview-header strong {
+  color: var(--foreground);
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+.tn-workflow-tickets-version-overview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--spacing) * 2);
+}
+
+.tn-workflow-tickets-version-overview-note p,
+.tn-workflow-tickets-version-overview-tip {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.tn-workflow-tickets-version-overview-tip {
+  padding: calc(var(--spacing) * 3);
+  border-left: 3px solid var(--primary);
+  background: var(--accent);
+}
+
+.tn-workflow-tickets-inspector-nav {
+  position: absolute;
+  top: calc(var(--spacing) * 2);
+  left: calc(-2.5rem - var(--spacing) * 2);
+  z-index: 4;
+  display: flex;
+  width: 2.5rem;
+  align-items: center;
+  flex-direction: column;
+  gap: calc(var(--spacing) * 2);
+  padding: var(--spacing) 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--card), transparent 6%);
+  box-shadow: 0 0.5rem 1.5rem color-mix(in oklch, var(--foreground), transparent 92%);
+  backdrop-filter: blur(8px);
+}
+
+.tn-workflow-tickets-inspector-nav-item {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.tn-workflow-tickets-inspector-nav-item:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.tn-workflow-tickets-inspector-nav-item.is-active {
+  border-color: color-mix(in oklch, var(--primary), var(--border) 64%);
+  background: var(--accent);
+  color: var(--primary);
+}
+
+.tn-workflow-tickets-inspector-nav-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.tn-workflow-tickets-dry-run-result {
+  display: grid;
+  gap: calc(var(--spacing) * 2);
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.tn-workflow-tickets-dry-run-result > div {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing) * 2);
+  color: var(--foreground);
+  font-size: 0.75rem;
+}
+
+.tn-workflow-tickets-dry-run-result > div span {
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+
+.tn-workflow-tickets-dry-run-result p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+
+.tn-workflow-tickets-designer-loading {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: calc(var(--spacing) * 3);
+  height: 100%;
+}
+
+.tn-workflow-tickets-designer-loading span {
+  display: block;
+  width: min(26rem, 72%);
+  height: calc(var(--spacing) * 3);
+  border-radius: var(--radius-md);
+  background: var(--accent);
+}
+
+.tn-workflow-tickets-designer-loading span:first-child {
+  width: min(16rem, 48%);
+  height: calc(var(--spacing) * 5);
+}
+
+@media (max-width: 1100px) and (min-width: 768px) {
+  .tn-workflow-tickets-designer-left {
+    width: 11.25rem;
+  }
+
+  .tn-workflow-tickets-designer-inspector {
+    width: 22.5rem;
+  }
+
+  .tn-workflow-tickets-designer-commandbar-actions {
+    gap: var(--spacing);
+  }
+}
+
+@media (max-width: 767px) {
+  .tn-workflow-tickets-workflow-designer-page {
+    height: auto;
+    min-height: calc(100dvh - 8rem);
+  }
+
+  .tn-workflow-tickets-designer-commandbar {
+    position: relative;
+    inset: auto;
+    margin: calc(var(--spacing) * 3);
+  }
+
+  .tn-workflow-tickets-designer-commandbar-main {
+    gap: calc(var(--spacing) * 2);
+  }
+
+  .tn-workflow-tickets-designer-commandbar-divider,
+  .tn-workflow-tickets-designer-meta,
+  .tn-workflow-tickets-designer-status,
+  .tn-workflow-tickets-designer-button-label {
+    display: none;
+  }
+
+  .tn-workflow-tickets-designer-commandbar {
+    align-items: flex-start;
+  }
+
+  .tn-workflow-tickets-designer-commandbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .tn-workflow-tickets-designer {
+    position: relative;
+    inset: auto;
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    gap: 0;
+    margin: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+  }
+
+  .tn-workflow-tickets-designer-panel,
+  .tn-workflow-tickets-designer-left,
+  .tn-workflow-tickets-designer-inspector {
+    position: relative;
+    inset: auto;
+    width: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .tn-workflow-tickets-designer-left {
+    order: 1;
+    max-height: 22.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tn-workflow-tickets-designer-canvas {
+    position: relative;
+    order: 2;
+    min-height: 26rem;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .tn-workflow-tickets-designer-inspector {
+    order: 3;
+    border-top: 1px solid var(--border);
+  }
+
+  .tn-workflow-tickets-inspector-nav {
+    top: calc(var(--spacing) * 2);
+    right: calc(var(--spacing) * 2);
+    left: auto;
+    flex-direction: row;
+    width: auto;
+    padding: var(--spacing);
+    border-radius: 999px;
+  }
+
+  .tn-workflow-tickets-inspector-card {
+    min-height: 32rem;
+    border: 0;
+    border-radius: 0;
+  }
+}

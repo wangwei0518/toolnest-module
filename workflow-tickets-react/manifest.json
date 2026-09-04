@@ -1,0 +1,59 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "workflow-tickets-react",
+  "name": "工单模板",
+  "version": "0.1.7",
+  "description": "工作流工单与项目协作",
+  "author": "ToolNest",
+  "icon": "box",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "node",
+    "entry": "backend/dist/main.js",
+    "transport": "http",
+    "startup": "lazy",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 30000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": ["/temp"]
+  },
+  "api": {
+    "base_path": "/api/v1/modules/workflow-tickets-react"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@toolnest/react-module-sdk"
+    ]
+  },
+  "permissions": [
+    "workflow-tickets.read",
+    "workflow-tickets.create",
+    "workflow-tickets.update",
+    "workflow-tickets.delete",
+    "workflow-tickets.publish",
+    "workflow-tickets.execute"
+  ],
+  "capabilities": [
+    "workflow-tickets.runtime",
+    "workflow-tickets.actions"
+  ],
+  "menus": [
+    {
+      "key": "workflow-tickets-react",
+      "label": "工单模板",
+      "path": "",
+      "icon": "box",
+      "order": 100
+    }
+  ],
+  "settings": []
+}

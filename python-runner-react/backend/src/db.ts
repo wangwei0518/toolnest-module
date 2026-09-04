@@ -5,14 +5,19 @@ import { Pool, type QueryResultRow } from 'pg'
 
 export class Database {
   readonly pool: Pool
+  private readonly databaseSchema: string
 
   constructor(databaseUrl: string, databaseSchema = 'public') {
+    this.databaseSchema = databaseSchema
     this.pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${databaseSchema}`, max: 8, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 5_000 })
   }
 
   async migrate(): Promise<void> {
     const client = await this.pool.connect()
     try {
+      const schema = `"${this.databaseSchema.replaceAll('"', '""')}"`
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`)
+      await client.query(`SET search_path TO ${schema}`)
       await client.query('BEGIN')
       await client.query('CREATE TABLE IF NOT EXISTS pr_schema_migrations (version TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())')
       const migrationPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../prisma/migrations/001_python_runner_init.sql')
