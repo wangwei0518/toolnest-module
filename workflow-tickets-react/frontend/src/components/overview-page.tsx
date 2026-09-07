@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
 import {
   RiAddLine,
+  RiArrowLeftSLine,
   RiArrowRightLine,
+  RiArrowRightSLine,
   RiCheckLine,
   RiGitBranchLine,
   RiInboxLine,
@@ -53,6 +55,7 @@ import {
   type Project,
   type Ticket,
   type TimelineActivity,
+  type TimelineActivityTicket,
   type Workflow,
   type WorkflowApi,
 } from "../api";
@@ -85,8 +88,49 @@ type SearchResult =
 const activeNodeStatuses = new Set(["ready", "in_progress", "waiting", "blocked"]);
 const terminalTicketStatuses = new Set(["completed", "cancelled", "archived"]);
 const ACTION_PAGE_SIZE = 5;
-const ACTIVITY_CALENDAR_WEEK_COUNT = 6;
 const ACTIVITY_DAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
+const ACTIVITY_MAX_WEEK_COUNT = 53;
+const ACTIVITY_MIN_WEEK_COUNT = 8;
+const ACTIVITY_DEFAULT_WEEK_COUNT = 24;
+const ACTIVITY_LOOKBACK_DAYS = 365;
+const ACTIVITY_MIN_CELL_SIZE_PX = 12;
+const ACTIVITY_DEFAULT_CELL_SIZE_PX = 12;
+const ACTIVITY_MAX_CELL_SIZE_PX = 18;
+const ACTIVITY_CELL_GAP_PX = 4;
+const ACTIVITY_AXIS_GAP_PX = 8;
+const ACTIVITY_GRID_ROW_COUNT = 7;
+const MONTH_CALENDAR_CELL_COUNT = 42;
+const MONTH_CALENDAR_DAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
+const SOLAR_TERM_LABELS: Record<string, string> = {
+  "01-05": "小寒",
+  "01-20": "大寒",
+  "02-04": "立春",
+  "02-19": "雨水",
+  "03-05": "惊蛰",
+  "03-20": "春分",
+  "04-05": "清明",
+  "04-20": "谷雨",
+  "05-05": "立夏",
+  "05-21": "小满",
+  "06-05": "芒种",
+  "06-21": "夏至",
+  "07-07": "小暑",
+  "07-22": "大暑",
+  "08-07": "立秋",
+  "08-23": "处暑",
+  "09-08": "白露",
+  "09-23": "秋分",
+  "10-08": "寒露",
+  "10-23": "霜降",
+  "11-07": "立冬",
+  "11-22": "小雪",
+  "12-07": "大雪",
+  "12-22": "冬至",
+};
+const CALENDAR_HOLIDAY_LABELS: Record<string, string> = {
+  "2026-09-25": "中秋节",
+};
+const CHINESE_LUNAR_DAY_LABELS = ["", "初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十", "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十", "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"];
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   completed: { label: "已完成", variant: "default" },
@@ -135,7 +179,7 @@ function formatRelativeDate(value?: string | null): string {
 }
 
 type ActivityCell = TimelineActivity["days"][number] & { level: number };
-type ActivityCalendarCell = ActivityCell & { isCurrentMonth: boolean; isToday: boolean };
+type ActivityCalendarCell = ActivityCell & { isFuture: boolean; isToday: boolean };
 type ActivityCalendar = { label: string; weeks: ActivityCalendarCell[][]; maxCount: number };
 
 function startOfLocalDay(value: Date): Date {
@@ -152,9 +196,10 @@ function localDateKey(value: Date): string {
 }
 
 function activityRange(now = new Date()): { startAt: Date; untilAt: Date } {
-  const today = startOfLocalDay(now);
-  const startAt = new Date(today.getFullYear(), today.getMonth(), 1);
-  const untilAt = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const untilAt = startOfLocalDay(now);
+  untilAt.setDate(untilAt.getDate() + 1);
+  const startAt = new Date(untilAt);
+  startAt.setDate(startAt.getDate() - ACTIVITY_LOOKBACK_DAYS);
   return { startAt, untilAt };
 }
 
@@ -163,32 +208,188 @@ function activityLevel(count: number, maxCount: number): number {
   return Math.min(4, Math.max(1, Math.ceil((count / maxCount) * 4)));
 }
 
-function buildActivityCalendar(activity: TimelineActivity, startAt: Date, untilAt: Date, now = new Date()): ActivityCalendar {
+function weekStart(value: Date): Date {
+  const result = startOfLocalDay(value);
+  result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
+  return result;
+}
+
+function activityLayoutForSize(width: number, height: number): { cellSize: number; weekCount: number } {
+  const minimumGridHeight = ACTIVITY_GRID_ROW_COUNT * ACTIVITY_MIN_CELL_SIZE_PX + (ACTIVITY_GRID_ROW_COUNT - 1) * ACTIVITY_CELL_GAP_PX;
+  const cellSize = Math.min(
+    ACTIVITY_MAX_CELL_SIZE_PX,
+    Math.max(ACTIVITY_MIN_CELL_SIZE_PX, Math.floor((Math.max(height, minimumGridHeight) - (ACTIVITY_GRID_ROW_COUNT - 1) * ACTIVITY_CELL_GAP_PX) / ACTIVITY_GRID_ROW_COUNT)),
+  );
+  const availableGridWidth = Math.max(width - cellSize - ACTIVITY_AXIS_GAP_PX, 1);
+  const count = Math.floor((availableGridWidth + ACTIVITY_CELL_GAP_PX) / (cellSize + ACTIVITY_CELL_GAP_PX));
+  return {
+    cellSize,
+    weekCount: Math.min(ACTIVITY_MAX_WEEK_COUNT, Math.max(ACTIVITY_MIN_WEEK_COUNT, count)),
+  };
+}
+
+type MonthlyCalendarCell = {
+  date: string;
+  day: number;
+  lunar: string;
+  marker: string;
+  count: number;
+  samples: string[];
+  tickets: TimelineActivityTicket[];
+  isToday: boolean;
+  inCurrentMonth: boolean;
+};
+
+function formatLunarDay(date: Date): string {
+  try {
+    const part = new Intl.DateTimeFormat("zh-CN-u-ca-chinese", { day: "numeric" }).formatToParts(date).find((item) => item.type === "day");
+    const day = Number(part?.value);
+    return CHINESE_LUNAR_DAY_LABELS[day] ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function buildMonthlyCalendar(viewMonth: Date, activity: TimelineActivity | undefined): MonthlyCalendarCell[] {
+  const year = viewMonth.getFullYear();
+  const month = viewMonth.getMonth();
+  const monthStart = new Date(year, month, 1);
+  const leadingDays = (monthStart.getDay() + 6) % 7;
+  const todayKey = localDateKey(startOfLocalDay(new Date()));
+  const countByDate = new Map((activity?.days ?? []).map((day) => [day.date, day]));
+
+  return Array.from({ length: MONTH_CALENDAR_CELL_COUNT }, (_, index) => {
+    const date = new Date(year, month, index - leadingDays + 1);
+    const dateKey = localDateKey(date);
+    const source = countByDate.get(dateKey);
+    const monthDayKey = dateKey.slice(5);
+    return {
+      date: dateKey,
+      day: date.getDate(),
+      lunar: formatLunarDay(date),
+      marker: CALENDAR_HOLIDAY_LABELS[dateKey] ?? SOLAR_TERM_LABELS[monthDayKey] ?? "",
+      count: source?.count ?? 0,
+      samples: source?.samples ?? [],
+      tickets: source?.tickets ?? [],
+      isToday: dateKey === todayKey,
+      inCurrentMonth: date.getMonth() === month,
+    };
+  });
+}
+
+function formatCalendarMonth(date: Date): string {
+  return `${date.getFullYear()}年${date.getMonth() + 1}月`;
+}
+
+// 总览当前使用月历卡片；RecentUpdatesHeatmap 保留给后续需要热力图的页面复用。
+function MonthlyCalendarCard({ activity, loading, error, onRetry }: { activity: TimelineActivity | undefined; loading: boolean; error: string; onRetry: () => void }) {
+  const [viewMonth, setViewMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const calendar = useMemo(() => buildMonthlyCalendar(viewMonth, activity), [activity, viewMonth]);
+
+  const changeMonth = (offset: number) => {
+    setViewMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  };
+
+  return (
+    <Card data-testid="recent-updates-card" className="h-full min-w-0">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+        {loading && !activity ? (
+          <div className="grid gap-2" aria-label="正在加载当月日历">
+            <Skeleton className="h-56 w-full" />
+          </div>
+        ) : error ? (
+          <Alert variant="destructive">
+            <AlertTitle>最近更新加载失败</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center gap-3">{error}<Button size="sm" variant="outline" onClick={onRetry}>重试</Button></AlertDescription>
+          </Alert>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="monthly-calendar">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-lg font-medium">{formatCalendarMonth(viewMonth)}</span>
+              <div className="flex items-center gap-1">
+                <Button type="button" variant="ghost" size="icon-xs" aria-label="上个月" onClick={() => changeMonth(-1)}><RiArrowLeftSLine /></Button>
+                <Button type="button" variant="ghost" size="icon-xs" aria-label="下个月" onClick={() => changeMonth(1)}><RiArrowRightSLine /></Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-2 text-center text-xs text-muted-foreground" aria-hidden="true">
+              {MONTH_CALENDAR_DAY_LABELS.map((label) => <span key={label}>{label}</span>)}
+            </div>
+            <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-6 gap-x-2 gap-y-1" aria-label={`${formatCalendarMonth(viewMonth)}日历`}>
+              {calendar.map((cell) => {
+                const ticketLabel = cell.tickets.length ? `，当日进行中的工单：${cell.tickets.map((ticket) => ticket.title).join("、")}` : "";
+                const cellLabel = `${cell.date}，${cell.marker || cell.lunar || "无农历信息"}${cell.count ? `，${cell.count} 次更新` : ""}${ticketLabel}`;
+                return (
+                  <Tooltip key={cell.date}>
+                    <TooltipTrigger delay={0} closeDelay={0} render={<span
+                      className={cn(
+                        "flex min-h-0 w-full flex-col items-center justify-center rounded-md border border-transparent px-1 py-1 text-sm leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30",
+                        cell.inCurrentMonth ? "text-foreground" : "text-muted-foreground/45",
+                        cell.marker && !cell.isToday && "text-primary",
+                        cell.isToday && "size-10 place-self-center bg-primary px-0 py-0 text-primary-foreground sm:size-12",
+                      )}
+                      data-calendar-date={cell.date}
+                      data-updates={cell.count}
+                      data-current-month={cell.inCurrentMonth}
+                      role="img"
+                      aria-label={cellLabel}
+                      tabIndex={0}
+                    >
+                      <span>{cell.day}</span>
+                      <span className={cn("mt-1 text-xs", cell.isToday ? "text-primary-foreground" : cell.marker ? "text-primary" : "text-muted-foreground")}>{cell.marker || cell.lunar}</span>
+                      {cell.count > 0 && !cell.isToday ? <span className="mt-1 size-1 rounded-full bg-primary" data-testid="calendar-activity-dot" aria-hidden="true" /> : null}
+                    </span>} />
+                    <TooltipContent side="top" align="center" className="max-w-72">
+                      <div className="grid gap-2" data-testid="calendar-tooltip">
+                        <p className="text-background/80">{formatActivityDate(cell.date)} · {cell.count} 次更新</p>
+                        <Separator className="bg-background/20" />
+                        <div className="grid gap-1">
+                          <p className="font-medium">当日进行中的工单</p>
+                          {cell.tickets.length ? cell.tickets.map((ticket) => <p key={ticket.id} className="max-w-64 break-words">{ticket.title}</p>) : <p className="text-background/80">暂无进行中的工单</p>}
+                        </div>
+                        {cell.samples.length ? <><Separator className="bg-background/20" /><div className="grid gap-1"><p className="text-background/80">更新动态</p>{cell.samples.map((sample) => <p key={sample} className="max-w-64 break-words text-background/80">{sample}</p>)}</div></> : null}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function buildActivityCalendar(activity: TimelineActivity, weekCount: number, now = new Date()): ActivityCalendar {
   const countByDate = new Map(activity.days.map((day) => [day.date, day]));
-  const maxCount = Math.max(0, ...activity.days.map((day) => day.count));
-  const monthStartOffset = (startAt.getDay() + 6) % 7;
-  const calendarStart = new Date(startAt);
-  calendarStart.setDate(startAt.getDate() - monthStartOffset);
   const today = startOfLocalDay(now);
-  const weeks = Array.from({ length: ACTIVITY_CALENDAR_WEEK_COUNT }, (_, weekIndex) => (
+  const currentWeekStart = weekStart(today);
+  const calendarStart = new Date(currentWeekStart);
+  calendarStart.setDate(currentWeekStart.getDate() - (weekCount - 1) * 7);
+  const weeks = Array.from({ length: weekCount }, (_, weekIndex) => (
     ACTIVITY_DAY_LABELS.map((_, dayIndex) => {
       const date = new Date(calendarStart);
       date.setDate(calendarStart.getDate() + weekIndex * 7 + dayIndex);
       const dateKey = localDateKey(date);
-      const isCurrentMonth = date >= startAt && date < untilAt;
       const isToday = date.valueOf() === today.valueOf();
-      const source = countByDate.get(dateKey);
+      const isFuture = date > today;
+      const source = isFuture ? undefined : countByDate.get(dateKey);
       return {
         date: dateKey,
-        count: isCurrentMonth ? source?.count ?? 0 : 0,
-        samples: isCurrentMonth ? source?.samples ?? [] : [],
-        level: isCurrentMonth ? activityLevel(source?.count ?? 0, maxCount) : 0,
-        isCurrentMonth,
+        count: source?.count ?? 0,
+        samples: source?.samples ?? [],
+        level: 0,
+        isFuture,
         isToday,
       };
     })
   ));
-  return { label: `${startAt.getFullYear()}年${startAt.getMonth() + 1}月`, weeks, maxCount };
+  const maxCount = Math.max(0, ...weeks.flatMap((week) => week.map((cell) => cell.count)));
+  return {
+    label: `最近 ${weekCount} 周`,
+    weeks: weeks.map((week) => week.map((cell) => ({ ...cell, level: activityLevel(cell.count, maxCount) }))),
+    maxCount,
+  };
 }
 
 function activityToneClass(level: number): string {
@@ -203,9 +404,9 @@ function activityToneClass(level: number): string {
 
 function activityCellClass(cell: ActivityCalendarCell): string {
   return cn(
-    "flex size-8 items-center justify-center rounded-[3px] border border-border/60 text-xs transition-colors",
+    "flex items-center justify-center rounded-[calc(var(--radius-sm)-4px)] border border-border/60 text-[0.5625rem] transition-colors",
     activityToneClass(cell.level),
-    !cell.isCurrentMonth && "opacity-50",
+    cell.isFuture && "opacity-40",
     cell.level === 4 && "text-primary-foreground",
     cell.isToday && "font-semibold ring-2 ring-primary ring-offset-1 ring-offset-background",
   );
@@ -527,15 +728,39 @@ function ticketTimeLabel(ticket: Ticket): string {
 }
 
 function RecentUpdatesHeatmap({ activity, loading, error, onRetry }: { activity: TimelineActivity | undefined; loading: boolean; error: string; onRetry: () => void }) {
-  const range = activityRange();
-  const heatmap = buildActivityCalendar(activity ?? { total: 0, days: [] }, range.startAt, range.untilAt);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState({ cellSize: ACTIVITY_DEFAULT_CELL_SIZE_PX, weekCount: ACTIVITY_DEFAULT_WEEK_COUNT });
+  const heatmap = buildActivityCalendar(activity ?? { total: 0, days: [] }, layout.weekCount);
   const renderGrid = activity !== undefined || !loading;
+
+  useEffect(() => {
+    if (!renderGrid) return;
+    const element = gridRef.current;
+    if (!element) return;
+    const updateLayout = () => {
+      const bounds = element.getBoundingClientRect();
+      setLayout((current) => {
+        const next = activityLayoutForSize(bounds.width, bounds.height);
+        return current.cellSize === next.cellSize && current.weekCount === next.weekCount ? current : next;
+      });
+    };
+    updateLayout();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateLayout);
+    observer?.observe(element);
+    const animationFrame = window.requestAnimationFrame(updateLayout);
+    const interval = observer ? null : window.setInterval(updateLayout, 150);
+    window.addEventListener("resize", updateLayout);
+    return () => {
+      observer?.disconnect();
+      window.cancelAnimationFrame(animationFrame);
+      if (interval !== null) window.clearInterval(interval);
+      window.removeEventListener("resize", updateLayout);
+    };
+  }, [renderGrid]);
+
   return (
-    <Card className="min-w-0 self-start">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">最近更新 <Badge variant="secondary">{activity?.total ?? 0}</Badge></CardTitle>
-      </CardHeader>
-      <CardContent className="pt-0">
+    <Card data-testid="recent-updates-card" className="h-full min-w-0">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
         {loading && !activity ? (
           <div className="grid gap-2" aria-label="正在加载最近更新">
             <Skeleton className="h-56 w-full" />
@@ -546,36 +771,43 @@ function RecentUpdatesHeatmap({ activity, loading, error, onRetry }: { activity:
             <AlertDescription className="flex flex-wrap items-center gap-3">{error}<Button size="sm" variant="outline" onClick={onRetry}>重试</Button></AlertDescription>
           </Alert>
         ) : renderGrid ? (
-          <div className="grid min-w-0 gap-3" data-testid="recent-updates-heatmap">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="recent-updates-heatmap">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium">{heatmap.label}</span>
-              <span className="text-xs text-muted-foreground">周一至周日</span>
+              <span className="text-xs text-muted-foreground">近一年数据</span>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-[0.625rem] leading-none text-muted-foreground" aria-hidden="true">
-              {ACTIVITY_DAY_LABELS.map((label) => <span key={label}>{label}</span>)}
-            </div>
-            <div className="grid grid-cols-7 justify-items-center gap-1" aria-label={`${heatmap.label}更新热力图`}>
-              {heatmap.weeks.flatMap((week) => week.map((cell) => {
-                const cellLabel = cell.isCurrentMonth ? `${formatActivityDate(cell.date)}：${cell.count} 次更新` : `${formatActivityDate(cell.date)}：非本月日期`;
-                return (
-                  <Tooltip key={cell.date}>
-                    <TooltipTrigger render={<span className={activityCellClass(cell)} data-date={cell.date} data-level={cell.level} data-current-month={cell.isCurrentMonth} role="img" aria-label={cellLabel} tabIndex={0} />} />
-                    <TooltipContent side="top" align="center">
-                      <div className="grid gap-1">
-                        <p>{cellLabel}</p>
-                        {cell.samples.length ? cell.samples.map((sample) => <p key={sample} className="max-w-56 truncate text-background/80">{sample}</p>) : cell.isCurrentMonth ? <p className="text-background/80">暂无更新</p> : null}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              }))}
+            <div ref={gridRef} className="flex min-h-0 min-w-0 flex-1 gap-2">
+              <div className="grid shrink-0 grid-rows-7 gap-1 text-[0.625rem] leading-none text-muted-foreground" aria-hidden="true">
+                {ACTIVITY_DAY_LABELS.map((label) => <span key={label} className="flex items-center justify-center" style={{ width: layout.cellSize, height: layout.cellSize }}>{label}</span>)}
+              </div>
+              <div className="min-h-0 min-w-0 flex-1">
+                <div
+                  className="grid w-max grid-flow-col grid-rows-7 gap-1"
+                  style={{ gridTemplateColumns: `repeat(${layout.weekCount}, ${layout.cellSize}px)`, gridTemplateRows: `repeat(${ACTIVITY_GRID_ROW_COUNT}, ${layout.cellSize}px)` }}
+                  aria-label={`${heatmap.label}更新热力图`}
+                >
+                  {heatmap.weeks.flatMap((week) => week.map((cell) => {
+                    const cellLabel = cell.isFuture ? `${formatActivityDate(cell.date)}：尚未到达` : `${formatActivityDate(cell.date)}：${cell.count} 次更新`;
+                    return (
+                      <Tooltip key={cell.date}>
+                        <TooltipTrigger render={<span className={activityCellClass(cell)} style={{ width: layout.cellSize, height: layout.cellSize }} data-date={cell.date} data-level={cell.level} data-future={cell.isFuture} role="img" aria-label={cellLabel} tabIndex={0} />} />
+                        <TooltipContent side="top" align="center">
+                          <div className="grid gap-1">
+                            <p>{cellLabel}</p>
+                            {cell.samples.length ? cell.samples.map((sample) => <p key={sample} className="max-w-56 truncate text-background/80">{sample}</p>) : cell.isFuture ? null : <p className="text-background/80">暂无更新</p>}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  }))}
+                </div>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-2 text-[0.625rem] text-muted-foreground" aria-label="更新数量图例">
               <span>少</span>
-              {[0, 1, 2, 3, 4].map((level) => <span key={level} className={cn("size-2.5 rounded-[3px] border border-border/60", activityToneClass(level))} aria-hidden="true" />)}
+              {[0, 1, 2, 3, 4].map((level) => <span key={level} className={cn("rounded-[calc(var(--radius-sm)-4px)] border border-border/60", activityToneClass(level))} style={{ width: layout.cellSize, height: layout.cellSize }} aria-hidden="true" />)}
               <span>多</span>
             </div>
-            {!activity?.total ? <p className="text-center text-xs text-muted-foreground">本月暂无更新</p> : null}
           </div>
         ) : null}
       </CardContent>
@@ -999,7 +1231,7 @@ export function OverviewPage({ api, router }: OverviewPageProps) {
             ) : <EmptyState description="暂无需要立即处理的工单。" action={<Button onClick={() => void router.push("/modules/workflow-tickets-react/tickets/new")}>新建工单</Button>} />}
           </CardContent>
         </Card>
-        <RecentUpdatesHeatmap activity={activity} loading={activityLoading} error={activityError} onRetry={() => { void loadActivity(); }} />
+        <MonthlyCalendarCard activity={activity} loading={activityLoading} error={activityError} onRetry={() => { void loadActivity(); }} />
       </div>
 
       <ProjectWorkspace

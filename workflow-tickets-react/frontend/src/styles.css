@@ -49,6 +49,35 @@
   outline-offset: -2px;
 }
 
+.tn-workflow-tickets-project-page {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-markdown-preview {
+  color: var(--foreground);
+  font-size: 0.875rem;
+  line-height: 1.75;
+}
+
+.tn-workflow-tickets-markdown-preview :where(h1, h2, h3) {
+  margin-block: 1rem 0.5rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.tn-workflow-tickets-markdown-preview :where(h1) { font-size: 1.25rem; }
+.tn-workflow-tickets-markdown-preview :where(h2) { font-size: 1.125rem; }
+.tn-workflow-tickets-markdown-preview :where(h3) { font-size: 1rem; }
+.tn-workflow-tickets-markdown-preview :where(p, ul, ol, blockquote, pre) { margin-block: 0.5rem; }
+.tn-workflow-tickets-markdown-preview :where(ul, ol) { padding-inline-start: 1.5rem; }
+.tn-workflow-tickets-markdown-preview :where(ul) { list-style: disc; }
+.tn-workflow-tickets-markdown-preview :where(ol) { list-style: decimal; }
+.tn-workflow-tickets-markdown-preview :where(a) { color: var(--primary); text-decoration: underline; text-underline-offset: 0.2em; }
+.tn-workflow-tickets-markdown-preview :where(code) { border-radius: var(--radius-sm); background: var(--muted); padding: 0.125rem 0.25rem; font-size: 0.8125rem; }
+.tn-workflow-tickets-markdown-preview :where(pre) { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--muted); padding: 0.75rem; }
+.tn-workflow-tickets-markdown-preview :where(pre code) { padding: 0; background: transparent; }
+.tn-workflow-tickets-markdown-preview :where(blockquote) { border-inline-start: 2px solid var(--border); padding-inline-start: 0.75rem; color: var(--muted-foreground); }
+
 .tn-workflow-tickets-react {
   box-sizing: border-box;
   display: flex;
@@ -185,22 +214,35 @@
   border-color: var(--border);
 }
 
+.tn-workflow-tickets-react:has(.tn-workflow-tickets-branch-timeline) [data-slot="card-content"]:has(.tn-workflow-tickets-branch-timeline) {
+  padding-top: 0;
+}
+
+.tn-workflow-tickets-detail-page [data-slot="card-content"]:has([data-field-type]) {
+  padding-top: 0;
+}
+
+.tn-workflow-tickets-detail-page [data-slot="card-content"]:has([data-field-type]) [data-slot="field-label"] {
+  user-select: text;
+}
+
 .tn-workflow-tickets-branch-timeline {
   min-width: 0;
-  padding-block: calc(var(--spacing) * 1);
+  padding-block: 0;
 }
 
 .tn-workflow-tickets-branch-level {
   position: relative;
   min-width: 0;
-  padding-left: calc(var(--spacing) * 6);
+  padding-left: calc(var(--spacing) * 7);
 }
 
 .tn-workflow-tickets-branch-level::before {
   position: absolute;
-  top: calc(var(--spacing) * 3);
-  bottom: calc(var(--spacing) * -3);
-  left: calc(var(--spacing) * 1.75);
+  z-index: 0;
+  top: calc(var(--spacing) * 2.5);
+  bottom: calc(var(--spacing) * -5.5);
+  left: calc(var(--spacing) * 2.25);
   width: calc(var(--spacing) * 0.5);
   border-radius: var(--radius-lg);
   background: var(--border);
@@ -208,32 +250,32 @@
 }
 
 .tn-workflow-tickets-branch-level:last-child::before {
-  bottom: calc(100% - var(--spacing) * 3);
+  bottom: calc(100% - var(--spacing) * 2.5);
 }
 
 .tn-workflow-tickets-branch-level::after {
   position: absolute;
-  top: calc(var(--spacing) * 1.5);
-  left: calc(var(--spacing) * 0.75);
-  width: calc(var(--spacing) * 2);
-  height: calc(var(--spacing) * 2);
-  border: calc(var(--spacing) * 0.75) solid var(--background);
-  border-radius: var(--radius-lg);
+  z-index: 1;
+  top: calc(var(--spacing) * 0.5);
+  left: calc(var(--spacing) * 0.5);
+  width: calc(var(--spacing) * 4);
+  height: calc(var(--spacing) * 4);
+  border: calc(var(--spacing) * 1) solid color-mix(in oklch, var(--muted-foreground), var(--background) 82%);
+  border-radius: 50%;
   background: var(--muted-foreground);
   content: "";
 }
 
-.tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-selected)::before,
-.tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-completed)::before {
-  background: color-mix(in oklch, var(--primary), var(--border) 45%);
-}
-
 .tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-selected)::after,
-.tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-completed)::after {
+.tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-completed)::after,
+.tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-ready)::after,
+.tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-in_progress)::after {
+  border-color: color-mix(in oklch, var(--primary), var(--background) 82%);
   background: var(--primary);
 }
 
 .tn-workflow-tickets-branch-level:has(.tn-workflow-tickets-branch-node.is-blocked)::after {
+  border-color: color-mix(in oklch, var(--destructive), var(--background) 82%);
   background: var(--destructive);
 }
 
@@ -254,7 +296,7 @@
 .tn-workflow-tickets-branch-node {
   position: relative;
   min-width: 0;
-  border-left: calc(var(--spacing) * 0.75) solid var(--border);
+  border-left: calc(var(--spacing) * 0.5) solid var(--border);
 }
 
 .tn-workflow-tickets-branch-node.is-completed,
@@ -272,6 +314,10 @@
   border-color: var(--primary);
   border-left-color: var(--primary);
   background: var(--accent);
+}
+
+.tn-workflow-tickets-detail-page header [role="progressbar"] + span {
+  display: none;
 }
 
 /* Workflow designer: keep the legacy Vue workspace geometry while using the React token set. */
@@ -501,14 +547,15 @@
   z-index: 0;
   box-sizing: border-box;
   min-width: 0;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in oklch, var(--border), transparent 18%);
   border-radius: var(--radius-lg);
-  background-color: color-mix(in oklch, var(--muted), var(--background) 42%);
+  background-color: var(--muted);
   background-image: radial-gradient(color-mix(in oklch, var(--muted-foreground), transparent 72%) 1px, transparent 1px), linear-gradient(color-mix(in oklch, var(--border), transparent 72%) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklch, var(--border), transparent 72%) 1px, transparent 1px);
   background-position: 0 0, 0 0, 0 0;
-  background-size: 20px 20px, 100px 100px, 100px 100px;
+  background-size: 16px 16px, 80px 80px, 80px 80px;
   cursor: grab;
   overflow: clip;
+  overscroll-behavior: contain;
   touch-action: none;
 }
 

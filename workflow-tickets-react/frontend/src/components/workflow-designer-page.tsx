@@ -397,7 +397,25 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const zoomAt = (next: number) => setZoom(Math.min(1.6, Math.max(0.35, Math.round(next * 100) / 100)));
 
+  const handleCanvasWheel = (event: React.WheelEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest(".tn-workflow-tickets-canvas-tools")) return;
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const nextZoom = Math.min(1.6, Math.max(0.35, Math.round((zoom * Math.pow(1.1, event.deltaY > 0 ? -1 : 1)) * 100) / 100));
+    if (nextZoom === zoom) return;
+    const rect = canvas.getBoundingClientRect();
+    const cursor = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const contentPoint = { x: (cursor.x - pan.x) / zoom, y: (cursor.y - pan.y) / zoom };
+    setPan({ x: cursor.x - contentPoint.x * nextZoom, y: cursor.y - contentPoint.y * nextZoom });
+    setZoom(nextZoom);
+  };
+
   const innerStyle: CSSProperties = { transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`, transformOrigin: "0 0" };
+  const canvasStyle: CSSProperties = {
+    backgroundPosition: `${pan.x}px ${pan.y}px, ${pan.x}px ${pan.y}px, ${pan.x}px ${pan.y}px`,
+    backgroundSize: `${16 * zoom}px ${16 * zoom}px, ${80 * zoom}px ${80 * zoom}px, ${80 * zoom}px ${80 * zoom}px`,
+  };
 
   if (loading) {
     return <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page"><div className="tn-workflow-tickets-designer-loading" aria-label="正在加载工作流编辑器" aria-busy="true"><span /><span /><span /></div></section>;
@@ -447,7 +465,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
           <Button className="tn-workflow-tickets-designer-add-node" variant="outline" disabled={readOnly} onClick={() => void addNode()}><RiAddLine data-icon="inline-start" />新增节点</Button>
         </aside>
 
-        <section ref={canvasRef} className="tn-workflow-tickets-designer-canvas" aria-label="工作流画布" onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
+        <section ref={canvasRef} className="tn-workflow-tickets-designer-canvas" style={canvasStyle} aria-label="工作流画布" onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onWheel={handleCanvasWheel}>
           <div className="tn-workflow-tickets-canvas-inner" style={innerStyle}>
             <svg className="tn-workflow-tickets-canvas-edges" viewBox="0 0 1400 1000" preserveAspectRatio="none" aria-label="工作流连线">
               <defs><marker id="tn-workflow-edge-arrow-default" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--border)" /></marker><marker id="tn-workflow-edge-arrow-active" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--primary)" /></marker></defs>

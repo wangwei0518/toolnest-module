@@ -92,6 +92,34 @@ describe("workflow ticket runtime", () => {
     assert.equal(duplicate.parent_ticket_id, related.id);
   });
 
+  it("keeps an in-progress ticket visible on each active calendar day", async () => {
+    const service = await createService();
+    const workflow = service.listWorkflows()[0]!;
+    const ticket = await service.createTicket({ workflow_id: workflow.id, title: "跨日进行中的工单" });
+    service.data.timeline = [];
+
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const createdAt = new Date(today);
+    createdAt.setUTCDate(createdAt.getUTCDate() - 1);
+    service.data.tickets.find((item) => item.id === ticket.id)!.created_at = createdAt.toISOString();
+    const since = new Date(createdAt);
+    const until = new Date(today);
+    until.setUTCDate(until.getUTCDate() + 1);
+
+    const activity = service.timelineActivity(since.toISOString(), until.toISOString(), "UTC");
+    assert.deepEqual(
+      activity.days.map((day) => ({ date: day.date, count: day.count, tickets: day.tickets?.map((item) => item.title) })),
+      [
+        { date: createdAt.toISOString().slice(0, 10), count: 0, tickets: [ticket.title] },
+        { date: today.toISOString().slice(0, 10), count: 0, tickets: [ticket.title] },
+      ],
+    );
+
+    service.data.tickets.find((item) => item.id === ticket.id)!.status = "completed";
+    assert.deepEqual(service.timelineActivity(since.toISOString(), until.toISOString(), "UTC"), { total: 0, days: [] });
+  });
+
   it("renders script resources safely and limits consumption", async () => {
     const service = await createService();
     const workflow = service.listWorkflows()[0]!;
@@ -142,6 +170,34 @@ describe("workflow ticket runtime", () => {
     await service.createMilestone(project.id, { name: "已到期", target_at: new Date(Date.now() - 86_400_000).toISOString() });
     assert.equal(await service.runDueProjectNotifications(), 2);
     assert.equal(await service.runDueProjectNotifications(), 0);
+  });
+
+  it("keeps legacy project resource aliases visible to the project page", async () => {
+    const service = await createService();
+    const project = await service.createProject({ name: "资源兼容项目" });
+    service.data.resources.push({
+      id: "legacy-resource",
+      project_id: null,
+      project_ids: [project.id],
+      name: "旧版仓库",
+      type: "repository",
+      resource_type: "repository",
+      url: "https://example.com/repo",
+      external_url: "https://example.com/repo",
+      identifier: "toolnest/repo",
+      description: "旧版资源字段",
+      attributes: { branch: "main" },
+      ticket_ids: [],
+      milestone_ids: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const resources = service.listResources(project.id);
+    assert.equal(resources[0]?.id, "legacy-resource");
+    assert.equal(resources[0]?.project_id, project.id);
+    assert.equal(resources[0]?.resource_type, "repository");
+    assert.equal(resources[0]?.identifier, "toolnest/repo");
   });
 
   it("supports legacy schedule placeholders and skipped runs", async () => {

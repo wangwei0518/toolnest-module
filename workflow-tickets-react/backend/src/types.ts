@@ -190,10 +190,17 @@ export interface TimelineEvent {
   actor_name: string;
 }
 
+export interface TimelineActivityTicket {
+  id: string;
+  number: string;
+  title: string;
+}
+
 export interface TimelineActivityDay {
   date: string;
   count: number;
   samples: string[];
+  tickets?: TimelineActivityTicket[];
 }
 
 export interface TimelineActivity {
@@ -206,12 +213,19 @@ export interface Project {
   key: string;
   name: string;
   description: string;
+  goal?: string;
   status: ProjectStatus;
   owner_name: string;
   start_at?: string | null;
+  planned_start_at?: string | null;
   target_at?: string | null;
   tags: string[];
   note: string;
+  review_markdown?: string;
+  default_workflow_id?: string | null;
+  color?: string;
+  icon?: string;
+  favorite?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -221,11 +235,19 @@ export interface Milestone {
   project_id: string;
   name: string;
   description: string;
+  goal?: string;
   status: MilestoneStatus;
+  owner_name?: string | null;
   target_at?: string | null;
   progress_mode: "ticket" | "manual";
   progress: number;
+  manual_progress?: number;
+  completion_criteria?: string;
+  risk_note?: string;
   review: string;
+  review_markdown?: string;
+  ticket_count?: number;
+  completed_ticket_count?: number;
   notification_sent_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -308,9 +330,13 @@ export interface AutomationRule {
 export interface RelatedResource {
   id: string;
   project_id?: string | null;
+  project_ids?: string[];
   name: string;
   type: string;
+  resource_type?: string;
   url?: string | null;
+  external_url?: string | null;
+  identifier?: string;
   description: string;
   attributes: Record<string, unknown>;
   ticket_ids: string[];

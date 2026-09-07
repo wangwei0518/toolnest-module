@@ -25,6 +25,7 @@ import {
   type Ticket,
   type TicketNode,
   type TimelineActivity,
+  type TimelineActivityTicket,
   type TimelineEvent,
   type Workflow,
   type WorkflowEdge,
@@ -93,6 +94,13 @@ function activityDateKey(value: string, timeZone: string): string {
   } catch {
     return date.toISOString().slice(0, 10);
   }
+}
+
+function shiftActivityDate(dateKey: string, offset: number): string {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  if (Number.isNaN(date.valueOf())) return "";
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
 }
 
 function jsonValue(value: unknown): unknown {
@@ -186,20 +194,54 @@ export class WorkflowTicketsService {
     if ((since && !sinceDate) || (until && !untilDate)) fail(400, "时间线日期范围无效");
     if (sinceDate && untilDate && untilDate <= sinceDate) fail(400, "时间线日期范围无效");
 
-    const days = new Map<string, { count: number; samples: string[] }>();
+    const days = new Map<string, { count: number; samples: string[]; tickets: TimelineActivityTicket[] }>();
+    const ticketsById = new Map(this.data.tickets.map((ticket) => [ticket.id, ticket]));
     let total = 0;
     for (const event of this.data.timeline) {
       const eventDate = safeDate(event.created_at);
       if (!eventDate || (sinceDate && eventDate < sinceDate) || (untilDate && eventDate >= untilDate)) continue;
       const date = activityDateKey(event.created_at, timeZone);
       if (!date) continue;
-      const day = days.get(date) ?? { count: 0, samples: [] };
+      const day = days.get(date) ?? { count: 0, samples: [], tickets: [] };
       day.count += 1;
       if (day.samples.length < 2 && !day.samples.includes(event.title)) day.samples.push(event.title);
+      const ticket = event.ticket_id ? ticketsById.get(event.ticket_id) : undefined;
+      if (ticket?.status === "in_progress" && !day.tickets.some((item) => item.id === ticket.id)) {
+        day.tickets.push({ id: ticket.id, number: ticket.number, title: ticket.title });
+      }
       days.set(date, day);
       total += 1;
     }
-    return { total, days: [...days.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, value]) => ({ date, ...value })) };
+    const todayKey = activityDateKey(nowIso(), timeZone);
+    const todayEndKey = shiftActivityDate(todayKey, 1);
+    const activityStartKey = sinceDate ? activityDateKey(sinceDate.toISOString(), timeZone) : "";
+    const requestedEndKey = untilDate ? activityDateKey(untilDate.toISOString(), timeZone) : todayEndKey;
+    const activityEndKey = requestedEndKey && requestedEndKey < todayEndKey ? requestedEndKey : todayEndKey;
+    for (const ticket of this.data.tickets) {
+      if (ticket.status !== "in_progress") continue;
+      const createdKey = activityDateKey(ticket.created_at, timeZone);
+      if (!createdKey) continue;
+      const startKey = activityStartKey && activityStartKey > createdKey ? activityStartKey : createdKey;
+      if (!activityEndKey || startKey >= activityEndKey) continue;
+      const activityTicket = { id: ticket.id, number: ticket.number, title: ticket.title };
+      for (let date = startKey; date < activityEndKey;) {
+        const day = days.get(date) ?? { count: 0, samples: [], tickets: [] };
+        if (!day.tickets.some((item) => item.id === ticket.id)) day.tickets.push(activityTicket);
+        days.set(date, day);
+        const nextDate = shiftActivityDate(date, 1);
+        if (!nextDate || nextDate <= date) break;
+        date = nextDate;
+      }
+    }
+    return {
+      total,
+      days: [...days.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, value]) => ({
+        date,
+        count: value.count,
+        samples: value.samples,
+        ...(value.tickets.length ? { tickets: value.tickets } : {}),
+      })),
+    };
   }
 
   listWorkflows(keyword = ""): Workflow[] {
@@ -320,16 +362,101 @@ export class WorkflowTicketsService {
   async convertInbox(itemId: string, body: Record<string, unknown>, actor = "当前用户"): Promise<Ticket> { const item = this.findInbox(itemId); if (item.status !== "inbox") fail(409, "当前事项无法转换"); const workflow = this.findWorkflow(text(body.workflow_id)); const version = this.publishedVersion(workflow); if (!version) fail(409, "只能基于已发布版本创建工单"); const ticket = await this.createTicketFromVersion(workflow, version, { title: item.title, note: item.note, created_by: actor, owner_id: item.owner_id, owner_name: item.owner_name, due_at: item.due_at, reminder_at: item.reminder_at, project_id: text(body.project_id) || null, milestone_id: text(body.milestone_id) || null, priority: text(body.priority) || "none", tags: [] }, true); item.status = "converted"; item.ticket_id = ticket.id; item.updated_at = nowIso(); await this.store.save(); return ticket; }
 
   listProjects(): Project[] { return sortedUpdated(this.data.projects.filter((item) => item.status !== "archived")).map((project) => this.getProject(project.id)); }
-  getProject(projectId: string): Project & { ticket_count: number; milestone_count: number; progress: number; health: string } { const project = this.findProject(projectId); const tickets = this.data.tickets.filter((item) => item.project_id === project.id); const milestones = this.data.milestones.filter((item) => item.project_id === project.id); const progress = tickets.length ? Math.round(tickets.filter((item) => item.status === "completed").length / tickets.length * 100) : 0; const overdue = milestones.some((item) => item.target_at && new Date(item.target_at) < new Date() && item.status !== "completed"); const blocked = tickets.some((item) => item.status === "blocked"); return { ...clone(project), ticket_count: tickets.length, milestone_count: milestones.length, progress, health: overdue ? "overdue" : blocked ? "risk" : "normal" }; }
-  async createProject(body: Record<string, unknown>, actor = "当前用户"): Promise<Project> { const name = text(body.name); if (!name) fail(422, "项目名称不能为空"); const now = new Date(); const prefix = `PRJ-${now.toISOString().slice(0, 10).replaceAll("-", "")}`; const key = `${prefix}-${String(this.data.projects.filter((item) => item.key.startsWith(prefix)).length + 1).padStart(3, "0")}`; const project: Project = { id: id(), key, name, description: text(body.description), status: (text(body.status) || "planning") as Project["status"], owner_name: text(body.owner_name) || actor, start_at: text(body.start_at) || null, target_at: text(body.target_at) || null, tags: normalizeTags(body.tags), note: text(body.note), created_at: nowIso(), updated_at: nowIso() }; this.data.projects.unshift(project); await this.store.save(); return this.getProject(project.id); }
-  async updateProject(projectId: string, body: Record<string, unknown>): Promise<Project> { const project = this.findProject(projectId); for (const key of ["name", "description", "owner_name", "note"] as const) if (body[key] !== undefined) project[key] = text(body[key]); if (body.status !== undefined) project.status = text(body.status) as Project["status"]; if (body.tags !== undefined) project.tags = normalizeTags(body.tags); if (body.start_at !== undefined) project.start_at = text(body.start_at) || null; if (body.target_at !== undefined) project.target_at = text(body.target_at) || null; project.updated_at = nowIso(); await this.store.save(); return this.getProject(project.id); }
+  getProject(projectId: string): Project & { ticket_count: number; completed_ticket_count: number; milestone_count: number; progress: number; health: string; current_milestone_id: string | null; current_milestone_name: string | null; current_milestone_goal: string | null; current_milestone_target_at: string | null } {
+    const project = this.findProject(projectId);
+    const tickets = this.data.tickets.filter((item) => item.project_id === project.id);
+    const milestones = this.data.milestones.filter((item) => item.project_id === project.id);
+    const completedTicketCount = tickets.filter((item) => item.status === "completed").length;
+    const progress = tickets.length ? Math.round(completedTicketCount / tickets.length * 100) : 0;
+    const current = [...milestones].filter((item) => !["completed", "cancelled"].includes(item.status)).sort((a, b) => {
+      const activeRank = (value: string) => value === "in_progress" ? 0 : 1;
+      return activeRank(a.status) - activeRank(b.status) || (a.target_at ?? "9999").localeCompare(b.target_at ?? "9999") || b.updated_at.localeCompare(a.updated_at);
+    })[0];
+    const overdue = milestones.some((item) => item.target_at && new Date(item.target_at) < new Date() && !["completed", "cancelled"].includes(item.status));
+    const blocked = tickets.some((item) => item.status === "blocked");
+    return {
+      ...clone(project),
+      goal: project.goal ?? project.description,
+      planned_start_at: project.planned_start_at ?? project.start_at ?? null,
+      review_markdown: project.review_markdown ?? project.note,
+      default_workflow_id: project.default_workflow_id ?? null,
+      color: project.color ?? "primary",
+      icon: project.icon ?? "flag",
+      favorite: project.favorite ?? false,
+      ticket_count: tickets.length,
+      completed_ticket_count: completedTicketCount,
+      milestone_count: milestones.length,
+      progress,
+      health: overdue ? "overdue" : blocked ? "risk" : "normal",
+      current_milestone_id: current?.id ?? null,
+      current_milestone_name: current?.name ?? null,
+      current_milestone_goal: current?.goal ?? current?.description ?? null,
+      current_milestone_target_at: current?.target_at ?? null,
+    };
+  }
+  async createProject(body: Record<string, unknown>, actor = "当前用户"): Promise<Project> {
+    const name = text(body.name); if (!name) fail(422, "项目名称不能为空");
+    const now = new Date(); const prefix = `PRJ-${now.toISOString().slice(0, 10).replaceAll("-", "")}`;
+    const key = `${prefix}-${String(this.data.projects.filter((item) => item.key.startsWith(prefix)).length + 1).padStart(3, "0")}`;
+    const goal = text(body.goal || body.description); const startAt = text(body.start_at || body.planned_start_at) || null;
+    const project: Project = { id: id(), key, name, description: goal, goal, status: (text(body.status) || "planning") as Project["status"], owner_name: text(body.owner_name) || actor, start_at: startAt, planned_start_at: startAt, target_at: text(body.target_at) || null, tags: normalizeTags(body.tags), note: text(body.note), review_markdown: text(body.review_markdown || body.note), default_workflow_id: text(body.default_workflow_id) || null, color: text(body.color) || "primary", icon: text(body.icon) || "flag", favorite: Boolean(body.favorite), created_at: nowIso(), updated_at: nowIso() };
+    this.data.projects.unshift(project); await this.store.save(); return this.getProject(project.id);
+  }
+  async updateProject(projectId: string, body: Record<string, unknown>): Promise<Project> {
+    const project = this.findProject(projectId);
+    if (body.name !== undefined) project.name = text(body.name);
+    if (body.description !== undefined || body.goal !== undefined) { const goal = text(body.goal === undefined ? body.description : body.goal); project.description = goal; project.goal = goal; }
+    if (body.owner_name !== undefined) project.owner_name = text(body.owner_name);
+    if (body.note !== undefined) project.note = text(body.note);
+    if (body.review_markdown !== undefined) project.review_markdown = text(body.review_markdown);
+    if (body.status !== undefined) project.status = text(body.status) as Project["status"];
+    if (body.tags !== undefined) project.tags = normalizeTags(body.tags);
+    if (body.start_at !== undefined || body.planned_start_at !== undefined) { const startAt = text(body.start_at === undefined ? body.planned_start_at : body.start_at) || null; project.start_at = startAt; project.planned_start_at = startAt; }
+    if (body.target_at !== undefined) project.target_at = text(body.target_at) || null;
+    if (body.default_workflow_id !== undefined) project.default_workflow_id = text(body.default_workflow_id) || null;
+    if (body.color !== undefined) project.color = text(body.color) || "primary";
+    if (body.icon !== undefined) project.icon = text(body.icon) || "flag";
+    if (body.favorite !== undefined) project.favorite = Boolean(body.favorite);
+    project.updated_at = nowIso(); await this.store.save(); return this.getProject(project.id);
+  }
   async archiveProject(projectId: string): Promise<Project> { const project = this.findProject(projectId); project.status = "archived"; project.updated_at = nowIso(); await this.store.save(); return this.getProject(project.id); }
-  projectAnalytics(projectId: string): Record<string, unknown> { const project = this.getProject(projectId); const tickets = this.data.tickets.filter((item) => item.project_id === projectId); return { project, status_counts: Object.fromEntries([...new Set(tickets.map((item) => item.status))].map((status) => [status, tickets.filter((item) => item.status === status).length])), priority_counts: Object.fromEntries([...new Set(tickets.map((item) => item.priority))].map((priority) => [priority, tickets.filter((item) => item.priority === priority).length])), trend: Array.from({ length: 14 }, (_, index) => ({ date: new Date(Date.now() - (13 - index) * 86_400_000).toISOString().slice(0, 10), created: 0, completed: 0 })), velocity: tickets.filter((item) => item.status === "completed").length }; }
+  projectAnalytics(projectId: string): Record<string, unknown> {
+    const project = this.getProject(projectId); const tickets = this.data.tickets.filter((item) => item.project_id === projectId);
+    const days = Array.from({ length: 14 }, (_, index) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() - (13 - index)); const key = date.toISOString().slice(0, 10); const dayTickets = tickets.filter((ticket) => ticket.created_at.slice(0, 10) === key); return { date: key, created: dayTickets.length, completed: dayTickets.filter((ticket) => ticket.status === "completed").length }; });
+    const durations = tickets.filter((item) => item.status === "completed").map((item) => Math.max(0, (Date.parse(item.updated_at) - Date.parse(item.created_at)) / 3_600_000)).sort((a, b) => a - b);
+    const percentile = (ratio: number) => durations.length ? durations[Math.min(durations.length - 1, Math.floor((durations.length - 1) * ratio))] ?? 0 : 0;
+    return { project, status_counts: Object.fromEntries([...new Set(tickets.map((item) => item.status))].map((status) => [status, tickets.filter((item) => item.status === status).length])), priority_counts: Object.fromEntries([...new Set(tickets.map((item) => item.priority))].map((priority) => [priority, tickets.filter((item) => item.priority === priority).length])), trend: days, velocity: tickets.filter((item) => item.status === "completed").length, daily_velocity: days.reduce((sum, item) => sum + item.completed, 0) / 14, blocked_count: tickets.filter((item) => item.status === "blocked").length, overdue_count: tickets.filter((item) => item.due_at && new Date(item.due_at) < new Date() && !["completed", "cancelled", "archived"].includes(item.status)).length, duration_hours: { average: durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : 0, median: percentile(0.5), p75: percentile(0.75) }, node_durations: [], path_distribution: [] };
+  }
 
-  listMilestones(projectId: string): Milestone[] { this.findProject(projectId); return sortedUpdated(this.data.milestones.filter((item) => item.project_id === projectId)); }
-  getMilestone(milestoneId: string, projectId?: string): Milestone { const milestone = this.data.milestones.find((item) => item.id === milestoneId); if (!milestone) fail(404, "里程碑不存在"); if (projectId && milestone.project_id !== projectId) fail(404, "里程碑不属于当前项目"); return clone(milestone); }
-  async createMilestone(projectId: string, body: Record<string, unknown>): Promise<Milestone> { this.findProject(projectId); const name = text(body.name); if (!name) fail(422, "里程碑名称不能为空"); const milestone: Milestone = { id: id(), project_id: projectId, name, description: text(body.description), status: (text(body.status) || "pending") as Milestone["status"], target_at: text(body.target_at) || null, progress_mode: (text(body.progress_mode) || "ticket") as Milestone["progress_mode"], progress: Number(body.progress) || 0, review: text(body.review), notification_sent_at: null, created_at: nowIso(), updated_at: nowIso() }; this.data.milestones.unshift(milestone); await this.store.save(); return clone(milestone); }
-  async updateMilestone(milestoneId: string, body: Record<string, unknown>, projectId?: string): Promise<Milestone> { const milestone = this.getMilestone(milestoneId, projectId); for (const key of ["name", "description", "review"] as const) if (body[key] !== undefined) milestone[key] = text(body[key]); if (body.status !== undefined) milestone.status = text(body.status) as Milestone["status"]; if (body.target_at !== undefined) milestone.target_at = text(body.target_at) || null; if (body.progress !== undefined) milestone.progress = Math.max(0, Math.min(100, Number(body.progress) || 0)); if (body.progress_mode !== undefined) milestone.progress_mode = text(body.progress_mode) as Milestone["progress_mode"]; milestone.updated_at = nowIso(); const index = this.data.milestones.findIndex((item) => item.id === milestoneId); this.data.milestones[index] = milestone; await this.store.save(); return clone(milestone); }
+  listMilestones(projectId: string): Milestone[] { this.findProject(projectId); return sortedUpdated(this.data.milestones.filter((item) => item.project_id === projectId)).map((item) => this.getMilestone(item.id, projectId)); }
+  getMilestone(milestoneId: string, projectId?: string): Milestone {
+    const milestone = this.data.milestones.find((item) => item.id === milestoneId); if (!milestone) fail(404, "里程碑不存在"); if (projectId && milestone.project_id !== projectId) fail(404, "里程碑不属于当前项目");
+    const tickets = this.data.tickets.filter((item) => item.milestone_id === milestone.id); const completed = tickets.filter((item) => item.status === "completed").length;
+    const progress = milestone.progress_mode === "manual" ? milestone.progress : tickets.length ? Math.round(completed / tickets.length * 100) : milestone.progress;
+    return { ...clone(milestone), goal: milestone.goal ?? milestone.description, review_markdown: milestone.review_markdown ?? milestone.review, completion_criteria: milestone.completion_criteria ?? "", risk_note: milestone.risk_note ?? "", owner_name: milestone.owner_name ?? null, manual_progress: milestone.manual_progress ?? milestone.progress, ticket_count: tickets.length, completed_ticket_count: completed, progress };
+  }
+  async createMilestone(projectId: string, body: Record<string, unknown>): Promise<Milestone> {
+    this.findProject(projectId); const name = text(body.name); if (!name) fail(422, "里程碑名称不能为空");
+    const goal = text(body.goal || body.description); const rawMode = text(body.progress_mode) || "ticket_count"; const progressMode: Milestone["progress_mode"] = rawMode === "manual" ? "manual" : "ticket";
+    const rawStatus = text(body.status); const status = rawStatus === "planned" ? "pending" : rawStatus === "active" ? "in_progress" : (rawStatus || "pending");
+    const manualProgress = Math.max(0, Math.min(100, Number(body.manual_progress ?? body.progress) || 0));
+    const milestone: Milestone = { id: id(), project_id: projectId, name, description: goal, goal, status: status as Milestone["status"], owner_name: text(body.owner_name) || null, target_at: text(body.target_at) || null, progress_mode: progressMode, progress: progressMode === "manual" ? manualProgress : 0, manual_progress: manualProgress, completion_criteria: text(body.completion_criteria), risk_note: text(body.risk_note), review: text(body.review_markdown || body.review), review_markdown: text(body.review_markdown || body.review), notification_sent_at: null, created_at: nowIso(), updated_at: nowIso() };
+    this.data.milestones.unshift(milestone); await this.store.save(); return this.getMilestone(milestone.id, projectId);
+  }
+  async updateMilestone(milestoneId: string, body: Record<string, unknown>, projectId?: string): Promise<Milestone> {
+    const milestone = this.getMilestone(milestoneId, projectId);
+    if (body.name !== undefined) milestone.name = text(body.name);
+    if (body.description !== undefined || body.goal !== undefined) { const goal = text(body.goal === undefined ? body.description : body.goal); milestone.description = goal; milestone.goal = goal; }
+    if (body.owner_name !== undefined) milestone.owner_name = text(body.owner_name) || null;
+    if (body.completion_criteria !== undefined) milestone.completion_criteria = text(body.completion_criteria);
+    if (body.risk_note !== undefined) milestone.risk_note = text(body.risk_note);
+    if (body.review !== undefined || body.review_markdown !== undefined) { const review = text(body.review_markdown === undefined ? body.review : body.review_markdown); milestone.review = review; milestone.review_markdown = review; }
+    if (body.status !== undefined) { const rawStatus = text(body.status); milestone.status = (rawStatus === "planned" ? "pending" : rawStatus === "active" ? "in_progress" : rawStatus) as Milestone["status"]; }
+    if (body.target_at !== undefined) milestone.target_at = text(body.target_at) || null;
+    if (body.progress_mode !== undefined) milestone.progress_mode = text(body.progress_mode) === "manual" ? "manual" : "ticket";
+    if (body.manual_progress !== undefined || body.progress !== undefined) { const progress = Math.max(0, Math.min(100, Number(body.manual_progress ?? body.progress) || 0)); milestone.manual_progress = progress; if (milestone.progress_mode === "manual") milestone.progress = progress; }
+    milestone.updated_at = nowIso(); const index = this.data.milestones.findIndex((item) => item.id === milestoneId); this.data.milestones[index] = milestone; await this.store.save(); return this.getMilestone(milestone.id, projectId);
+  }
   async deleteMilestone(milestoneId: string, projectId?: string): Promise<void> { this.getMilestone(milestoneId, projectId); this.data.milestones = this.data.milestones.filter((item) => item.id !== milestoneId); for (const ticket of this.data.tickets) if (ticket.milestone_id === milestoneId) ticket.milestone_id = null; await this.store.save(); }
 
   listSavedViews(): SavedView[] { return sortedUpdated(this.data.saved_views); }
@@ -342,7 +469,7 @@ export class WorkflowTicketsService {
   async updateAutomation(ruleId: string, body: Record<string, unknown>): Promise<AutomationRule> { const item = this.data.automations.find((value) => value.id === ruleId); if (!item) fail(404, "自动化规则不存在"); if (body.name !== undefined) item.name = text(body.name); if (body.enabled !== undefined) item.enabled = Boolean(body.enabled); if (body.trigger !== undefined) item.trigger = text(body.trigger); if (body.conditions !== undefined) item.conditions = asObject(body.conditions); if (body.actions !== undefined) item.actions = asArray(body.actions).filter((value): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)); item.updated_at = nowIso(); await this.store.save(); return clone(item); }
   async deleteAutomation(ruleId: string): Promise<void> { if (!this.data.automations.some((item) => item.id === ruleId)) fail(404, "自动化规则不存在"); this.data.automations = this.data.automations.filter((item) => item.id !== ruleId); await this.store.save(); }
 
-  listResources(projectId?: string, ticketId?: string, milestoneId?: string): RelatedResource[] { return this.data.resources.filter((resource) => (!projectId || resource.project_id === projectId) && (!ticketId || resource.ticket_ids.includes(ticketId)) && (!milestoneId || resource.milestone_ids.includes(milestoneId))).map(clone); }
+  listResources(projectId?: string, ticketId?: string, milestoneId?: string): RelatedResource[] { return this.data.resources.filter((resource) => { const projectIds = resource.project_ids?.length ? resource.project_ids : resource.project_id ? [resource.project_id] : []; return (!projectId || projectIds.includes(projectId)) && (!ticketId || resource.ticket_ids.includes(ticketId)) && (!milestoneId || resource.milestone_ids.includes(milestoneId)); }).map((resource) => clone({ ...resource, project_id: resource.project_id ?? resource.project_ids?.[0] ?? null, project_ids: resource.project_ids ?? (resource.project_id ? [resource.project_id] : []), resource_type: resource.resource_type ?? resource.type, external_url: resource.external_url ?? resource.url, identifier: resource.identifier ?? "" })); }
   async createResource(body: Record<string, unknown>): Promise<RelatedResource> { const resource = this.normalizeResource(body); this.data.resources.unshift(resource); this.event("resource_created", `资源「${resource.name}」已创建`, undefined, undefined, resource.project_id); await this.store.save(); return clone(resource); }
   async updateResource(resourceId: string, body: Record<string, unknown>): Promise<RelatedResource> { const resource = this.data.resources.find((item) => item.id === resourceId); if (!resource) fail(404, "关联资源不存在"); Object.assign(resource, this.normalizeResource(body, resource)); resource.updated_at = nowIso(); await this.store.save(); return clone(resource); }
   async deleteResource(resourceId: string): Promise<void> { if (!this.data.resources.some((item) => item.id === resourceId)) fail(404, "关联资源不存在"); this.data.resources = this.data.resources.filter((item) => item.id !== resourceId); await this.store.save(); }
@@ -552,7 +679,13 @@ export class WorkflowTicketsService {
   private attachmentRead(attachment: Attachment): Record<string, unknown> { return { id: attachment.id, name: attachment.filename, filename: attachment.filename, mime_type: attachment.mime_type, size: attachment.size, url: `/api/v1/modules/${this.moduleId}/attachments/${attachment.id}` }; }
   private resourceRead(resource: { id: string; token: string; filename: string; mime_type: string; content: string; expires_at: string; max_access_count?: number | null; access_count: number }): Record<string, unknown> { return { id: resource.id, url: `/api/v1/modules/${this.moduleId}/temp/${resource.token}`, filename: resource.filename, mime_type: resource.mime_type, content: resource.content, expires_at: resource.expires_at, max_access_count: resource.max_access_count ?? null, access_count: resource.access_count }; }
   private mask(value: unknown, key = ""): unknown { if (/password|passwd|secret|token|api[_-]?key|credential/i.test(key)) return "******"; if (Array.isArray(value)) return value.map((item) => this.mask(item, key)); if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, this.mask(item, name)])); return value; }
-  private normalizeResource(body: Record<string, unknown>, existing?: RelatedResource): RelatedResource { const now = nowIso(); return { id: existing?.id ?? id(), project_id: body.project_id === undefined ? existing?.project_id ?? null : text(body.project_id) || null, name: text(body.name) || existing?.name || "未命名资源", type: text(body.type) || existing?.type || "link", url: body.url === undefined ? existing?.url ?? null : text(body.url) || null, description: body.description === undefined ? existing?.description || "" : text(body.description), attributes: body.attributes === undefined ? existing?.attributes ?? {} : asObject(body.attributes), ticket_ids: body.ticket_ids === undefined ? existing?.ticket_ids ?? [] : normalizeTags(body.ticket_ids), milestone_ids: body.milestone_ids === undefined ? existing?.milestone_ids ?? [] : normalizeTags(body.milestone_ids), created_at: existing?.created_at ?? now, updated_at: now }; }
+  private normalizeResource(body: Record<string, unknown>, existing?: RelatedResource): RelatedResource {
+    const now = nowIso(); const projectId = body.project_id === undefined ? (existing?.project_id ?? (text(asArray(body.project_ids)[0]) || null)) : text(body.project_id) || null;
+    const type = text(body.type || body.resource_type) || existing?.type || "custom";
+    const identifier = body.identifier === undefined ? existing?.identifier ?? "" : text(body.identifier);
+    const url = body.url === undefined && body.external_url === undefined ? existing?.url ?? existing?.external_url ?? null : text(body.url || body.external_url) || null;
+    return { id: existing?.id ?? id(), project_id: projectId, project_ids: projectId ? [projectId] : [], name: text(body.name) || existing?.name || "未命名资源", type, resource_type: type, identifier, url, external_url: url, description: body.description === undefined ? existing?.description || "" : text(body.description), attributes: body.attributes === undefined ? existing?.attributes ?? {} : asObject(body.attributes), ticket_ids: body.ticket_ids === undefined ? existing?.ticket_ids ?? [] : normalizeTags(body.ticket_ids), milestone_ids: body.milestone_ids === undefined ? existing?.milestone_ids ?? [] : normalizeTags(body.milestone_ids), created_at: existing?.created_at ?? now, updated_at: now };
+  }
   private normalizeSchedule(workflowId: string, body: Record<string, unknown>, existing?: Schedule): Schedule {
     const type = (text(body.schedule_type) || existing?.schedule_type || "once") as Schedule["schedule_type"];
     if (!["once", "daily", "weekly", "monthly", "cron"].includes(type)) fail(422, "计划类型无效");

@@ -146,9 +146,76 @@ export function TicketFormRenderer({ api, ticket, node, definition, workflowNode
 function nodeKind(node: WorkflowNode, incoming: number, outgoing: number): "start" | "merge" | "parallel" | "end" | "node" { if (incoming === 0) return "start"; if (outgoing === 0) return "end"; if (incoming > 1) return "merge"; if (outgoing > 1) return "parallel"; return "node"; }
 
 export function BranchTimeline({ nodes, edges, selectedNodeId, onSelect }: { nodes: TicketNode[]; edges: WorkflowEdge[]; selectedNodeId?: string; onSelect: (nodeId: string) => void }) {
-  const levels = useMemo(() => { const incoming = new Map(nodes.map((node) => [node.node_id, 0])); const outgoing = new Map(nodes.map((node) => [node.node_id, 0])); for (const edge of edges) { incoming.set(edge.target_node_id, (incoming.get(edge.target_node_id) ?? 0) + 1); outgoing.set(edge.source_node_id, (outgoing.get(edge.source_node_id) ?? 0) + 1); } const level = new Map<string, number>(); const queue = nodes.filter((node) => (incoming.get(node.node_id) ?? 0) === 0).map((node) => node.node_id); queue.forEach((id) => level.set(id, 0)); while (queue.length) { const source = queue.shift()!; for (const edge of edges.filter((item) => item.source_node_id === source)) { const next = Math.max(level.get(edge.target_node_id) ?? 0, (level.get(source) ?? 0) + 1); level.set(edge.target_node_id, next); queue.push(edge.target_node_id); } } const groups = new Map<number, TicketNode[]>(); for (const node of nodes) { const index = level.get(node.node_id) ?? 0; groups.set(index, [...(groups.get(index) ?? []), node]); } return [...groups.entries()].sort(([left], [right]) => left - right).map(([, items]) => items); }, [nodes, edges]);
-  const counts = useMemo(() => { const incoming = new Map<string, number>(); const outgoing = new Map<string, number>(); for (const edge of edges) { incoming.set(edge.target_node_id, (incoming.get(edge.target_node_id) ?? 0) + 1); outgoing.set(edge.source_node_id, (outgoing.get(edge.source_node_id) ?? 0) + 1); } return { incoming, outgoing }; }, [edges]);
-  return <div className="tn-workflow-tickets-branch-timeline grid gap-4" aria-label="流程时间轴">{levels.map((level, index) => <div key={index} className="tn-workflow-tickets-branch-level grid gap-3"><div className="tn-workflow-tickets-branch-level-heading flex min-h-6 items-center gap-2 text-xs text-muted-foreground"><span className="tn-workflow-tickets-branch-level-label font-mono tabular-nums">阶段 {String(index + 1).padStart(2, "0")}</span><Separator className="flex-1" />{level.length > 1 ? <span>{level.length} 条并行分支</span> : null}</div><div className="tn-workflow-tickets-branch-level-items grid gap-2">{level.map((node) => { const selectable = ["completed", "ready", "in_progress", "blocked", "waiting"].includes(node.status); const kind = nodeKind({ id: node.node_id, name: node.name, key: node.key, description: "", position: { x: 0, y: 0 }, node_type: "general", form_schema: { fields: [] }, completion_rule: {}, actions: [], inputs: [], outputs: [] }, counts.incoming.get(node.node_id) ?? 0, counts.outgoing.get(node.node_id) ?? 0); return <button key={node.id} type="button" disabled={!selectable} onClick={() => onSelect(node.id)} className={cn("tn-workflow-tickets-branch-node grid min-w-0 gap-2 rounded-md border p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", node.id === selectedNodeId ? "is-selected border-primary bg-accent" : "border-border bg-card", `is-${node.status}`, selectable ? "hover:border-primary/60 hover:bg-accent/50" : "cursor-not-allowed opacity-60")} aria-current={node.id === selectedNodeId ? "step" : undefined}><span className="flex items-center justify-between gap-2"><span className="flex min-w-0 items-center gap-2"><span className="tn-workflow-tickets-branch-node-icon flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-[10px] font-semibold text-primary">{kind === "start" ? "起" : kind === "end" ? "终" : kind === "merge" ? "合" : kind === "parallel" ? "分" : index + 1}</span><span className="truncate text-sm font-semibold">{node.name}</span></span><Badge variant={node.id === selectedNodeId ? "default" : ["completed", "ready", "in_progress", "blocked"].includes(node.status) ? "secondary" : "outline"}>{node.id === selectedNodeId ? "当前节点" : statusLabels[node.status] ?? node.status}</Badge></span><span className="text-xs leading-5 text-muted-foreground">{node.key || "按节点配置处理当前任务。"}</span><span className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span>{node.values && Object.keys(node.values).length ? `${Object.keys(node.values).length} 个字段` : "暂无字段"}</span><span>{counts.outgoing.get(node.node_id) ?? 0} 条后继</span></span>{node.blocked_reason ? <span className="truncate text-xs text-destructive">{node.blocked_reason}</span> : null}</button>; })}</div></div>)}</div>;
+  const levels = useMemo(() => {
+    const incoming = new Map(nodes.map((node) => [node.node_id, 0]));
+    const outgoing = new Map(nodes.map((node) => [node.node_id, 0]));
+    for (const edge of edges) {
+      incoming.set(edge.target_node_id, (incoming.get(edge.target_node_id) ?? 0) + 1);
+      outgoing.set(edge.source_node_id, (outgoing.get(edge.source_node_id) ?? 0) + 1);
+    }
+    const level = new Map<string, number>();
+    const queue = nodes.filter((node) => (incoming.get(node.node_id) ?? 0) === 0).map((node) => node.node_id);
+    queue.forEach((id) => level.set(id, 0));
+    while (queue.length) {
+      const source = queue.shift()!;
+      for (const edge of edges.filter((item) => item.source_node_id === source)) {
+        const next = Math.max(level.get(edge.target_node_id) ?? 0, (level.get(source) ?? 0) + 1);
+        level.set(edge.target_node_id, next);
+        queue.push(edge.target_node_id);
+      }
+    }
+    const groups = new Map<number, TicketNode[]>();
+    for (const node of nodes) {
+      const index = level.get(node.node_id) ?? 0;
+      groups.set(index, [...(groups.get(index) ?? []), node]);
+    }
+    return [...groups.entries()].sort(([left], [right]) => left - right).map(([, items]) => items);
+  }, [nodes, edges]);
+  const counts = useMemo(() => {
+    const incoming = new Map<string, number>();
+    const outgoing = new Map<string, number>();
+    for (const edge of edges) {
+      incoming.set(edge.target_node_id, (incoming.get(edge.target_node_id) ?? 0) + 1);
+      outgoing.set(edge.source_node_id, (outgoing.get(edge.source_node_id) ?? 0) + 1);
+    }
+    return { incoming, outgoing };
+  }, [edges]);
+
+  return (
+    <div className="tn-workflow-tickets-branch-timeline grid gap-3" aria-label="流程时间轴">
+      {levels.map((level, index) => (
+        <section key={index} className="tn-workflow-tickets-branch-level grid gap-2.5">
+          <div className="tn-workflow-tickets-branch-level-heading flex min-h-5 items-center gap-2 text-xs text-muted-foreground">
+            <span className="tn-workflow-tickets-branch-level-label font-mono tabular-nums">阶段 {String(index + 1).padStart(2, "0")}</span>
+            <Separator className="flex-1" />
+            {level.length > 1 ? <span className="shrink-0 text-[11px]">{level.length} 条并行分支</span> : null}
+          </div>
+          <div className="tn-workflow-tickets-branch-level-items grid gap-2">
+            {level.map((node) => {
+              const selectable = ["completed", "ready", "in_progress", "blocked", "waiting"].includes(node.status);
+              const kind = nodeKind({ id: node.node_id, name: node.name, key: node.key, description: "", position: { x: 0, y: 0 }, node_type: "general", form_schema: { fields: [] }, completion_rule: {}, actions: [], inputs: [], outputs: [] }, counts.incoming.get(node.node_id) ?? 0, counts.outgoing.get(node.node_id) ?? 0);
+              const fieldCount = node.values && Object.keys(node.values).length ? `${Object.keys(node.values).length} 个字段` : "暂无字段";
+              const successorCount = `${counts.outgoing.get(node.node_id) ?? 0} 条后继`;
+              return <button key={node.id} type="button" disabled={!selectable} onClick={() => onSelect(node.id)} className={cn("tn-workflow-tickets-branch-node grid min-w-0 gap-1.5 rounded-md border px-2.5 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring", node.id === selectedNodeId ? "is-selected border-primary bg-accent" : "border-border bg-card", `is-${node.status}`, selectable ? "hover:border-primary/60 hover:bg-accent/50" : "cursor-not-allowed opacity-60")} aria-current={node.id === selectedNodeId ? "step" : undefined}>
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="tn-workflow-tickets-branch-node-icon flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-[10px] font-semibold text-primary">{kind === "start" ? "起" : kind === "end" ? "终" : kind === "merge" ? "合" : kind === "parallel" ? "分" : index + 1}</span>
+                    <span className="min-w-0 truncate text-sm font-semibold">{node.name}</span>
+                  </span>
+                  <Badge className="shrink-0 px-1.5 py-0.5 text-[10px]" variant={node.id === selectedNodeId ? "default" : ["completed", "ready", "in_progress", "blocked"].includes(node.status) ? "secondary" : "outline"}>{node.id === selectedNodeId ? "当前节点" : statusLabels[node.status] ?? node.status}</Badge>
+                </span>
+                <span className="flex min-w-0 items-center justify-between gap-3 text-[11px] leading-4 text-muted-foreground">
+                  <span className="min-w-0 truncate">{node.key || "按节点配置处理当前任务。"}</span>
+                  <span className="shrink-0 tabular-nums">{fieldCount} · {successorCount}</span>
+                </span>
+                {node.blocked_reason ? <span className="truncate text-[11px] text-destructive">{node.blocked_reason}</span> : null}
+              </button>;
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
 }
 
 export function NodeRuleSummary({ definition, values, ticket }: { definition: WorkflowNode; values: Values; ticket: Ticket }) { const nodes = Object.fromEntries(ticket.node_instances.map((node) => [node.node_id, { values: node.values, status: node.status }])); const evaluation = evaluateCompletionRule(definition.completion_rule, values, nodes); if (evaluation.passed) return <Alert><RiCheckLine /><AlertDescription>完成条件已满足，可以完成此节点。</AlertDescription></Alert>; return <Alert variant="destructive"><RiLockLine /><div><AlertTitle>完成条件未满足</AlertTitle><AlertDescription><ul className="mt-1 list-disc pl-4">{evaluation.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></AlertDescription></div></Alert>; }
