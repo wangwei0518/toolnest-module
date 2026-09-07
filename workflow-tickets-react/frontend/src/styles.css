@@ -185,32 +185,6 @@
   border-color: var(--border);
 }
 
-.tn-workflow-tickets-detail-meta-item {
-  min-height: calc(var(--spacing) * 9);
-  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
-  border-left: 1px solid var(--border);
-}
-
-.tn-workflow-tickets-detail-meta-item:first-child {
-  border-left: 0;
-}
-
-.tn-workflow-tickets-detail-meta-item:has(+ .tn-workflow-tickets-detail-meta-item) {
-  min-width: 0;
-}
-
-.tn-workflow-tickets-detail-meta-item:hover {
-  background: var(--accent);
-}
-
-.tn-workflow-tickets-detail-meta-content {
-  min-width: 0;
-}
-
-.tn-workflow-tickets-detail-meta-icon {
-  color: var(--muted-foreground);
-}
-
 .tn-workflow-tickets-branch-timeline {
   min-width: 0;
 }
@@ -260,18 +234,6 @@
 .tn-workflow-tickets-branch-node.is-selected {
   border-color: var(--primary);
   background: var(--accent);
-}
-
-@media (max-width: 767px) {
-  .tn-workflow-tickets-detail-meta-item,
-  .tn-workflow-tickets-detail-meta-item:first-child {
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-
-  .tn-workflow-tickets-detail-meta-item:first-child {
-    border-top: 0;
-  }
 }
 
 /* Workflow designer: keep the legacy Vue workspace geometry while using the React token set. */
