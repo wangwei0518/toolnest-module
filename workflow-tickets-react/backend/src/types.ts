@@ -19,9 +19,12 @@ export interface FormField {
   description?: string;
   placeholder?: string;
   required?: boolean;
+  readonly?: boolean;
+  hidden?: boolean;
   default?: unknown;
   default_template?: string;
   options?: FormOption[];
+  items?: Array<{ id: string; label: string }>;
   config?: Record<string, unknown>;
   reference?: { path?: string; mode?: string };
 }
@@ -155,14 +158,20 @@ export interface Ticket {
   workflow_version_id: string;
   workflow_name: string;
   project_id?: string | null;
+  project_name?: string;
   milestone_id?: string | null;
+  milestone_name?: string;
   created_by: string;
   owner_id?: string | null;
   owner_name?: string | null;
+  weight?: number;
   due_at?: string | null;
   reminder_at?: string | null;
   reminder_sent_at?: string | null;
   attachments?: Array<Record<string, unknown>>;
+  parent_ticket_id?: string | null;
+  related_ticket_ids?: string[];
+  blocked_by_ticket_ids?: string[];
   created_at: string;
   updated_at: string;
   node_instances: TicketNode[];

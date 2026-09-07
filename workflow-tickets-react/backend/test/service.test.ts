@@ -71,6 +71,27 @@ describe("workflow ticket runtime", () => {
     );
   });
 
+  it("keeps project labels and ticket relations across create, update, and duplicate", async () => {
+    const service = await createService();
+    const workflow = service.listWorkflows()[0]!;
+    const project = await service.createProject({ name: "发布项目", status: "active" });
+    const milestone = await service.createMilestone(project.id, { name: "准备阶段" });
+    const related = await service.createTicket({ workflow_id: workflow.id, title: "关联工单" });
+    const ticket = await service.createTicket({ workflow_id: workflow.id, title: "主工单", project_id: project.id, milestone_id: milestone.id, weight: 7 });
+
+    assert.equal(ticket.project_name, "发布项目");
+    assert.equal(ticket.milestone_name, "准备阶段");
+    const updated = await service.updateTicket(ticket.id, { parent_ticket_id: related.id, related_ticket_ids: [related.id], blocked_by_ticket_ids: [related.id] });
+    assert.deepEqual(updated.related_ticket_ids, [related.id]);
+    assert.equal(updated.parent_ticket_id, related.id);
+
+    const duplicate = await service.duplicateTicket(ticket.id, { copy_project: true, copy_relations: true, copy_values: true });
+    assert.equal(duplicate.project_name, "发布项目");
+    assert.equal(duplicate.milestone_name, "准备阶段");
+    assert.deepEqual(duplicate.related_ticket_ids, [related.id]);
+    assert.equal(duplicate.parent_ticket_id, related.id);
+  });
+
   it("renders script resources safely and limits consumption", async () => {
     const service = await createService();
     const workflow = service.listWorkflows()[0]!;

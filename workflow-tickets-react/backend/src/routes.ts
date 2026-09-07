@@ -19,6 +19,10 @@ function actor(request: FastifyRequest): string {
   return typeof request.headers["x-toolnest-user-name"] === "string" ? request.headers["x-toolnest-user-name"] : "当前用户";
 }
 
+function actorId(request: FastifyRequest): string {
+  return typeof request.headers["x-toolnest-user-id"] === "string" ? request.headers["x-toolnest-user-id"] : "";
+}
+
 function sendError(reply: FastifyReply, error: unknown) {
   if (error instanceof DomainError) return reply.code(error.statusCode).send({ code: error.statusCode, message: error.message, data: null });
   const message = error instanceof Error ? error.message : String(error);
@@ -55,7 +59,7 @@ export function registerRoutes(app: FastifyInstance, service: WorkflowTicketsSer
   app.get("/workflows/:workflowId/schedules/:scheduleId/runs", (request, reply) => run(reply, () => service.listScheduleRuns(params(request).scheduleId, Number((request.query as Body).limit) || 30)));
   app.post("/workflows/:workflowId/schedules/:scheduleId/run", (request, reply) => run(reply, () => service.runScheduleNow(params(request).scheduleId)));
 
-  app.get("/tickets", (request, reply) => run(reply, () => service.listTickets(request.query as Body)));
+  app.get("/tickets", (request, reply) => { const query = request.query as Body; return run(reply, () => service.listTickets({ ...query, owner_id: query.owner_id ?? actorId(request), owner_name: query.owner_name ?? actor(request) })); });
   app.post("/tickets", (request, reply) => run(reply, () => service.createTicket(body(request), actor(request))));
   app.put("/tickets/:ticketId", (request, reply) => run(reply, () => service.updateTicket(params(request).ticketId, body(request))));
   app.get("/tickets/:ticketId", (request, reply) => run(reply, () => service.getTicket(params(request).ticketId)));

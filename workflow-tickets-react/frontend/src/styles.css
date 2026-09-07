@@ -23,6 +23,32 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+.tn-workflow-tickets-react__ticket-tab {
+  min-height: calc(var(--spacing) * 8);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  color: var(--muted-foreground);
+  background: transparent;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.tn-workflow-tickets-react__ticket-tab:hover {
+  color: var(--foreground);
+}
+
+.tn-workflow-tickets-react__ticket-tab.is-active {
+  border-bottom-color: var(--primary);
+  color: var(--foreground);
+}
+
+.tn-workflow-tickets-react__ticket-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 .tn-workflow-tickets-react {
   box-sizing: border-box;
   display: flex;
@@ -122,6 +148,129 @@
 
   .tn-workflow-tickets-react__navigation {
     flex-wrap: wrap;
+  }
+}
+
+/* Ticket list/detail surfaces use the same shadcn hierarchy as the platform. */
+.tn-workflow-tickets-page-shell {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-react:has([data-slot="table"]) .tn-workflow-tickets-page-shell {
+  gap: calc(var(--spacing) * 4);
+}
+
+.tn-workflow-tickets-react:has([data-slot="table"]) [data-slot="card"] {
+  border-color: var(--border);
+}
+
+.tn-workflow-tickets-react:has([data-slot="table"]) [data-slot="table-row"] {
+  cursor: pointer;
+}
+
+.tn-workflow-tickets-react:has([data-slot="table"]) [data-slot="table-row"]:hover {
+  background: var(--accent);
+}
+
+.tn-workflow-tickets-react:has([data-slot="table"]) [data-slot="table-cell"] {
+  height: calc(var(--spacing) * 14);
+  vertical-align: top;
+}
+
+.tn-workflow-tickets-react:has(.tn-workflow-tickets-branch-timeline) .tn-workflow-tickets-page-shell {
+  gap: calc(var(--spacing) * 4);
+}
+
+.tn-workflow-tickets-react:has(.tn-workflow-tickets-branch-timeline) [data-slot="card"] {
+  border-color: var(--border);
+}
+
+.tn-workflow-tickets-detail-meta-item {
+  min-height: calc(var(--spacing) * 9);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border-left: 1px solid var(--border);
+}
+
+.tn-workflow-tickets-detail-meta-item:first-child {
+  border-left: 0;
+}
+
+.tn-workflow-tickets-detail-meta-item:has(+ .tn-workflow-tickets-detail-meta-item) {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-detail-meta-item:hover {
+  background: var(--accent);
+}
+
+.tn-workflow-tickets-detail-meta-content {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-detail-meta-icon {
+  color: var(--muted-foreground);
+}
+
+.tn-workflow-tickets-branch-timeline {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-branch-level {
+  position: relative;
+  min-width: 0;
+  padding-left: calc(var(--spacing) * 4);
+}
+
+.tn-workflow-tickets-branch-level::before {
+  position: absolute;
+  top: calc(var(--spacing) * 5);
+  bottom: calc(var(--spacing) * -4);
+  left: calc(var(--spacing) * 1.25);
+  width: 1px;
+  background: var(--border);
+  content: "";
+}
+
+.tn-workflow-tickets-branch-level:last-child::before {
+  bottom: calc(100% - var(--spacing) * 5);
+}
+
+.tn-workflow-tickets-branch-level::after {
+  position: absolute;
+  top: calc(var(--spacing) * 4.25);
+  left: calc(var(--spacing) * 0.75);
+  width: calc(var(--spacing) * 1.25);
+  height: calc(var(--spacing) * 1.25);
+  border: 2px solid var(--card);
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+  content: "";
+}
+
+.tn-workflow-tickets-branch-level-items {
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+}
+
+.tn-workflow-tickets-branch-node {
+  min-width: 0;
+}
+
+.tn-workflow-tickets-branch-node.is-selected {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+
+@media (max-width: 767px) {
+  .tn-workflow-tickets-detail-meta-item,
+  .tn-workflow-tickets-detail-meta-item:first-child {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .tn-workflow-tickets-detail-meta-item:first-child {
+    border-top: 0;
   }
 }
 
