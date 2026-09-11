@@ -1,12 +1,133 @@
-import { useEffect, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
-import { RiInboxLine } from "@remixicon/react";
+import { RiArrowLeftSLine, RiBarChartLine, RiCalendarLine, RiCalendarScheduleLine, RiFileTextLine, RiFlagLine, RiFolderLine, RiGitBranchLine, RiInboxLine, RiLayoutGridLine, RiLinkM, RiSettings3Line, RiTimeLine } from "@remixicon/react";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { navigation } from "../menu";
 
+export type ModulePageMeta = {
+  title: string;
+  description?: string;
+  badge?: ReactNode;
+};
+
+type ModulePageMetaContextValue = {
+  setPageMeta: (meta: ModulePageMeta) => void;
+};
+
+const ModulePageMetaContext = createContext<ModulePageMetaContextValue | null>(null);
+
+export function useModulePageMeta() {
+  const context = useContext(ModulePageMetaContext);
+  if (!context) throw new Error("useModulePageMeta 必须在 ModuleLayout 内使用。");
+  return context;
+}
+
+function resolvePageMeta(relativePath: string): ModulePageMeta {
+  if (!relativePath || relativePath === "overview") return { title: "总览", description: "从待办、项目和动态开始推进工作。" };
+  if (relativePath === "inbox") return { title: "收件箱", description: "先快速记录，再整理成可执行工单。" };
+  if (relativePath === "projects") return { title: "项目", description: "围绕目标组织工单、里程碑和复盘数据。" };
+  if (relativePath === "projects/new") return { title: "新建项目", description: "为一组关联工单建立协作上下文。" };
+  if (/^projects\/[^/]+\/milestones\/[^/]+$/.test(relativePath)) return { title: "里程碑详情", description: "查看阶段目标、工单进度与风险复盘。" };
+  if (/^projects\/[^/]+$/.test(relativePath)) return { title: "项目详情", description: "查看项目进展、工单、里程碑和复盘。" };
+  if (relativePath === "create" || relativePath === "tickets/new") return { title: "新建工单", description: "基于已发布模板创建一个新的运行实例。" };
+  if (relativePath === "tickets") return { title: "工单", description: "查询、筛选并推进所有运行中的工单。" };
+  if (/^tickets\/[^/]+$/.test(relativePath)) return { title: "工单详情", description: "查看工单节点、表单与流程执行状态。" };
+  if (relativePath === "workflows") return { title: "工单模板", description: "定义可复用的节点、表单、规则和分支。" };
+  if (relativePath === "workflows/new") return { title: "新建工单模板", description: "先定义基本信息，再配置节点和连接关系。" };
+  if (relativePath.endsWith("/versions")) return { title: "版本记录", description: "每个工单绑定创建时的不可变版本快照。" };
+  if (relativePath.includes("/designer/form/")) return { title: "表单设计器", description: "配置字段类型、默认值和前序引用；发布版本只读。" };
+  if (relativePath.includes("/designer/rules/")) return { title: "完成规则", description: "使用 AND/OR 组合规则；最终判定由后端运行时执行。" };
+  if (relativePath.includes("/designer")) return { title: "模板设计器", description: "配置模板节点、字段和流程分支。" };
+  if (relativePath === "schedules" || relativePath === "schedules/new" || /^schedules\/[^/]+$/.test(relativePath)) return { title: "定时任务", description: "按计划从已发布模板自动创建工单。" };
+  if (relativePath === "settings") return { title: "设置", description: "调整附件和临时执行资源策略。" };
+  return { title: "工单模板", description: "工单、项目与流程执行中心" };
+}
+
+function ModuleNavigationIcon({ itemKey }: { itemKey: string }) {
+  if (itemKey === "overview") return <RiFlagLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "inbox") return <RiInboxLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "projects") return <RiFolderLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "tickets") return <RiFileTextLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "workspace") return <RiLayoutGridLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "workflows") return <RiGitBranchLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "schedules") return <RiCalendarScheduleLine data-icon="inline-start" aria-hidden="true" />;
+  return <RiSettings3Line data-icon="inline-start" aria-hidden="true" />;
+}
+
+const projectNavigation = [
+  { key: "overview", label: "概览" },
+  { key: "tickets", label: "工单" },
+  { key: "milestones", label: "里程碑" },
+  { key: "analysis", label: "分析" },
+  { key: "activity", label: "动态" },
+  { key: "resources", label: "资源" },
+  { key: "notes", label: "注意事项" },
+  { key: "settings", label: "设置" },
+] as const;
+
+function ProjectNavigationIcon({ itemKey }: { itemKey: string }) {
+  if (itemKey === "overview") return <RiFlagLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "tickets") return <RiFileTextLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "milestones") return <RiCalendarLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "analysis") return <RiBarChartLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "activity") return <RiTimeLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "resources") return <RiLinkM data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "notes") return <RiFileTextLine data-icon="inline-start" aria-hidden="true" />;
+  return <RiSettings3Line data-icon="inline-start" aria-hidden="true" />;
+}
+
+type ProjectContext = { projectId: string; activeKey: string; backPath: string; backLabel: string };
+
+function resolveProjectContext(relativePath: string, query: Record<string, string>): ProjectContext | null {
+  const parts = relativePath.split("/").filter(Boolean);
+  if (parts[0] !== "projects" || !parts[1] || parts[1] === "new") return null;
+  const isMilestoneDetail = parts.length === 4 && parts[2] === "milestones" && Boolean(parts[3]);
+  if (parts.length !== 2 && !isMilestoneDetail) return null;
+  const requestedTab = query.tab === "review" ? "notes" : query.tab || "overview";
+  const activeKey = isMilestoneDetail || !projectNavigation.some((item) => item.key === requestedTab) ? (isMilestoneDetail ? "milestones" : "overview") : requestedTab;
+  return {
+    projectId: parts[1],
+    activeKey,
+    backPath: isMilestoneDetail ? `/modules/workflow-tickets-react/projects/${parts[1]}?tab=milestones` : "/modules/workflow-tickets-react/projects",
+    backLabel: isMilestoneDetail ? "返回项目里程碑" : "返回项目列表",
+  };
+}
+
+function ProjectNavigation({ projectId, activeKey, router }: { projectId: string; activeKey: string; router: ToolNestModuleRouteRenderProps["router"] }) {
+  return <Tabs value={activeKey} onValueChange={(value) => { if (value === null) return; void router.push(`/modules/workflow-tickets-react/projects/${projectId}${value === "overview" ? "" : `?tab=${value}`}`); }} className="max-w-full min-w-0"><TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">{projectNavigation.map((item) => <TabsTrigger key={item.key} value={item.key}><ProjectNavigationIcon itemKey={item.key} />{item.label}</TabsTrigger>)}</TabsList></Tabs>;
+}
+
+function ModulePageContent({ relativePath, query, activeKey, router, children }: { relativePath: string; query: Record<string, string>; activeKey: string; router: ToolNestModuleRouteRenderProps["router"]; children: ReactNode }) {
+  const [pageMeta, setPageMeta] = useState<ModulePageMeta>(() => resolvePageMeta(relativePath));
+  const projectContext = resolveProjectContext(relativePath, query);
+  return (
+    <ModulePageMetaContext.Provider value={{ setPageMeta }}>
+      <header className={`tn-workflow-tickets-react__header${relativePath === "create" || relativePath === "tickets/new" ? " tn-workflow-tickets-react__header--create" : ""}`}>
+        <div className="tn-workflow-tickets-react__identity">
+          {projectContext ? <Button type="button" size="icon-lg" variant="ghost" aria-label={projectContext.backLabel} onClick={() => void router.push(projectContext.backPath)}><RiArrowLeftSLine /></Button> : null}
+          <span className="tn-workflow-tickets-react__mark"><RiInboxLine aria-hidden="true" /></span>
+          <div className="grid min-w-0 gap-0.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <strong className="tn-workflow-tickets-react__title">{pageMeta.title}</strong>
+              {pageMeta.badge}
+            </div>
+            {pageMeta.description ? <span className="tn-workflow-tickets-react__description">{pageMeta.description}</span> : null}
+          </div>
+        </div>
+        <nav aria-label={projectContext ? "项目导航" : "工单模块导航"} className="tn-workflow-tickets-react__navigation">
+          {projectContext ? <ProjectNavigation projectId={projectContext.projectId} activeKey={projectContext.activeKey} router={router} /> : <Tabs value={activeKey} onValueChange={(value) => { if (value === null) return; const target = navigation.find((item) => item.key === value); if (!target) return; void router.push(`/modules/workflow-tickets-react${target.path ? `/${target.path}` : ""}`); }} className="max-w-full min-w-0"><TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">{navigation.map((item) => <TabsTrigger key={item.key} value={item.key}><ModuleNavigationIcon itemKey={item.key} />{item.label}</TabsTrigger>)}</TabsList></Tabs>}
+        </nav>
+      </header>
+      {children}
+    </ModulePageMetaContext.Provider>
+  );
+}
+
 export function ModuleLayout({
   path,
+  query,
   router,
   children,
 }: ToolNestModuleRouteRenderProps & { children: ReactNode }) {
@@ -28,36 +149,9 @@ export function ModuleLayout({
   }, [router]);
   return (
     <main className="tn-workflow-tickets-react">
-      <header className="tn-workflow-tickets-react__header">
-        <div className="tn-workflow-tickets-react__identity">
-          <span className="tn-workflow-tickets-react__mark"><RiInboxLine aria-hidden="true" /></span>
-          <div className="grid min-w-0 gap-0.5">
-            <strong className="tn-workflow-tickets-react__title">工单模板</strong>
-            <span className="tn-workflow-tickets-react__description">工单、项目与流程执行中心</span>
-          </div>
-        </div>
-        <nav aria-label="工单模块导航" className="tn-workflow-tickets-react__navigation">
-          <Tabs
-            value={activeKey}
-            onValueChange={(value) => {
-              if (value === null) return;
-              const target = navigation.find((item) => item.key === value);
-              if (!target) return;
-              void router.push(`/modules/workflow-tickets-react${target.path ? `/${target.path}` : ""}`);
-            }}
-            className="max-w-full min-w-0"
-          >
-            <TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">
-              {navigation.map((item) => (
-                <TabsTrigger key={item.key} value={item.key}>
-                  {item.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        </nav>
-      </header>
-      {children}
+      <ModulePageContent key={relativePath} relativePath={relativePath} query={query} activeKey={activeKey} router={router}>
+        {children}
+      </ModulePageContent>
     </main>
   );
 }

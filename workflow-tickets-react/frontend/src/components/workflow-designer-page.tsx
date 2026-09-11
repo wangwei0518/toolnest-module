@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import type { Workflow, WorkflowApi, WorkflowEdge, WorkflowNode } from "../api";
+import { useModulePageMeta } from "./module-layout";
 
 type Router = ToolNestModuleRouteRenderProps["router"];
 
@@ -133,6 +134,7 @@ function InspectorHelp({ label, hint }: { label: string; hint: string }) {
 }
 
 export function WorkflowDesignerPage({ api, router, params, query }: Props) {
+  const { setPageMeta } = useModulePageMeta();
   const workflowId = params.id || params.workflowId;
   const [workflow, setWorkflow] = useState<Workflow>();
   const [versionId, setVersionId] = useState(query.versionId || "");
@@ -156,6 +158,10 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const dragRef = useRef<{ pointerId: number; start: Point; origin: Point } | undefined>(undefined);
   const nodeDragRef = useRef<{ pointerId: number; nodeId: string; start: Point; origin: Point; nodes: WorkflowNode[] } | undefined>(undefined);
   const pendingNodesRef = useRef<WorkflowNode[] | undefined>(undefined);
+
+  useEffect(() => {
+    setPageMeta({ title: workflow?.name || "模板设计器", description: workflow?.description || "配置模板节点、字段和流程分支。" });
+  }, [setPageMeta, workflow]);
 
   const version = workflow?.versions.find((item) => item.id === versionId) ?? workflow?.versions.at(-1);
   const nodes = version?.nodes ?? [];

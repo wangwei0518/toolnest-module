@@ -38,7 +38,7 @@ export function registerRoutes(app: FastifyInstance, service: WorkflowTicketsSer
   app.get("/timeline", (request, reply) => {
     const query = request.query as Body;
     return run(reply, () => query.aggregate === "day"
-      ? service.timelineActivity(typeof query.since === "string" ? query.since : undefined, typeof query.until === "string" ? query.until : undefined, typeof query.timezone === "string" ? query.timezone : "UTC")
+      ? service.timelineActivity(typeof query.since === "string" ? query.since : undefined, typeof query.until === "string" ? query.until : undefined, typeof query.timezone === "string" ? query.timezone : "UTC", typeof query.project_id === "string" ? query.project_id : undefined)
       : service.timeline(typeof query.ticket_id === "string" ? query.ticket_id : undefined, Number(query.limit) || 30, typeof query.project_id === "string" ? query.project_id : undefined, typeof query.milestone_id === "string" ? query.milestone_id : undefined));
   });
 

@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "workflow-tickets-react",
   "name": "工单模板",
-  "version": "0.1.46",
+  "version": "0.1.72",
   "description": "工作流工单与项目协作",
   "author": "ToolNest",
   "icon": "box",

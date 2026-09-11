@@ -49,6 +49,8 @@ import {
 } from "@/components/ui/dialog";
 
 import { cn } from "@/lib/utils";
+import { OverviewStatBar } from "../shared/components/overview-stat-bar";
+import { ticketStatusRailClass } from "./ticket-status-rail";
 import {
   type Overview,
   type Milestone,
@@ -59,6 +61,7 @@ import {
   type Workflow,
   type WorkflowApi,
 } from "../api";
+import { useModulePageMeta } from "./module-layout";
 
 type OverviewPageProps = Pick<ToolNestModuleRouteRenderProps, "router"> & {
   api: WorkflowApi;
@@ -88,17 +91,7 @@ type SearchResult =
 const activeNodeStatuses = new Set(["ready", "in_progress", "waiting", "blocked"]);
 const terminalTicketStatuses = new Set(["completed", "cancelled", "archived"]);
 const ACTION_PAGE_SIZE = 5;
-const ACTIVITY_DAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
-const ACTIVITY_MAX_WEEK_COUNT = 53;
-const ACTIVITY_MIN_WEEK_COUNT = 8;
-const ACTIVITY_DEFAULT_WEEK_COUNT = 24;
 const ACTIVITY_LOOKBACK_DAYS = 365;
-const ACTIVITY_MIN_CELL_SIZE_PX = 12;
-const ACTIVITY_DEFAULT_CELL_SIZE_PX = 12;
-const ACTIVITY_MAX_CELL_SIZE_PX = 18;
-const ACTIVITY_CELL_GAP_PX = 4;
-const ACTIVITY_AXIS_GAP_PX = 8;
-const ACTIVITY_GRID_ROW_COUNT = 7;
 const MONTH_CALENDAR_CELL_COUNT = 42;
 const MONTH_CALENDAR_DAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"];
 const SOLAR_TERM_LABELS: Record<string, string> = {
@@ -178,10 +171,6 @@ function formatRelativeDate(value?: string | null): string {
   return `截止 ${formatDate(value)}`;
 }
 
-type ActivityCell = TimelineActivity["days"][number] & { level: number };
-type ActivityCalendarCell = ActivityCell & { isFuture: boolean; isToday: boolean };
-type ActivityCalendar = { label: string; weeks: ActivityCalendarCell[][]; maxCount: number };
-
 function startOfLocalDay(value: Date): Date {
   const result = new Date(value);
   result.setHours(0, 0, 0, 0);
@@ -201,31 +190,6 @@ function activityRange(now = new Date()): { startAt: Date; untilAt: Date } {
   const startAt = new Date(untilAt);
   startAt.setDate(startAt.getDate() - ACTIVITY_LOOKBACK_DAYS);
   return { startAt, untilAt };
-}
-
-function activityLevel(count: number, maxCount: number): number {
-  if (!count || !maxCount) return 0;
-  return Math.min(4, Math.max(1, Math.ceil((count / maxCount) * 4)));
-}
-
-function weekStart(value: Date): Date {
-  const result = startOfLocalDay(value);
-  result.setDate(result.getDate() - ((result.getDay() + 6) % 7));
-  return result;
-}
-
-function activityLayoutForSize(width: number, height: number): { cellSize: number; weekCount: number } {
-  const minimumGridHeight = ACTIVITY_GRID_ROW_COUNT * ACTIVITY_MIN_CELL_SIZE_PX + (ACTIVITY_GRID_ROW_COUNT - 1) * ACTIVITY_CELL_GAP_PX;
-  const cellSize = Math.min(
-    ACTIVITY_MAX_CELL_SIZE_PX,
-    Math.max(ACTIVITY_MIN_CELL_SIZE_PX, Math.floor((Math.max(height, minimumGridHeight) - (ACTIVITY_GRID_ROW_COUNT - 1) * ACTIVITY_CELL_GAP_PX) / ACTIVITY_GRID_ROW_COUNT)),
-  );
-  const availableGridWidth = Math.max(width - cellSize - ACTIVITY_AXIS_GAP_PX, 1);
-  const count = Math.floor((availableGridWidth + ACTIVITY_CELL_GAP_PX) / (cellSize + ACTIVITY_CELL_GAP_PX));
-  return {
-    cellSize,
-    weekCount: Math.min(ACTIVITY_MAX_WEEK_COUNT, Math.max(ACTIVITY_MIN_WEEK_COUNT, count)),
-  };
 }
 
 type MonthlyCalendarCell = {
@@ -281,7 +245,6 @@ function formatCalendarMonth(date: Date): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月`;
 }
 
-// 总览当前使用月历卡片；RecentUpdatesHeatmap 保留给后续需要热力图的页面复用。
 function MonthlyCalendarCard({ activity, loading, error, onRetry }: { activity: TimelineActivity | undefined; loading: boolean; error: string; onRetry: () => void }) {
   const [viewMonth, setViewMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const calendar = useMemo(() => buildMonthlyCalendar(viewMonth, activity), [activity, viewMonth]);
@@ -291,8 +254,8 @@ function MonthlyCalendarCard({ activity, loading, error, onRetry }: { activity: 
   };
 
   return (
-    <Card data-testid="recent-updates-card" className="h-full min-w-0">
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
+    <Card data-testid="recent-updates-card" size="sm" className="h-fit min-w-0 self-start">
+      <CardContent className="flex min-w-0 flex-col gap-2">
         {loading && !activity ? (
           <div className="grid gap-2" aria-label="正在加载当月日历">
             <Skeleton className="h-56 w-full" />
@@ -303,7 +266,7 @@ function MonthlyCalendarCard({ activity, loading, error, onRetry }: { activity: 
             <AlertDescription className="flex flex-wrap items-center gap-3">{error}<Button size="sm" variant="outline" onClick={onRetry}>重试</Button></AlertDescription>
           </Alert>
         ) : (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="monthly-calendar">
+          <div className="flex min-w-0 flex-col gap-2" data-testid="monthly-calendar">
             <div className="flex items-center justify-between gap-3">
               <span className="text-lg font-medium">{formatCalendarMonth(viewMonth)}</span>
               <div className="flex items-center gap-1">
@@ -314,7 +277,7 @@ function MonthlyCalendarCard({ activity, loading, error, onRetry }: { activity: 
             <div className="grid grid-cols-7 gap-2 text-center text-xs text-muted-foreground" aria-hidden="true">
               {MONTH_CALENDAR_DAY_LABELS.map((label) => <span key={label}>{label}</span>)}
             </div>
-            <div className="grid min-h-0 flex-1 grid-cols-7 grid-rows-6 gap-x-2 gap-y-1" aria-label={`${formatCalendarMonth(viewMonth)}日历`}>
+            <div className="grid grid-cols-7 gap-x-2 gap-y-1" aria-label={`${formatCalendarMonth(viewMonth)}日历`}>
               {calendar.map((cell) => {
                 const ticketLabel = cell.tickets.length ? `，当日进行中的工单：${cell.tickets.map((ticket) => ticket.title).join("、")}` : "";
                 const cellLabel = `${cell.date}，${cell.marker || cell.lunar || "无农历信息"}${cell.count ? `，${cell.count} 次更新` : ""}${ticketLabel}`;
@@ -357,58 +320,6 @@ function MonthlyCalendarCard({ activity, loading, error, onRetry }: { activity: 
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function buildActivityCalendar(activity: TimelineActivity, weekCount: number, now = new Date()): ActivityCalendar {
-  const countByDate = new Map(activity.days.map((day) => [day.date, day]));
-  const today = startOfLocalDay(now);
-  const currentWeekStart = weekStart(today);
-  const calendarStart = new Date(currentWeekStart);
-  calendarStart.setDate(currentWeekStart.getDate() - (weekCount - 1) * 7);
-  const weeks = Array.from({ length: weekCount }, (_, weekIndex) => (
-    ACTIVITY_DAY_LABELS.map((_, dayIndex) => {
-      const date = new Date(calendarStart);
-      date.setDate(calendarStart.getDate() + weekIndex * 7 + dayIndex);
-      const dateKey = localDateKey(date);
-      const isToday = date.valueOf() === today.valueOf();
-      const isFuture = date > today;
-      const source = isFuture ? undefined : countByDate.get(dateKey);
-      return {
-        date: dateKey,
-        count: source?.count ?? 0,
-        samples: source?.samples ?? [],
-        level: 0,
-        isFuture,
-        isToday,
-      };
-    })
-  ));
-  const maxCount = Math.max(0, ...weeks.flatMap((week) => week.map((cell) => cell.count)));
-  return {
-    label: `最近 ${weekCount} 周`,
-    weeks: weeks.map((week) => week.map((cell) => ({ ...cell, level: activityLevel(cell.count, maxCount) }))),
-    maxCount,
-  };
-}
-
-function activityToneClass(level: number): string {
-  return cn(
-    level === 0 && "bg-muted",
-    level === 1 && "bg-primary/20",
-    level === 2 && "bg-primary/40",
-    level === 3 && "bg-primary/60",
-    level === 4 && "bg-primary",
-  );
-}
-
-function activityCellClass(cell: ActivityCalendarCell): string {
-  return cn(
-    "flex items-center justify-center rounded-[calc(var(--radius-sm)-4px)] border border-border/60 text-[0.5625rem] transition-colors",
-    activityToneClass(cell.level),
-    cell.isFuture && "opacity-40",
-    cell.level === 4 && "text-primary-foreground",
-    cell.isToday && "font-semibold ring-2 ring-primary ring-offset-1 ring-offset-background",
   );
 }
 
@@ -715,104 +626,8 @@ function ActionTicketRow({ ticket, router }: { ticket: Ticket; router: OverviewP
   );
 }
 
-function statusRailClass(status: string): string {
-  return cn(
-    "absolute inset-y-1 left-1 w-1 rounded-sm bg-primary",
-    status === "blocked" && "bg-destructive",
-    ["cancelled", "archived"].includes(status) && "bg-muted-foreground",
-  );
-}
-
 function ticketTimeLabel(ticket: Ticket): string {
   return ticket.due_at || ticket.reminder_at ? formatRelativeDate(ticket.due_at ?? ticket.reminder_at) : `更新 ${formatDate(ticket.updated_at)}`;
-}
-
-function RecentUpdatesHeatmap({ activity, loading, error, onRetry }: { activity: TimelineActivity | undefined; loading: boolean; error: string; onRetry: () => void }) {
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [layout, setLayout] = useState({ cellSize: ACTIVITY_DEFAULT_CELL_SIZE_PX, weekCount: ACTIVITY_DEFAULT_WEEK_COUNT });
-  const heatmap = buildActivityCalendar(activity ?? { total: 0, days: [] }, layout.weekCount);
-  const renderGrid = activity !== undefined || !loading;
-
-  useEffect(() => {
-    if (!renderGrid) return;
-    const element = gridRef.current;
-    if (!element) return;
-    const updateLayout = () => {
-      const bounds = element.getBoundingClientRect();
-      setLayout((current) => {
-        const next = activityLayoutForSize(bounds.width, bounds.height);
-        return current.cellSize === next.cellSize && current.weekCount === next.weekCount ? current : next;
-      });
-    };
-    updateLayout();
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateLayout);
-    observer?.observe(element);
-    const animationFrame = window.requestAnimationFrame(updateLayout);
-    const interval = observer ? null : window.setInterval(updateLayout, 150);
-    window.addEventListener("resize", updateLayout);
-    return () => {
-      observer?.disconnect();
-      window.cancelAnimationFrame(animationFrame);
-      if (interval !== null) window.clearInterval(interval);
-      window.removeEventListener("resize", updateLayout);
-    };
-  }, [renderGrid]);
-
-  return (
-    <Card data-testid="recent-updates-card" className="h-full min-w-0">
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
-        {loading && !activity ? (
-          <div className="grid gap-2" aria-label="正在加载最近更新">
-            <Skeleton className="h-56 w-full" />
-          </div>
-        ) : error ? (
-          <Alert variant="destructive">
-            <AlertTitle>最近更新加载失败</AlertTitle>
-            <AlertDescription className="flex flex-wrap items-center gap-3">{error}<Button size="sm" variant="outline" onClick={onRetry}>重试</Button></AlertDescription>
-          </Alert>
-        ) : renderGrid ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3" data-testid="recent-updates-heatmap">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">{heatmap.label}</span>
-              <span className="text-xs text-muted-foreground">近一年数据</span>
-            </div>
-            <div ref={gridRef} className="flex min-h-0 min-w-0 flex-1 gap-2">
-              <div className="grid shrink-0 grid-rows-7 gap-1 text-[0.625rem] leading-none text-muted-foreground" aria-hidden="true">
-                {ACTIVITY_DAY_LABELS.map((label) => <span key={label} className="flex items-center justify-center" style={{ width: layout.cellSize, height: layout.cellSize }}>{label}</span>)}
-              </div>
-              <div className="min-h-0 min-w-0 flex-1">
-                <div
-                  className="grid w-max grid-flow-col grid-rows-7 gap-1"
-                  style={{ gridTemplateColumns: `repeat(${layout.weekCount}, ${layout.cellSize}px)`, gridTemplateRows: `repeat(${ACTIVITY_GRID_ROW_COUNT}, ${layout.cellSize}px)` }}
-                  aria-label={`${heatmap.label}更新热力图`}
-                >
-                  {heatmap.weeks.flatMap((week) => week.map((cell) => {
-                    const cellLabel = cell.isFuture ? `${formatActivityDate(cell.date)}：尚未到达` : `${formatActivityDate(cell.date)}：${cell.count} 次更新`;
-                    return (
-                      <Tooltip key={cell.date}>
-                        <TooltipTrigger render={<span className={activityCellClass(cell)} style={{ width: layout.cellSize, height: layout.cellSize }} data-date={cell.date} data-level={cell.level} data-future={cell.isFuture} role="img" aria-label={cellLabel} tabIndex={0} />} />
-                        <TooltipContent side="top" align="center">
-                          <div className="grid gap-1">
-                            <p>{cellLabel}</p>
-                            {cell.samples.length ? cell.samples.map((sample) => <p key={sample} className="max-w-56 truncate text-background/80">{sample}</p>) : cell.isFuture ? null : <p className="text-background/80">暂无更新</p>}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  }))}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 text-[0.625rem] text-muted-foreground" aria-label="更新数量图例">
-              <span>少</span>
-              {[0, 1, 2, 3, 4].map((level) => <span key={level} className={cn("rounded-[calc(var(--radius-sm)-4px)] border border-border/60", activityToneClass(level))} style={{ width: layout.cellSize, height: layout.cellSize }} aria-hidden="true" />)}
-              <span>多</span>
-            </div>
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
 }
 
 function ProjectRow({ project, selected, onSelect }: { project: Project; selected: boolean; onSelect: () => void }) {
@@ -852,7 +667,7 @@ function ProjectTicketRow({ ticket, router }: { ticket: Ticket; router: Overview
       className="relative flex min-h-12 w-full min-w-0 items-stretch gap-2 rounded-md border border-border bg-card pl-4 pr-3 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => void router.push(`/modules/workflow-tickets-react/tickets/${ticket.id}`)}
     >
-      <span className={statusRailClass(ticket.status)} aria-hidden="true" />
+      <span className={ticketStatusRailClass(ticket.status)} aria-hidden="true" />
       <span className="grid min-w-0 flex-1 gap-1 py-2">
         <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 truncate text-sm font-medium">{ticket.title}</span>
@@ -878,7 +693,7 @@ function MilestoneRow({ milestone, router }: { milestone: Milestone; router: Ove
       className="relative flex min-h-12 w-full min-w-0 items-stretch gap-2 rounded-md border border-border bg-card pl-4 pr-3 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => void router.push(`/modules/workflow-tickets-react/projects/${milestone.project_id}/milestones/${milestone.id}`)}
     >
-      <span className={statusRailClass(milestone.status)} aria-hidden="true" />
+      <span className={ticketStatusRailClass(milestone.status)} aria-hidden="true" />
       <span className="grid min-w-0 flex-1 gap-1 py-2">
         <span className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 truncate text-sm font-medium">{milestone.name}</span>
@@ -1061,26 +876,16 @@ function QuickEntryCards({ inboxCount, projects, workflows, router }: { inboxCou
 }
 
 function OverviewStats({ data, router }: { data: Overview; router: OverviewPageProps["router"] }) {
-  const stats = [
-    ["待处理", data.todo.length, "/modules/workflow-tickets-react/tickets?view=mine", "bg-primary"],
-    ["进行中", data.in_progress.length, "/modules/workflow-tickets-react/tickets?status=in_progress", "bg-primary"],
-    ["已完成", data.counts.completed ?? 0, "/modules/workflow-tickets-react/tickets?status=completed", "bg-muted-foreground"],
-    ["阻塞", data.counts.blocked ?? 0, "/modules/workflow-tickets-react/tickets?status=blocked", "bg-destructive"],
-  ] as const;
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2" role="group" aria-label="工单状态统计">
-      {stats.map(([label, value, path, railClass]) => (
-        <Button key={label} type="button" size="default" variant="outline" className="relative min-w-20 justify-between gap-3 px-3 pl-4" aria-label={`${label} ${value}`} onClick={() => void router.push(path)}>
-          <span aria-hidden="true" className={cn("absolute inset-y-1 left-1 w-1 rounded-sm", railClass)} />
-          <span className="text-muted-foreground">{label}</span>
-          <span className="font-semibold tabular-nums text-foreground">{value}</span>
-        </Button>
-      ))}
-    </div>
-  );
+  return <OverviewStatBar ariaLabel="工单状态统计" items={[
+    { id: "todo", label: "待处理", value: data.todo.length, ariaLabel: `待处理 ${data.todo.length}`, onClick: () => void router.push("/modules/workflow-tickets-react/tickets?view=mine") },
+    { id: "in-progress", label: "进行中", value: data.in_progress.length, ariaLabel: `进行中 ${data.in_progress.length}`, onClick: () => void router.push("/modules/workflow-tickets-react/tickets?status=in_progress") },
+    { id: "completed", label: "已完成", value: data.counts.completed ?? 0, railClassName: "bg-muted-foreground", ariaLabel: `已完成 ${data.counts.completed ?? 0}`, onClick: () => void router.push("/modules/workflow-tickets-react/tickets?status=completed") },
+    { id: "blocked", label: "阻塞", value: data.counts.blocked ?? 0, railClassName: "bg-destructive", ariaLabel: `阻塞 ${data.counts.blocked ?? 0}`, onClick: () => void router.push("/modules/workflow-tickets-react/tickets?status=blocked") },
+  ]} />;
 }
 
 export function OverviewPage({ api, router }: OverviewPageProps) {
+  const { setPageMeta } = useModulePageMeta();
   const [data, setData] = useState<Overview>();
   const [activity, setActivity] = useState<TimelineActivity>();
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
@@ -1100,6 +905,10 @@ export function OverviewPage({ api, router }: OverviewPageProps) {
   const [projectTicketsReloadKey, setProjectTicketsReloadKey] = useState(0);
   const [projectMilestonesReloadKey, setProjectMilestonesReloadKey] = useState(0);
   const [actionPage, setActionPage] = useState(1);
+
+  useEffect(() => {
+    setPageMeta({ title: "总览", description: "从待办、项目和动态开始推进工作。" });
+  }, [setPageMeta]);
 
   const loadActivity = async () => {
     setActivityLoading(true);
