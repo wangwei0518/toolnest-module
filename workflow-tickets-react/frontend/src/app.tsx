@@ -27,6 +27,7 @@ import { getModuleApiClient } from "./api/client";
 import { OverviewPage as RedesignedOverviewPage } from "./components/overview-page";
 import { TicketDetailParityPage, TicketListParityPage } from "./components/ticket-pages";
 import { WorkflowDesignerPage as WorkflowDesignerCanvasPage } from "./components/workflow-designer-page";
+import { WorkflowVersionsParityPage } from "./components/workflow-versions-page";
 import { MilestoneDetailPage, ProjectCreatePage, ProjectDetailPage, ProjectsPage } from "./components/project-pages";
 import { TicketCreatePage as TicketCreateWorkbench } from "./components/ticket-create-page";
 import { WorkflowListPage as WorkflowTemplatesPage } from "./components/workflow-list-page";
@@ -42,6 +43,7 @@ const fieldTypeLabels: Record<string, string> = { text: "单行文本", textarea
 function statusVariant(value: string): "default" | "secondary" | "outline" | "destructive" { return ["completed", "published", "success", "active", "ready", "normal"].includes(value) ? "default" : ["blocked", "cancelled", "failed", "overdue", "urgent", "risk"].includes(value) ? "destructive" : ["draft", "pending", "planning", "in_progress"].includes(value) ? "outline" : "secondary"; }
 function StatusBadge({ value }: { value: string }) { return <Badge variant={statusVariant(value)}>{(statusLabels[value] ?? value) || "未知"}</Badge>; }
 function requiredParam(value: string | undefined, label: string): string { if (!value) throw new Error(`${label}参数缺失。`); return value; }
+function decodePathPart(value: string): string { try { return decodeURIComponent(value); } catch { return value; } }
 function formatDate(value?: string | null): string { return value ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "未设置"; }
 function errorMessage(error: unknown, fallback: string): string { return error instanceof Error ? error.message : fallback; }
 function countEntries(value: unknown): Array<[string, number]> { return value && typeof value === "object" ? Object.entries(value as Record<string, unknown>).map(([key, count]) => [key, Number(count) || 0]) : []; }
@@ -182,7 +184,40 @@ function ScheduleFormPage({ api, router, query, params }: PageProps) {
 }
 function SettingsPage({ api }: PageProps) { const [settings, setSettings] = useState<Awaited<ReturnType<typeof api.getSettings>>>(); const [loading, setLoading] = useState(true); const [saved, setSaved] = useState(false); useEffect(() => { void api.getSettings().then(setSettings).finally(() => setLoading(false)); }, []); if (loading || !settings) return <PageFrame title="设置"><LoadingState /></PageFrame>; return <PageFrame title="设置" description="调整附件和临时执行资源策略。"><Card><CardHeader><CardTitle>资源策略</CardTitle><CardDescription>这些设置只作用于工单模块自己的数据目录。</CardDescription></CardHeader><CardContent><FieldGroup><Field><FieldLabel>最大附件大小（MB）</FieldLabel><Input type="number" value={settings.max_file_size_mb} onChange={(event) => setSettings({ ...settings, max_file_size_mb: Number(event.target.value) })} /></Field><Field><FieldLabel>临时资源有效期（天）</FieldLabel><Input type="number" value={settings.temporary_resource_days} onChange={(event) => setSettings({ ...settings, temporary_resource_days: Number(event.target.value) })} /></Field><Field><FieldLabel>临时资源最大访问次数</FieldLabel><Input type="number" value={settings.temporary_resource_access_count} onChange={(event) => setSettings({ ...settings, temporary_resource_access_count: Number(event.target.value) })} /></Field></FieldGroup></CardContent><CardFooter className="flex items-center gap-3"><Button onClick={async () => { await api.updateSettings(settings); setSaved(true); }}>保存设置</Button>{saved ? <span className="text-sm text-muted-foreground">已保存</span> : null}</CardFooter></Card><NotificationRules settings={settings} setSettings={setSettings} /><AutomationRules api={api} /><SettingsDataActions api={api} /><Alert><RiInformationLine /><AlertDescription>通知规则会在工单状态变化时通过平台通知中心发送。</AlertDescription></Alert></PageFrame>; }
 
-export function ModuleApp(props: ToolNestModuleRouteRenderProps) { const api = useMemo(() => createWorkflowApi(getModuleApiClient()), []); const path = props.path.replace(/^\/modules\/workflow-tickets-react\/?/, "").replace(/^\/+|\/+$/g, ""); const parts = path.split("/").filter(Boolean); const parsedParams = { ...props.params, ...(parts[0] === "projects" && parts[1] ? { id: parts[1], projectId: parts[1], ...(parts[2] === "milestones" && parts[3] ? { milestoneId: parts[3] } : {}) } : {}), ...(parts[0] === "tickets" && parts[1] ? { id: parts[1], ticketId: parts[1] } : {}), ...(parts[0] === "workflows" && parts[1] ? { id: parts[1], workflowId: parts[1] } : {}) }; const pageProps = { ...props, api, params: parsedParams }; if (path === "" || path === "overview") return <RedesignedOverviewPage {...pageProps} />; if (path === "inbox") return <InboxPage {...pageProps} />; if (path === "projects") return <ProjectsPage {...pageProps} />; if (path === "projects/new") return <ProjectCreatePage {...pageProps} />; if (path.startsWith("projects/") && parts.length === 4 && parts[2] === "milestones") return <MilestoneDetailPage {...pageProps} />; if (path.startsWith("projects/") && parts.length === 2) return <ProjectDetailPage {...pageProps} />; if (path === "create" || path === "tickets/new") return <TicketCreateWorkbench {...pageProps} />; if (path === "tickets") return <TicketListParityPage {...pageProps} />; if (path.startsWith("tickets/")) return <TicketDetailParityPage {...pageProps} />; if (path === "workflows/new") return <WorkflowFormPage {...pageProps} />; if (path === "workflows") return <WorkflowTemplatesPage {...pageProps} />; if (path.endsWith("/versions")) return <WorkflowVersionsPage {...pageProps} />; if (path.includes("/designer/form/")) return <FormDesignerPage {...pageProps} />; if (path.includes("/designer/rules/")) return <RuleDesignerPage {...pageProps} />; if (path.includes("/designer")) return <WorkflowDesignerCanvasPage api={api} router={props.router} params={parsedParams} query={props.query} />; if (path === "schedules/new" || (path.startsWith("schedules/") && parts.length === 2)) return <ScheduleFormPage {...pageProps} />; if (path === "schedules") return <SchedulePage {...pageProps} />; if (path === "settings") return <SettingsPage {...pageProps} />; return <PageFrame title="未找到页面"><EmptyState description="这个模块页面不存在。" /></PageFrame>; }
+export function ModuleApp(props: ToolNestModuleRouteRenderProps) {
+  const api = useMemo(() => createWorkflowApi(getModuleApiClient()), []);
+  const path = props.path.replace(/^\/modules\/workflow-tickets-react\/?/, "").replace(/^\/+|\/+$/g, "");
+  const parts = path.split("/").filter(Boolean);
+  const workflowId = parts[0] === "workflows" ? parts[1] : undefined;
+  const designerPage = parts[2] === "designer" ? parts[3] : undefined;
+  const nodeId = designerPage === "form" || designerPage === "rules" ? parts[4] : undefined;
+  const parsedParams = {
+    ...props.params,
+    ...(parts[0] === "projects" && parts[1] ? { id: parts[1], projectId: parts[1], ...(parts[2] === "milestones" && parts[3] ? { milestoneId: parts[3] } : {}) } : {}),
+    ...(parts[0] === "tickets" && parts[1] ? { id: parts[1], ticketId: parts[1] } : {}),
+    ...(workflowId ? { id: workflowId, workflowId, ...(nodeId ? { nodeId: decodePathPart(nodeId) } : {}) } : {}),
+  };
+  const pageProps = { ...props, api, params: parsedParams };
+  if (path === "" || path === "overview") return <RedesignedOverviewPage {...pageProps} />;
+  if (path === "inbox") return <InboxPage {...pageProps} />;
+  if (path === "projects") return <ProjectsPage {...pageProps} />;
+  if (path === "projects/new") return <ProjectCreatePage {...pageProps} />;
+  if (path.startsWith("projects/") && parts.length === 4 && parts[2] === "milestones") return <MilestoneDetailPage {...pageProps} />;
+  if (path.startsWith("projects/") && parts.length === 2) return <ProjectDetailPage {...pageProps} />;
+  if (path === "create" || path === "tickets/new") return <TicketCreateWorkbench {...pageProps} />;
+  if (path === "tickets") return <TicketListParityPage {...pageProps} />;
+  if (path.startsWith("tickets/")) return <TicketDetailParityPage {...pageProps} />;
+  if (path === "workflows/new") return <WorkflowFormPage {...pageProps} />;
+  if (path === "workflows") return <WorkflowTemplatesPage {...pageProps} />;
+  if (path.endsWith("/versions")) return <WorkflowVersionsParityPage {...pageProps} />;
+  if (path.includes("/designer/form/")) return <FormDesignerPage {...pageProps} />;
+  if (path.includes("/designer/rules/")) return <RuleDesignerPage {...pageProps} />;
+  if (path.includes("/designer")) return <WorkflowDesignerCanvasPage api={api} router={props.router} params={parsedParams} query={props.query} />;
+  if (path === "schedules/new" || (path.startsWith("schedules/") && parts.length === 2)) return <ScheduleFormPage {...pageProps} />;
+  if (path === "schedules") return <SchedulePage {...pageProps} />;
+  if (path === "settings") return <SettingsPage {...pageProps} />;
+  return <PageFrame title="未找到页面"><EmptyState description="这个模块页面不存在。" /></PageFrame>;
+}
 
 function AttachmentList({ api, ticket, nodeId, fieldId, reload, readOnly }: { api: PageProps["api"]; ticket: Ticket; nodeId: string; fieldId: string; reload: () => Promise<void>; readOnly: boolean }) {
   const [deleteId, setDeleteId] = useState("");

@@ -1,20 +1,22 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
-import { RiAddLine, RiArrowLeftLine, RiArrowRightLine, RiCheckLine, RiDeleteBinLine, RiEditLine, RiFileCopyLine, RiGitBranchLine, RiInformationLine, RiPlayLine, RiRefreshLine, RiSaveLine, RiSettings3Line } from "@remixicon/react";
+import { RiAddLine, RiArrowLeftLine, RiArrowRightLine, RiCheckboxCircleLine, RiCheckLine, RiCloseLine, RiDeleteBinLine, RiEditLine, RiFileTextLine, RiFlashlightLine, RiGitBranchLine, RiInformationLine, RiMenuLine, RiPlayLine, RiQuestionLine, RiRefreshLine, RiSaveLine, RiStackLine } from "@remixicon/react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-import type { Workflow, WorkflowApi, WorkflowEdge, WorkflowNode } from "../api";
+import type { FormField, Workflow, WorkflowApi, WorkflowEdge, WorkflowNode } from "../api";
 import { useModulePageMeta } from "./module-layout";
+import { CompletionRuleEditor, PredecessorRuleEditor, WorkflowActionEditor, WorkflowEdgeEditor, WorkflowFormDesignerDialog, type ActionProvider, type FormVariable, type RuleRecord } from "./workflow-editor-components";
 
 type Router = ToolNestModuleRouteRenderProps["router"];
 
@@ -27,6 +29,7 @@ type Props = {
 
 type SectionKey = "basic" | "form" | "conditions" | "flow" | "actions" | "version";
 type Point = { x: number; y: number };
+type NodePreviewPlacement = "top" | "right" | "bottom" | "left";
 
 const statusLabels: Record<string, string> = {
   draft: "草稿",
@@ -54,13 +57,13 @@ const fieldTypeLabels: Record<string, string> = {
   script: "脚本",
 };
 
-const sectionItems: Array<{ key: SectionKey; label: string; hint: string; icon: typeof RiInformationLine }> = [
-  { key: "basic", label: "基础", hint: "节点信息", icon: RiInformationLine },
-  { key: "form", label: "表单", hint: "表单内容与字段", icon: RiFileCopyLine },
-  { key: "conditions", label: "条件", hint: "完成规则", icon: RiCheckLine },
-  { key: "flow", label: "流转", hint: "后继与分支", icon: RiGitBranchLine },
-  { key: "actions", label: "动作", hint: "节点生命周期动作", icon: RiPlayLine },
-  { key: "version", label: "版本", hint: "工作流版本记录", icon: RiSettings3Line },
+const sectionItems: Array<{ key: SectionKey; label: string; title: string; hint: string; help: string; icon: typeof RiInformationLine }> = [
+  { key: "basic", label: "基础", title: "基础信息", hint: "节点信息", help: "节点标识由系统自动维护，名称修改不会影响已有引用。", icon: RiInformationLine },
+  { key: "form", label: "表单", title: "表单内容", hint: "表单内容与字段", help: "定义处理当前节点时需要填写的信息。", icon: RiFileTextLine },
+  { key: "conditions", label: "条件", title: "完成条件", hint: "完成规则", help: "直接配置节点达到什么条件后可以完成。", icon: RiCheckboxCircleLine },
+  { key: "flow", label: "流转", title: "节点流转", hint: "后继与分支", help: "设置当前节点的前序、后继和分支规则。", icon: RiGitBranchLine },
+  { key: "actions", label: "动作", title: "动作", hint: "节点生命周期动作", help: "配置当前节点的生命周期动作。", icon: RiFlashlightLine },
+  { key: "version", label: "版本", title: "版本", hint: "工作流版本记录", help: "查看工作流版本记录和发布状态。", icon: RiStackLine },
 ];
 
 const nodeWidth = 210;
@@ -68,6 +71,30 @@ const nodeHeight = 152;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function rewriteFieldRule(rule: RuleRecord, idChanges: Record<string, string>, validIds: Set<string>): RuleRecord | null {
+  if (rule.type === "rule") {
+    if (rule.kind === "node_status") return clone(rule);
+    const fieldId = String(rule.field_id ?? "");
+    const nextId = idChanges[fieldId] ?? fieldId;
+    return validIds.has(nextId) ? { ...rule, field_id: nextId } : null;
+  }
+  return { ...rule, children: (rule.children ?? []).map((child) => rewriteFieldRule(child, idChanges, validIds)).filter((child): child is RuleRecord => Boolean(child)) };
+}
+
+function rewriteFieldPaths<T>(value: T, idChanges: Record<string, string>): T {
+  if (typeof value === "string") {
+    let next: string = value;
+    for (const [oldId, newId] of Object.entries(idChanges)) {
+      const escaped = oldId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      next = next.replace(new RegExp(`((?:values|resources)\\.)${escaped}(?![\\w-])`, "g"), `$1${newId}`);
+    }
+    return next as T;
+  }
+  if (Array.isArray(value)) return value.map((item) => rewriteFieldPaths(item, idChanges)) as T;
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, rewriteFieldPaths(item, idChanges)])) as T;
+  return value;
 }
 
 function formatDate(value?: string | null): string {
@@ -124,12 +151,14 @@ function WorkflowStatus({ value }: { value: string }) {
 
 function InspectorHelp({ label, hint }: { label: string; hint: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`查看${label}说明`} />}>
-        <RiInformationLine />
-      </TooltipTrigger>
-      <TooltipContent>{hint}</TooltipContent>
-    </Tooltip>
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger render={<Button size="icon-sm" variant="ghost" aria-label={`查看${label}说明`} />}>
+          <RiQuestionLine />
+        </TooltipTrigger>
+        <TooltipContent>{hint}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -150,11 +179,21 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const [metaOpen, setMetaOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [dryRunOpen, setDryRunOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formInitialFieldId, setFormInitialFieldId] = useState("");
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [actionProviders, setActionProviders] = useState<ActionProvider[]>([]);
+  const [hoveredNodeId, setHoveredNodeId] = useState("");
+  const [nodePreviewPlacement, setNodePreviewPlacement] = useState<NodePreviewPlacement>("right");
+  const [nodePreviewStyle, setNodePreviewStyle] = useState<CSSProperties>({});
   const [dryRunInput, setDryRunInput] = useState("{}");
   const [dryRunResult, setDryRunResult] = useState<{ version: number; nodes: Array<{ name: string; status: string }>; explanation: string }>();
   const [metaDraft, setMetaDraft] = useState({ name: "", description: "", group_name: "" });
   const [publishNote, setPublishNote] = useState("");
   const canvasRef = useRef<HTMLElement | null>(null);
+  const hoverOpenTimerRef = useRef<number | undefined>(undefined);
+  const hoverCloseTimerRef = useRef<number | undefined>(undefined);
+  const nodePreviewRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<{ pointerId: number; start: Point; origin: Point } | undefined>(undefined);
   const nodeDragRef = useRef<{ pointerId: number; nodeId: string; start: Point; origin: Point; nodes: WorkflowNode[] } | undefined>(undefined);
   const pendingNodesRef = useRef<WorkflowNode[] | undefined>(undefined);
@@ -175,6 +214,19 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   }, [nodeSearch, nodes]);
   const incomingNodes = selected ? edges.filter((edge) => edge.target_node_id === selected.id).map((edge) => nodes.find((node) => node.id === edge.source_node_id)).filter((node): node is WorkflowNode => Boolean(node)) : [];
   const outgoingEdges = selected ? edges.filter((edge) => edge.source_node_id === selected.id) : [];
+  const formAncestors = useMemo(() => {
+    if (!selected) return [];
+    const found = new Set<string>();
+    const visit = (nodeId: string) => edges.filter((edge) => edge.target_node_id === nodeId).forEach((edge) => { if (!found.has(edge.source_node_id)) { found.add(edge.source_node_id); visit(edge.source_node_id); } });
+    visit(selected.id);
+    return nodes.filter((node) => found.has(node.id));
+  }, [selected?.id, nodes, edges]);
+  const formVariables = useMemo<FormVariable[]>(() => [
+    { label: "工单标题", value: "ticket.title", group: "工单", source_type: "text" },
+    { label: "工单编号", value: "ticket.number", group: "工单", source_type: "text" },
+    ...formAncestors.flatMap((node) => node.form_schema.fields.map((field) => ({ label: `${node.name} / ${field.label}`, value: `nodes.${node.key}.${field.type === "script" ? "resources" : "values"}.${field.id}`, group: node.name, source_type: field.type }))),
+    ...formAncestors.flatMap((node) => node.outputs.map((output) => ({ label: `${node.name} / 输出 / ${String(output.key ?? "")}`, value: `nodes.${node.key}.outputs.${String(output.key ?? "")}`, group: `${node.name}输出`, source_type: "output" }))),
+  ], [formAncestors]);
   const sectionMeta = sectionItems.find((item) => item.key === activeSection);
 
   const fitCanvas = () => {
@@ -215,6 +267,11 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   useEffect(() => { void load(); }, [workflowId, query.versionId]);
   useEffect(() => {
+    let active = true;
+    void api.listActionProviders().then((providers) => { if (active) setActionProviders(providers as ActionProvider[]); }).catch(() => { if (active) setActionProviders([]); });
+    return () => { active = false; };
+  }, [api]);
+  useEffect(() => {
     if (!loading) window.requestAnimationFrame(fitCanvas);
   }, [loading, versionId, nodes.length]);
 
@@ -246,10 +303,16 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     void updateWorkflow(nextNodes, edges);
   };
 
-  const addNode = async () => {
+  const saveNodePatch = (patch: Partial<WorkflowNode>) => {
+    changeNode(patch);
+    saveNodeChanges();
+  };
+
+  const addNode = async (nodeType: WorkflowNode["node_type"] = "general") => {
     if (!workflow || !version || readOnly) return;
+    if (nodeType === "summary" && nodes.some((node) => node.node_type === "summary")) return;
     const index = nodes.length + 1;
-    const next: WorkflowNode = { id: crypto.randomUUID(), name: `新节点 ${index}`, key: `node-${index}`, description: "", node_type: "general", position: { x: Math.max(80, nodes.length * 260), y: 120 }, form_schema: { fields: [] }, completion_rule: { type: "group", operator: "AND", children: [] }, actions: [], inputs: [], outputs: [] };
+    const next: WorkflowNode = { id: crypto.randomUUID(), name: `新节点 ${index}`, key: `node-${index}`, description: "", node_type: nodeType, position: { x: Math.max(80, nodes.length * 260), y: 120 }, form_schema: { fields: [] }, completion_rule: { type: "group", operator: "AND", children: [] }, actions: [], inputs: [], outputs: [] };
     await updateWorkflow([...nodes, next], edges);
     setSelectedId(next.id);
   };
@@ -285,10 +348,61 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     setSelectedEdgeId(edge.id);
   };
 
+  const updateEdge = (nextEdge: WorkflowEdge) => {
+    if (readOnly) return;
+    const nextEdges = edges.map((edge) => edge.id === nextEdge.id ? nextEdge : edge);
+    void updateWorkflow(nodes, nextEdges);
+  };
+
+  const applyFormFields = (fields: FormField[], idChanges: Record<string, string>) => {
+    if (!selected || readOnly) return;
+    const validIds = new Set(fields.map((field) => field.id));
+    const rewrittenNodes = nodes.map((node) => {
+      const rewritten = rewriteFieldPaths(node, idChanges);
+      if (node.id !== selected.id) return rewritten;
+      const completionRule = rewriteFieldRule(node.completion_rule as RuleRecord, idChanges, validIds) ?? { type: "group", operator: "AND", children: [] };
+      return { ...rewritten, form_schema: { ...node.form_schema, fields: rewriteFieldPaths(fields, idChanges) }, completion_rule: completionRule };
+    });
+    const rewrittenEdges = edges.map((edge) => {
+      if (edge.source_node_id !== selected.id || !edge.condition) return rewriteFieldPaths(edge, idChanges);
+      const condition = rewriteFieldRule(edge.condition as RuleRecord, idChanges, validIds);
+      return { ...rewriteFieldPaths(edge, idChanges), condition: condition?.children?.length || condition?.type === "rule" ? condition : null, condition_mode: condition ? (condition.negate ? "unless" : "conditional") : "unconditional" };
+    });
+    void updateWorkflow(rewrittenNodes, rewrittenEdges);
+  };
+
+  const updateCompletionRule = (rule: RuleRecord) => saveNodePatch({ completion_rule: rule });
+  const updatePredecessorRule = (rule: Record<string, unknown>) => saveNodePatch({ predecessor_rule: rule });
+  const updateActions = (actions: Array<Record<string, unknown>>) => saveNodePatch({ actions });
+
   const removeEdge = async (edgeId: string) => {
     if (readOnly) return;
     await updateWorkflow(nodes, edges.filter((edge) => edge.id !== edgeId));
     setSelectedEdgeId((current) => current === edgeId ? "" : current);
+  };
+
+  const scheduleNodePreview = (node: WorkflowNode, event: React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => {
+    if ("pointerType" in event && event.pointerType === "touch") return;
+    if (nodeDragRef.current) return;
+    if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
+    if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
+    if (hoveredNodeId === node.id) return;
+    hoverOpenTimerRef.current = window.setTimeout(() => setHoveredNodeId(node.id), 180);
+  };
+  const hideNodePreview = () => {
+    if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
+    if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
+    hoverOpenTimerRef.current = undefined;
+    hoverCloseTimerRef.current = undefined;
+    setHoveredNodeId("");
+  };
+  const scheduleNodePreviewClose = () => {
+    if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
+    if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
+    hoverCloseTimerRef.current = window.setTimeout(hideNodePreview, 120);
+  };
+  const keepNodePreviewOpen = () => {
+    if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
   };
 
   const autoLayout = async () => {
@@ -363,6 +477,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const startPan = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (event.target as HTMLElement).closest("button, input, textarea, [role=button]")) return;
+    hideNodePreview();
     dragRef.current = { pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, origin: pan };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -376,6 +491,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const startNodeDrag = (event: React.PointerEvent<HTMLElement>, node: WorkflowNode) => {
     if (readOnly || event.button !== 0 || (event.target as HTMLElement).closest("button, input, textarea, [role=button]") !== event.currentTarget) return;
+    hideNodePreview();
     event.stopPropagation();
     setSelectedId(node.id);
     setSelectedEdgeId("");
@@ -401,11 +517,20 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     if (drag.nodes.some((node, index) => node.position.x !== nodes[index]?.position.x || node.position.y !== nodes[index]?.position.y)) void updateWorkflow(drag.nodes, edges);
   };
 
-  const zoomAt = (next: number) => setZoom(Math.min(1.6, Math.max(0.35, Math.round(next * 100) / 100)));
+  const zoomAt = (next: number) => {
+    hideNodePreview();
+    setZoom(Math.min(1.6, Math.max(0.35, Math.round(next * 100) / 100)));
+  };
+  const resetZoom = () => {
+    hideNodePreview();
+    setZoom(1);
+    window.requestAnimationFrame(fitCanvas);
+  };
 
   const handleCanvasWheel = (event: React.WheelEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest(".tn-workflow-tickets-canvas-tools")) return;
     event.preventDefault();
+    hideNodePreview();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const nextZoom = Math.min(1.6, Math.max(0.35, Math.round((zoom * Math.pow(1.1, event.deltaY > 0 ? -1 : 1)) * 100) / 100));
@@ -422,6 +547,73 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     backgroundPosition: `${pan.x}px ${pan.y}px, ${pan.x}px ${pan.y}px, ${pan.x}px ${pan.y}px`,
     backgroundSize: `${16 * zoom}px ${16 * zoom}px, ${80 * zoom}px ${80 * zoom}px, ${80 * zoom}px ${80 * zoom}px`,
   };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const preview = nodePreviewRef.current;
+    if (!canvas || !preview || !hoveredNodeId) return;
+    const frame = window.requestAnimationFrame(() => {
+      const anchor = canvas.querySelector<HTMLElement>(`[data-node-id="${hoveredNodeId}"]`);
+      if (!anchor) return;
+      const canvasRect = canvas.getBoundingClientRect();
+      const anchorRect = anchor.getBoundingClientRect();
+      const previewWidth = preview.offsetWidth;
+      const previewHeight = preview.offsetHeight;
+      const spacingToken = getComputedStyle(canvas).getPropertyValue("--spacing").trim();
+      const spacingValue = Number.parseFloat(spacingToken);
+      const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const spacing = Number.isFinite(spacingValue)
+        ? spacingValue * (spacingToken.endsWith("rem") ? rootFontSize : spacingToken.endsWith("px") ? 1 : rootFontSize)
+        : 4;
+      const margin = spacing * 3;
+      const gap = spacing * 5;
+      const designer = canvas.closest(".tn-workflow-tickets-designer");
+      const leftPanelBounds = designer?.querySelector(".tn-workflow-tickets-designer-left")?.getBoundingClientRect();
+      const inspectorBounds = designer?.querySelector(".tn-workflow-tickets-designer-inspector")?.getBoundingClientRect();
+      const commandbarBounds = canvas.closest(".tn-workflow-tickets-workflow-designer-page")
+        ?.querySelector(".tn-workflow-tickets-designer-commandbar")?.getBoundingClientRect();
+      const overlapsVertically = (bounds?: DOMRect) => Boolean(bounds && bounds.bottom > canvasRect.top && bounds.top < canvasRect.bottom);
+      const overlapsHorizontally = (bounds?: DOMRect) => Boolean(bounds && bounds.right > canvasRect.left && bounds.left < canvasRect.right);
+      const viewport = {
+        left: overlapsVertically(leftPanelBounds) ? Math.max(canvasRect.left, leftPanelBounds?.right ?? canvasRect.left) : canvasRect.left,
+        right: overlapsVertically(inspectorBounds) ? Math.min(canvasRect.right, inspectorBounds?.left ?? canvasRect.right) : canvasRect.right,
+        top: overlapsHorizontally(commandbarBounds) ? Math.max(canvasRect.top, commandbarBounds?.bottom ?? canvasRect.top) : canvasRect.top,
+        bottom: canvasRect.bottom,
+      };
+      const available = {
+        right: viewport.right - anchorRect.right - gap - margin,
+        left: anchorRect.left - viewport.left - gap - margin,
+        bottom: viewport.bottom - anchorRect.bottom - gap - margin,
+        top: anchorRect.top - viewport.top - gap - margin,
+      };
+      const candidates: NodePreviewPlacement[] = ["right", "left", "bottom", "top"];
+      const placement = candidates.find((side) => (side === "right" || side === "left" ? available[side] >= previewWidth : available[side] >= previewHeight))
+        ?? candidates.reduce((best, side) => available[side] > available[best] ? side : best, "right");
+      let left = anchorRect.right - canvasRect.left + gap;
+      let top = anchorRect.top - canvasRect.top + (anchorRect.height - previewHeight) / 2;
+      if (placement === "left") left = anchorRect.left - canvasRect.left - gap - previewWidth;
+      if (placement === "bottom") {
+        left = anchorRect.left - canvasRect.left + (anchorRect.width - previewWidth) / 2;
+        top = anchorRect.bottom - canvasRect.top + gap;
+      }
+      if (placement === "top") {
+        left = anchorRect.left - canvasRect.left + (anchorRect.width - previewWidth) / 2;
+        top = anchorRect.top - canvasRect.top - gap - previewHeight;
+      }
+      const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+      setNodePreviewPlacement(placement);
+      setNodePreviewStyle({
+        left: clamp(left, viewport.left - canvasRect.left + margin, viewport.right - canvasRect.left - previewWidth - margin),
+        top: clamp(top, viewport.top - canvasRect.top + margin, viewport.bottom - canvasRect.top - previewHeight - margin),
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hoveredNodeId, pan.x, pan.y, zoom]);
+
+  useEffect(() => () => {
+    if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
+    if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
+  }, []);
 
   if (loading) {
     return <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page"><div className="tn-workflow-tickets-designer-loading" aria-label="正在加载工作流编辑器" aria-busy="true"><span /><span /><span /></div></section>;
@@ -458,17 +650,26 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
         <aside className="tn-workflow-tickets-designer-panel tn-workflow-tickets-designer-left" onDragOver={(event) => event.preventDefault()}>
           <div className="tn-workflow-tickets-section-header">
             <div className="tn-workflow-tickets-section-heading-main"><h2>节点结构</h2><InspectorHelp label="节点结构" hint="拖动节点调整顺序" /></div>
-            <Badge variant="outline">{nodes.length}</Badge>
+            <Badge className="tn-workflow-tickets-designer-count" variant="secondary">{nodes.length}</Badge>
           </div>
-          <Input value={nodeSearch} onChange={(event) => setNodeSearch(event.target.value)} placeholder="搜索节点" aria-label="搜索节点" />
+          <div className="tn-workflow-tickets-designer-search">
+            <Input className="pr-8" value={nodeSearch} onChange={(event) => setNodeSearch(event.target.value)} placeholder="搜索节点" aria-label="搜索节点" />
+            {nodeSearch ? <Button className="tn-workflow-tickets-designer-search-clear" size="icon-sm" variant="ghost" aria-label="清空节点搜索" onClick={() => setNodeSearch("")}><RiCloseLine /></Button> : null}
+          </div>
           <div className="tn-workflow-tickets-designer-list">
             {filteredNodes.map((node) => <button key={node.id} type="button" className={`tn-workflow-tickets-designer-list-item${node.id === selected.id ? " is-active" : ""}`} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }}>
-              <RiGitBranchLine className="tn-workflow-tickets-designer-list-handle" aria-hidden="true" />
+              <RiMenuLine className="tn-workflow-tickets-designer-list-handle" aria-hidden="true" />
               <span className="tn-workflow-tickets-designer-list-copy"><strong>{node.name}</strong><small>{node.key}</small></span>
             </button>)}
           </div>
           {!filteredNodes.length ? <p className="tn-workflow-tickets-muted">没有匹配的节点。</p> : null}
-          <Button className="tn-workflow-tickets-designer-add-node" variant="outline" disabled={readOnly} onClick={() => void addNode()}><RiAddLine data-icon="inline-start" />新增节点</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button className="tn-workflow-tickets-designer-add-node" variant="outline" disabled={readOnly} />}><RiAddLine data-icon="inline-start" />新增节点</DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top">
+              <DropdownMenuItem onClick={() => void addNode("general")}>通用节点</DropdownMenuItem>
+              <DropdownMenuItem disabled={nodes.some((node) => node.node_type === "summary")} onClick={() => void addNode("summary")}>总结节点</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </aside>
 
         <section ref={canvasRef} className="tn-workflow-tickets-designer-canvas" style={canvasStyle} aria-label="工作流画布" onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onWheel={handleCanvasWheel}>
@@ -477,34 +678,61 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
               <defs><marker id="tn-workflow-edge-arrow-default" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--border)" /></marker><marker id="tn-workflow-edge-arrow-active" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--primary)" /></marker></defs>
               {edges.map((edge) => <g key={edge.id}><path className="tn-workflow-tickets-canvas-edge-hit-area" d={edgePath(edge, nodes)} role="button" tabIndex={0} aria-label="选择工作流连线" onClick={(event) => { event.stopPropagation(); setSelectedEdgeId(edge.id); }} /><path className={`tn-workflow-tickets-canvas-edge-path${selectedEdgeId === edge.id || selected?.id === edge.source_node_id ? " is-selected" : ""}`} d={edgePath(edge, nodes)} markerEnd={`url(#${selectedEdgeId === edge.id || selected?.id === edge.source_node_id ? "tn-workflow-edge-arrow-active" : "tn-workflow-edge-arrow-default"})`} /></g>)}
             </svg>
-            {nodes.map((node) => <article key={node.id} className={`tn-workflow-tickets-node-card${node.id === selected.id ? " is-selected" : ""}`} style={{ left: `${node.position.x}px`, top: `${node.position.y}px` }} role="button" tabIndex={0} aria-label={`选择节点：${node.name}`} onPointerDown={(event) => startNodeDrag(event, node)} onPointerMove={moveNodeDrag} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); setSelectedEdgeId(""); } }}>
+            {nodes.map((node) => <article key={node.id} data-node-id={node.id} className={`tn-workflow-tickets-node-card${node.id === selected.id ? " is-selected" : ""}`} style={{ left: `${node.position.x}px`, top: `${node.position.y}px` }} role="button" tabIndex={0} aria-label={`选择节点：${node.name}`} aria-describedby={hoveredNodeId === node.id ? "tn-workflow-tickets-node-field-preview" : undefined} onPointerEnter={(event) => scheduleNodePreview(node, event)} onPointerLeave={scheduleNodePreviewClose} onFocus={(event) => scheduleNodePreview(node, event)} onBlur={scheduleNodePreviewClose} onPointerDown={(event) => startNodeDrag(event, node)} onPointerMove={moveNodeDrag} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); setSelectedEdgeId(""); } }}>
               <div className="tn-workflow-tickets-node-title"><span className="tn-workflow-tickets-node-dot" />{node.name}</div>
               <div className="tn-workflow-tickets-node-summary"><span>{node.form_schema.fields.length} 个字段 · {Array.isArray(node.completion_rule?.children) ? node.completion_rule.children.length : 0} 条完成条件</span><span>{node.actions.length} 个动作</span></div>
               <div className="tn-workflow-tickets-card-footer"><Badge variant="secondary">{node.node_type === "summary" ? "总结节点" : "通用节点"}</Badge><span className="tn-workflow-tickets-muted">{node.key}</span></div>
             </article>)}
           </div>
+          {hoveredNodeId ? (() => {
+            const previewNode = nodes.find((node) => node.id === hoveredNodeId);
+            if (!previewNode) return null;
+            return <aside id="tn-workflow-tickets-node-field-preview" ref={nodePreviewRef} role="tooltip" className={"tn-workflow-tickets-node-preview is-" + nodePreviewPlacement} style={nodePreviewStyle} onPointerEnter={keepNodePreviewOpen} onPointerLeave={scheduleNodePreviewClose} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
+              <header className="tn-workflow-tickets-node-preview-header"><span className="tn-workflow-tickets-node-preview-icon"><RiFileTextLine /></span><span className="tn-workflow-tickets-node-preview-heading"><strong>{previewNode.name}</strong><small>{previewNode.key} · 字段预览</small></span><span className="tn-workflow-tickets-node-preview-count">{previewNode.form_schema.fields.length} 个</span></header>
+              {previewNode.form_schema.fields.length ? <div className="tn-workflow-tickets-node-preview-list">{previewNode.form_schema.fields.map((field) => <div className="tn-workflow-tickets-node-preview-field" key={field.id}><span className="tn-workflow-tickets-node-preview-field-copy"><strong title={field.label}>{field.label}</strong><small title={field.id}>{field.id}</small></span><span className="tn-workflow-tickets-node-preview-field-meta"><span>{fieldTypeLabels[field.type] ?? field.type}</span>{field.required ? <em>必填</em> : null}{field.readonly ? <em>只读</em> : null}{field.hidden ? <em>隐藏</em> : null}</span></div>)}</div> : <div className="tn-workflow-tickets-node-preview-empty"><RiFileTextLine /><span>该节点暂未配置字段</span></div>}
+            </aside>;
+          })() : null}
           <div className="tn-workflow-tickets-canvas-tools" role="toolbar" aria-label="画布工具">
-            <Button size="icon-sm" variant="ghost" disabled aria-label="撤回" title="撤回"><RiArrowLeftLine /></Button><Button size="icon-sm" variant="ghost" disabled aria-label="前进" title="前进"><RiArrowRightLine /></Button><Separator orientation="vertical" /><Button size="icon-sm" variant="ghost" aria-label="缩小画布" title="缩小" onClick={() => zoomAt(zoom - 0.1)}>−</Button><Button className="tn-workflow-tickets-canvas-zoom-value" variant="ghost" aria-label="重置缩放" title="重置缩放" onClick={() => { setZoom(1); window.requestAnimationFrame(fitCanvas); }}>{Math.round(zoom * 100)}%</Button><Button size="icon-sm" variant="ghost" aria-label="放大画布" title="放大" onClick={() => zoomAt(zoom + 0.1)}>+</Button><Separator orientation="vertical" /><Button className="tn-workflow-tickets-canvas-auto-layout" variant="ghost" disabled={readOnly} onClick={() => void autoLayout()}>自动布局</Button>
+            <Button size="icon-sm" variant="ghost" disabled aria-label="撤回" title="撤回"><RiArrowLeftLine /></Button><Button size="icon-sm" variant="ghost" disabled aria-label="前进" title="前进"><RiArrowRightLine /></Button><Separator orientation="vertical" /><Button size="icon-sm" variant="ghost" aria-label="缩小画布" title="缩小" onClick={() => zoomAt(zoom - 0.1)}>−</Button><Button className="tn-workflow-tickets-canvas-zoom-value" variant="ghost" aria-label="重置缩放" title="重置缩放" onClick={resetZoom}>{Math.round(zoom * 100)}%</Button><Button size="icon-sm" variant="ghost" aria-label="放大画布" title="放大" onClick={() => zoomAt(zoom + 0.1)}>+</Button><Separator orientation="vertical" /><Button className="tn-workflow-tickets-canvas-auto-layout" variant="ghost" disabled={readOnly} onClick={() => void autoLayout()}>自动布局</Button>
           </div>
         </section>
 
         <aside className="tn-workflow-tickets-designer-panel tn-workflow-tickets-designer-inspector">
           <div className="tn-workflow-tickets-inspector-card">
-            <header className="tn-workflow-tickets-inspector-header"><div className="tn-workflow-tickets-inspector-header-title"><h2>{sectionMeta.label === "基础" ? "基础信息" : sectionMeta.label}</h2><InspectorHelp label={sectionMeta.label} hint={sectionMeta.hint} /></div>{activeSection !== "version" ? <Button size="sm" variant="destructive" disabled={readOnly} onClick={() => void removeNode()}>删除节点</Button> : null}</header>
+            <header className="tn-workflow-tickets-inspector-header">
+              <div className="tn-workflow-tickets-inspector-header-title">
+                <h2>{sectionMeta.title}</h2>
+                <InspectorHelp label={sectionMeta.title} hint={sectionMeta.help} />
+              </div>
+              {activeSection !== "version" ? <Button className="h-7 px-2 text-sm" size="sm" variant="destructiveSolid" disabled={readOnly} onClick={() => void removeNode()}>删除节点</Button> : null}
+            </header>
             <div className="tn-workflow-tickets-inspector-body"><div className="tn-workflow-tickets-inspector-scroll">
-              {activeSection === "basic" ? <section className="tn-workflow-tickets-inspector-section"><FieldGroup><Field><FieldLabel>节点名称</FieldLabel><Input value={selected.name} disabled={readOnly} placeholder="输入节点名称" onChange={(event) => changeNode({ name: event.target.value })} onBlur={saveNodeChanges} /></Field><Field><FieldLabel>节点类型</FieldLabel><Select value={selected.node_type} onValueChange={(value) => { changeNode({ node_type: (value ?? "general") as WorkflowNode["node_type"] }); window.setTimeout(saveNodeChanges, 0); }} disabled={readOnly}><SelectTrigger aria-label="节点类型"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>节点类型</SelectLabel><SelectItem value="general">通用节点</SelectItem><SelectItem value="summary">总结节点</SelectItem></SelectGroup></SelectContent></Select></Field><Field><FieldLabel>节点描述</FieldLabel><Textarea value={selected.description} disabled={readOnly} placeholder="说明节点目标和处理要求" onChange={(event) => changeNode({ description: event.target.value })} onBlur={saveNodeChanges} /></Field></FieldGroup></section> : null}
-              {activeSection === "form" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-inspector-summary"><span><strong>{selected.form_schema.fields.length}</strong> 个字段</span><span><strong>{selected.inputs.length}</strong> 个输入</span><span><strong>{selected.outputs.length}</strong> 个输出</span></div>{selected.form_schema.fields.length ? <div className="tn-workflow-tickets-inspector-field-list">{selected.form_schema.fields.map((field) => <button key={field.id} type="button" className="tn-workflow-tickets-inspector-field-item" disabled={readOnly} onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/designer/form/${selected.id}?versionId=${version.id}`)}><span><strong>{field.label}</strong><small>{fieldTypeLabels[field.type] ?? "字段"} · {field.id}</small></span>{field.required ? <Badge variant="outline">必填</Badge> : null}</button>)}</div> : <p className="tn-workflow-tickets-inspector-empty">还没有字段，打开表单设计后即可添加。</p>}<Button className="w-full" variant="secondary" disabled={readOnly} onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/designer/form/${selected.id}?versionId=${version.id}`)}>编辑节点表单</Button></section> : null}
-              {activeSection === "conditions" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-condition-editor-toolbar"><span className="tn-workflow-tickets-muted">复杂规则可在大窗口中编辑</span><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/designer/rules/${selected.id}?versionId=${version.id}`)}><RiEditLine data-icon="inline-start" />弹窗编辑</Button></div><div className="tn-workflow-tickets-inspector-empty">{Array.isArray(selected.completion_rule?.children) && selected.completion_rule.children.length ? `已配置 ${selected.completion_rule.children.length} 条完成规则。` : "暂无完成规则，未配置规则时节点可直接完成。"}</div></section> : null}
-              {activeSection === "flow" ? <><section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-inspector-section-heading"><div><h3>前序节点</h3><p>组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div><Badge variant="outline">{incomingNodes.length} 个</Badge></div>{incomingNodes.length ? <div className="tn-workflow-tickets-predecessor-list">{incomingNodes.map((node) => <div className="tn-workflow-tickets-predecessor-item" key={node.id}><span className="tn-workflow-tickets-predecessor-icon"><RiGitBranchLine /></span><span className="tn-workflow-tickets-predecessor-copy"><strong>{node.name}</strong><small>{node.key}</small></span></div>)}</div> : <p className="tn-workflow-tickets-inspector-empty">当前节点没有前序节点，将作为起始节点进入流程。</p>}</section><section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-inspector-section-heading"><div><h3>后继节点与分支</h3><p>设置完成当前节点后进入的节点和判断条件。</p></div><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => void addBranch()}>新增分支</Button></div>{outgoingEdges.length ? <div className="tn-workflow-tickets-edge-config">{outgoingEdges.map((edge) => <div className={`tn-workflow-tickets-edge-editor${selectedEdge?.id === edge.id ? " is-selected" : ""}`} key={edge.id} onClick={() => setSelectedEdgeId(edge.id)}><div className="tn-workflow-tickets-edge-editor-header"><strong>{nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点"}</strong>{!readOnly ? <Button size="icon-sm" variant="ghost" aria-label="删除分支" onClick={(event) => { event.stopPropagation(); void removeEdge(edge.id); }}><RiDeleteBinLine /></Button> : null}</div><span className="tn-workflow-tickets-muted">优先级 {edge.priority ?? 0} · {edge.condition_mode === "unconditional" || !edge.condition ? "无条件分支" : "已配置条件"}</span></div>)}</div> : <p className="tn-workflow-tickets-inspector-empty">当前节点还没有后继节点，添加分支后可配置流向。</p>}</section></> : null}
-              {activeSection === "actions" ? <section className="tn-workflow-tickets-inspector-section">{selected.actions.length ? <div className="tn-workflow-tickets-action-list">{selected.actions.map((action, index) => <div className="tn-workflow-tickets-action-item" key={`${String(action.event)}-${String(action.key)}-${index}`}><div className="tn-workflow-tickets-action-item-header"><strong>{String(action.label || action.key || `动作 ${index + 1}`)}</strong><Badge variant="secondary">{String(action.event || "节点事件")}</Badge></div><span className="tn-workflow-tickets-muted">{String(action.type || "模块动作")}</span></div>)}</div> : <p className="tn-workflow-tickets-inspector-empty">此版本没有配置节点动作。</p>}</section> : null}
+              {activeSection === "basic" ? <section className="tn-workflow-tickets-inspector-section"><FieldGroup><Field><FieldLabel>节点名称</FieldLabel><Input value={selected.name} disabled={readOnly} placeholder="输入节点名称" onChange={(event) => changeNode({ name: event.target.value })} onBlur={saveNodeChanges} /></Field><Field><FieldLabel>节点类型</FieldLabel><Select value={selected.node_type} onValueChange={(value) => { changeNode({ node_type: (value ?? "general") as WorkflowNode["node_type"] }); window.setTimeout(saveNodeChanges, 0); }} disabled={readOnly}><SelectTrigger aria-label="节点类型"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>节点类型</SelectLabel><SelectItem value="general">通用节点</SelectItem><SelectItem value="summary">总结节点</SelectItem></SelectGroup></SelectContent></Select></Field><Field><FieldLabel>节点描述</FieldLabel><Textarea value={selected.description} rows={3} disabled={readOnly} placeholder="说明节点目标和处理要求" onChange={(event) => changeNode({ description: event.target.value })} onBlur={saveNodeChanges} /></Field></FieldGroup></section> : null}
+              {activeSection === "form" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-inspector-summary"><span><strong>{selected.form_schema.fields.length}</strong> 个字段</span><span><strong>{selected.inputs.length}</strong> 个输入</span><span><strong>{selected.outputs.length}</strong> 个输出</span></div>{selected.form_schema.fields.length ? <div className="tn-workflow-tickets-inspector-field-list">{selected.form_schema.fields.map((field) => <button key={field.id} type="button" className="tn-workflow-tickets-inspector-field-item" disabled={readOnly} onClick={() => { setFormInitialFieldId(field.id); setFormOpen(true); }}><span><strong>{field.label}</strong><small>{fieldTypeLabels[field.type] ?? "字段"} · {field.id}</small></span>{field.required ? <Badge variant="outline">必填</Badge> : null}</button>)}</div> : <p className="tn-workflow-tickets-inspector-empty">还没有字段，打开表单设计后即可添加。</p>}<Button className="w-full" variant="secondary" disabled={readOnly} onClick={() => { setFormInitialFieldId(""); setFormOpen(true); }}>编辑节点表单</Button></section> : null}
+              {activeSection === "conditions" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-condition-editor-toolbar"><span className="tn-workflow-tickets-muted">{Array.isArray(selected.completion_rule?.children) && selected.completion_rule.children.length ? `已配置 ${selected.completion_rule.children.length} 条顶层规则。` : "未配置规则时节点可直接完成。"}</span><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => setCompletionOpen(true)}><RiEditLine data-icon="inline-start" />弹窗编辑</Button></div></section> : null}
+              {activeSection === "flow" ? <>
+                <section className="tn-workflow-tickets-inspector-section">
+                  <div className="tn-workflow-tickets-inspector-section-heading"><div><h3>前序节点</h3><p>组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div><Badge variant="outline">{incomingNodes.length} 个</Badge></div>
+                  {incomingNodes.length > 1 ? readOnly ? <div className="tn-workflow-tickets-inspector-readonly-list">{incomingNodes.map((node) => <div className="tn-workflow-tickets-inspector-readonly-item" key={node.id}>{node.name} · {String(selected.predecessor_rule?.operator ?? "OR")}</div>)}</div> : <PredecessorRuleEditor node={selected} incomingNodes={incomingNodes} onChange={updatePredecessorRule} /> : <p className="tn-workflow-tickets-inspector-empty">{incomingNodes.length ? "当前只有一个前序节点，无需配置组合条件。" : "当前节点没有前序节点，将作为起始节点进入流程。"}</p>}
+                </section>
+                <section className="tn-workflow-tickets-inspector-section">
+                  <div className="tn-workflow-tickets-inspector-section-heading"><div><h3>后继节点与分支</h3><p>设置完成当前节点后进入的节点和判断条件。</p></div><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => void addBranch()}>新增分支</Button></div>
+                  {outgoingEdges.length ? <div className="tn-workflow-tickets-edge-config">{outgoingEdges.map((edge, index) => readOnly ? <div className="tn-workflow-tickets-inspector-readonly-item" key={edge.id}>{nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点"} · 优先级 {edge.priority ?? 0} · {edge.condition ? "已配置条件" : "无条件进入"}</div> : <WorkflowEdgeEditor key={edge.id} edge={edge} index={index} nodes={nodes} onChange={updateEdge} onRemove={() => void removeEdge(edge.id)} />)}</div> : <p className="tn-workflow-tickets-inspector-empty">当前节点还没有后继节点，添加分支后可配置流向。</p>}
+                </section>
+              </> : null}
+              {activeSection === "actions" ? <section className="tn-workflow-tickets-inspector-section">{readOnly ? <div className="tn-workflow-tickets-inspector-readonly-list">{selected.actions.map((action, index) => <div className="tn-workflow-tickets-inspector-readonly-item" key={`${String(action.event)}-${String(action.key)}-${index}`}>{String(action.label || action.key || `动作 ${index + 1}`)} · {String(action.event ?? "")}</div>)}{!selected.actions.length ? <p className="tn-workflow-tickets-inspector-empty">此版本没有配置节点动作。</p> : null}</div> : <WorkflowActionEditor actions={selected.actions as Array<Record<string, unknown> & { key: string; event: string; label?: string }>} providers={actionProviders} onChange={updateActions} />}</section> : null}
               {activeSection === "version" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-version-overview"><div className="tn-workflow-tickets-version-overview-header"><div><span className="tn-workflow-tickets-version-overview-eyebrow">工作流快照</span><strong>v{version.version}</strong></div><WorkflowStatus value={version.status} /></div><div className="tn-workflow-tickets-inspector-version-stats"><div><strong>{version.nodes.length}</strong><span>个节点</span></div><div><strong>{version.edges.length}</strong><span>条连线</span></div><div><strong>{version.ticket_count}</strong><span>个工单</span></div></div><div className="tn-workflow-tickets-version-overview-meta"><span>{version.status === "published" ? "发布于" : "创建于"} {formatDate(version.status === "published" ? version.published_at : version.created_at)}</span>{version.source_version_id ? <span>基于历史版本创建</span> : null}</div><div className="tn-workflow-tickets-version-overview-note"><div className="tn-workflow-tickets-version-overview-note-header"><span>版本说明</span>{!readOnly ? <Button size="sm" variant="link" onClick={() => setPublishOpen(true)}>填写说明</Button> : null}</div><p>{version.change_note || "未填写版本说明"}</p></div><p className="tn-workflow-tickets-version-overview-tip">{version.status === "published" ? "当前是已发布版本。点击“编辑为草稿”后，系统会基于此版本创建新的草稿。" : "已创建的工单会继续绑定创建时的版本，新工单使用当前发布版本。"}</p><Button className="w-full" variant="secondary" onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/versions`)}>查看版本记录</Button></div></section> : null}
               {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
             </div></div>
-            <nav className="tn-workflow-tickets-inspector-nav" aria-label="节点配置分区">{sectionItems.map((item) => { const Icon = item.icon; return <Tooltip key={item.key}><TooltipTrigger render={<button type="button" className={`tn-workflow-tickets-inspector-nav-item${activeSection === item.key ? " is-active" : ""}`} aria-label={`${item.label}：${item.hint}`} aria-current={activeSection === item.key ? "page" : undefined} onClick={() => setActiveSection(item.key)} />}><Icon aria-hidden="true" /></TooltipTrigger><TooltipContent side="left">{item.label}</TooltipContent></Tooltip>; })}</nav>
+            <nav className="tn-workflow-tickets-inspector-nav" aria-label="节点配置分区">
+              {sectionItems.map((item) => { const Icon = item.icon; return <TooltipProvider key={item.key} delay={200}><Tooltip><TooltipTrigger render={<button type="button" className={`tn-workflow-tickets-inspector-nav-item${activeSection === item.key ? " is-active" : ""}`} aria-label={`${item.label}：${item.hint}`} aria-current={activeSection === item.key ? "page" : undefined} onClick={() => setActiveSection(item.key)} />}><Icon aria-hidden="true" /></TooltipTrigger><TooltipContent side="left">{item.label}</TooltipContent></Tooltip></TooltipProvider>; })}
+            </nav>
           </div>
         </aside>
       </div>
 
+      <WorkflowFormDesignerDialog key={`${selected.id}-${formInitialFieldId}`} open={formOpen} onOpenChange={setFormOpen} node={selected} initialFieldId={formInitialFieldId} variables={formVariables} onApply={applyFormFields} />
+      <Dialog open={completionOpen} onOpenChange={setCompletionOpen}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={(selected.completion_rule ?? { type: "group", operator: "AND", children: [] }) as RuleRecord} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={updateCompletionRule} /><DialogFooter><Button variant="outline" onClick={() => setCompletionOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}><DialogContent><DialogHeader><DialogTitle>模板信息</DialogTitle><DialogDescription>修改模板名称、描述和分组。</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>模板名称</FieldLabel><Input value={metaDraft.name} onChange={(event) => setMetaDraft({ ...metaDraft, name: event.target.value })} /></Field><Field><FieldLabel>模板描述</FieldLabel><Textarea value={metaDraft.description} onChange={(event) => setMetaDraft({ ...metaDraft, description: event.target.value })} /></Field><Field><FieldLabel>模板分组</FieldLabel><Input value={metaDraft.group_name} onChange={(event) => setMetaDraft({ ...metaDraft, group_name: event.target.value })} /></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => setMetaOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void saveMeta()}>保存修改</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent><DialogHeader><DialogTitle>发布工作流</DialogTitle><DialogDescription>发布后会生成不可修改的版本快照，新建工单将使用当前发布版本。</DialogDescription></DialogHeader><Field><FieldLabel>版本说明</FieldLabel><Textarea value={publishNote} onChange={(event) => setPublishNote(event.target.value)} placeholder="例如：增加结果复核节点，调整附件要求" /></Field><DialogFooter><Button variant="outline" onClick={() => setPublishOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void publish()}>确认发布</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={dryRunOpen} onOpenChange={setDryRunOpen}><DialogContent><DialogHeader><DialogTitle>流程预演</DialogTitle><DialogDescription>按当前版本计算节点和连线，不创建工单，也不会执行节点动作。</DialogDescription></DialogHeader><Field><FieldLabel>根节点初始值（JSON）</FieldLabel><Textarea value={dryRunInput} onChange={(event) => setDryRunInput(event.target.value)} /></Field>{dryRunResult ? <div className="tn-workflow-tickets-dry-run-result"><strong>v{dryRunResult.version} 预演结果</strong>{dryRunResult.nodes.map((node) => <div key={node.name}><RiCheckLine />{node.name}<span>{node.status}</span></div>)}<p>{dryRunResult.explanation}</p></div> : null}<DialogFooter><Button variant="outline" onClick={() => setDryRunOpen(false)}>关闭</Button><Button onClick={() => void runDryRun()}>开始预演</Button></DialogFooter></DialogContent></Dialog>
