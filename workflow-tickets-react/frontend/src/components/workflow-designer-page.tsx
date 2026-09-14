@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
-import { RiAddLine, RiArrowLeftLine, RiArrowRightLine, RiCheckboxCircleLine, RiCheckLine, RiCloseLine, RiDeleteBinLine, RiEditLine, RiFileTextLine, RiFlashlightLine, RiGitBranchLine, RiInformationLine, RiMenuLine, RiPlayLine, RiQuestionLine, RiRefreshLine, RiSaveLine, RiStackLine } from "@remixicon/react";
+import { RiAddLine, RiArrowLeftLine, RiArrowRightLine, RiCheckboxCircleLine, RiCheckLine, RiCloseLine, RiDeleteBinLine, RiDraggable, RiEditLine, RiFileTextLine, RiFlashlightLine, RiGitBranchLine, RiInformationLine, RiPlayLine, RiQuestionLine, RiRefreshLine, RiSaveLine, RiStackLine } from "@remixicon/react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -65,6 +66,119 @@ const sectionItems: Array<{ key: SectionKey; label: string; title: string; hint:
   { key: "actions", label: "动作", title: "动作", hint: "节点生命周期动作", help: "配置当前节点的生命周期动作。", icon: RiFlashlightLine },
   { key: "version", label: "版本", title: "版本", hint: "工作流版本记录", help: "查看工作流版本记录和发布状态。", icon: RiStackLine },
 ];
+
+const completionRuleKindLabels: Record<string, string> = {
+  field_filled: "字段已填写",
+  value_compare: "字段值比较",
+  checklist_complete: "Checklist 完成",
+  attachment_count: "附件数量",
+  manual_confirm: "人工确认",
+  node_status: "节点状态",
+};
+
+const completionRuleStatusLabels: Record<string, string> = {
+  pending: "未开始",
+  ready: "可进入",
+  in_progress: "处理中",
+  waiting: "等待中",
+  blocked: "已阻塞",
+  completed: "已完成",
+  skipped: "已跳过",
+  failed: "失败",
+  cancelled: "已取消",
+};
+
+const completionRuleOperatorLabels: Record<string, string> = {
+  "=": "等于",
+  equals: "等于",
+  "!=": "不等于",
+  not_equals: "不等于",
+  ">": "大于",
+  greater_than: "大于",
+  "<": "小于",
+  less_than: "小于",
+  contains: "包含",
+  not_contains: "不包含",
+};
+
+function completionRuleKind(rule: RuleRecord): string {
+  if (typeof rule.kind === "string" && rule.kind) return rule.kind;
+  if (rule.type === "rule") return "field_filled";
+  return rule.type === "group" ? "" : String(rule.type ?? "");
+}
+
+function completionRuleChildren(rule: RuleRecord): RuleRecord[] {
+  const children = Array.isArray(rule.children) ? rule.children : Array.isArray(rule.rules) ? rule.rules : [];
+  return children.filter((child): child is RuleRecord => Boolean(child) && typeof child === "object" && !Array.isArray(child));
+}
+
+function countCompletionRules(rule: RuleRecord): number {
+  const kind = completionRuleKind(rule);
+  if (kind && kind !== "group") return 1;
+  return completionRuleChildren(rule).reduce((total, child) => total + countCompletionRules(child), 0);
+}
+
+function displayCompletionRuleValue(value: unknown): string {
+  if (value == null || value === "") return "未设置";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value) ?? "已配置";
+  } catch {
+    return "已配置";
+  }
+}
+
+function CompletionRuleSummary({ rule, fields, nodes, depth = 0 }: {
+  rule: RuleRecord;
+  fields: FormField[];
+  nodes: WorkflowNode[];
+  depth?: number;
+}) {
+  const kind = completionRuleKind(rule);
+  const children = completionRuleChildren(rule);
+  if (!kind || kind === "group") {
+    const isAny = String(rule.operator ?? "AND").toUpperCase() === "OR";
+    return (
+      <div className={`grid min-w-0 gap-2 rounded-md border border-border p-3 ${depth ? "bg-background" : "bg-muted/20"}`} role="group" aria-label={isAny ? "任意条件组" : "全部条件组"}>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <strong className="min-w-0 text-xs font-medium">{isAny ? "任一条件满足" : "全部条件满足"}</strong>
+          <span className="shrink-0 text-xs text-muted-foreground">{children.length} 条</span>
+        </div>
+        {children.length ? (
+          <div className="grid min-w-0 gap-2 border-l border-border pl-2">
+            {children.map((child, index) => <CompletionRuleSummary key={`${index}-${completionRuleKind(child)}`} rule={child} fields={fields} nodes={nodes} depth={depth + 1} />)}
+          </div>
+        ) : <p className="m-0 text-xs leading-relaxed text-muted-foreground">暂无规则，空规则组默认视为满足。</p>}
+        {rule.negate === true ? <span className="w-fit rounded-sm border border-border px-2 py-0.5 text-xs text-muted-foreground">结果取反</span> : null}
+      </div>
+    );
+  }
+
+  const fieldId = String(rule.field_id ?? "");
+  const fieldLabel = fields.find((field) => field.id === fieldId)?.label || fieldId || "未指定字段";
+  const nodeId = String(rule.node_id ?? rule.field_id ?? "");
+  const nodeLabel = nodes.find((node) => node.id === nodeId || node.key === nodeId)?.name || nodeId || "未指定节点";
+  const operator = String(rule.operator_value ?? rule.operator ?? "=");
+  const kindLabel = completionRuleKindLabels[kind] ?? String(rule.label || kind || "完成规则");
+  const detail = kind === "field_filled" ? `字段「${fieldLabel}」已填写`
+    : kind === "value_compare" ? `字段「${fieldLabel}」${completionRuleOperatorLabels[operator] ?? operator} ${displayCompletionRuleValue(rule.value)}`
+      : kind === "checklist_complete" ? `字段「${fieldLabel}」中的清单已完成`
+        : kind === "attachment_count" ? `字段「${fieldLabel}」至少有 ${displayCompletionRuleValue(rule.count ?? rule.value ?? 1)} 个附件`
+          : kind === "manual_confirm" ? String(rule.label || (fieldId ? `确认字段「${fieldLabel}」` : "需要人工确认"))
+            : kind === "node_status" ? `节点「${nodeLabel}」状态为${completionRuleStatusLabels[String(rule.status ?? rule.value ?? "completed")] ?? String(rule.status ?? rule.value ?? "已完成")}`
+              : fieldId ? `字段「${fieldLabel}」` : String(rule.message || "已配置");
+
+  return (
+    <div className="grid min-w-0 gap-1 rounded-md border border-border bg-background px-3 py-2" data-rule-preview>
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <strong className="min-w-0 break-words text-xs font-medium">{kindLabel}</strong>
+        {rule.negate === true ? <span className="shrink-0 rounded-sm border border-border px-2 py-0.5 text-xs text-muted-foreground">取反</span> : null}
+      </div>
+      <p className="m-0 break-words text-xs leading-relaxed text-muted-foreground">{detail}</p>
+      {typeof rule.message === "string" && rule.message.trim() ? <p className="m-0 break-words text-xs leading-relaxed text-muted-foreground">未满足提示：{rule.message}</p> : null}
+    </div>
+  );
+}
 
 const nodeWidth = 210;
 const nodeHeight = 152;
@@ -181,6 +295,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const [dryRunOpen, setDryRunOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [formInitialFieldId, setFormInitialFieldId] = useState("");
+  const [nodeDeleteOpen, setNodeDeleteOpen] = useState(false);
   const [completionOpen, setCompletionOpen] = useState(false);
   const [actionProviders, setActionProviders] = useState<ActionProvider[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
@@ -504,7 +619,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     const offset = { x: (event.clientX - drag.start.x) / zoom, y: (event.clientY - drag.start.y) / zoom };
-    const nextNodes = drag.nodes.map((node) => node.id === drag.nodeId ? { ...node, position: { x: Math.max(0, Math.round(drag.origin.x + offset.x)), y: Math.max(0, Math.round(drag.origin.y + offset.y)) } } : node);
+    const nextNodes = drag.nodes.map((node) => node.id === drag.nodeId ? { ...node, position: { x: Math.round(drag.origin.x + offset.x), y: Math.round(drag.origin.y + offset.y) } } : node);
     drag.nodes = nextNodes;
     setWorkflow((current) => current ? { ...current, versions: current.versions.map((item) => item.id === version?.id ? { ...item, nodes: nextNodes } : item) } : current);
   };
@@ -514,7 +629,24 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.stopPropagation();
     nodeDragRef.current = undefined;
-    if (drag.nodes.some((node, index) => node.position.x !== nodes[index]?.position.x || node.position.y !== nodes[index]?.position.y)) void updateWorkflow(drag.nodes, edges);
+    const movedNode = drag.nodes.find((node) => node.id === drag.nodeId);
+    if (movedNode && (movedNode.position.x !== drag.origin.x || movedNode.position.y !== drag.origin.y)) void updateWorkflow(drag.nodes, edges);
+  };
+
+  const moveCanvasPointer = (event: React.PointerEvent<HTMLElement>) => {
+    if (nodeDragRef.current?.pointerId === event.pointerId) {
+      moveNodeDrag(event);
+      return;
+    }
+    movePan(event);
+  };
+
+  const endCanvasPointer = (event: React.PointerEvent<HTMLElement>) => {
+    if (nodeDragRef.current?.pointerId === event.pointerId) {
+      endNodeDrag(event);
+      return;
+    }
+    endPan();
   };
 
   const zoomAt = (next: number) => {
@@ -545,69 +677,65 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const innerStyle: CSSProperties = { transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`, transformOrigin: "0 0" };
   const canvasStyle: CSSProperties = {
     backgroundPosition: `${pan.x}px ${pan.y}px, ${pan.x}px ${pan.y}px, ${pan.x}px ${pan.y}px`,
-    backgroundSize: `${16 * zoom}px ${16 * zoom}px, ${80 * zoom}px ${80 * zoom}px, ${80 * zoom}px ${80 * zoom}px`,
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const preview = nodePreviewRef.current;
     if (!canvas || !preview || !hoveredNodeId) return;
-    const frame = window.requestAnimationFrame(() => {
-      const anchor = canvas.querySelector<HTMLElement>(`[data-node-id="${hoveredNodeId}"]`);
-      if (!anchor) return;
-      const canvasRect = canvas.getBoundingClientRect();
-      const anchorRect = anchor.getBoundingClientRect();
-      const previewWidth = preview.offsetWidth;
-      const previewHeight = preview.offsetHeight;
-      const spacingToken = getComputedStyle(canvas).getPropertyValue("--spacing").trim();
-      const spacingValue = Number.parseFloat(spacingToken);
-      const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const spacing = Number.isFinite(spacingValue)
-        ? spacingValue * (spacingToken.endsWith("rem") ? rootFontSize : spacingToken.endsWith("px") ? 1 : rootFontSize)
-        : 4;
-      const margin = spacing * 3;
-      const gap = spacing * 5;
-      const designer = canvas.closest(".tn-workflow-tickets-designer");
-      const leftPanelBounds = designer?.querySelector(".tn-workflow-tickets-designer-left")?.getBoundingClientRect();
-      const inspectorBounds = designer?.querySelector(".tn-workflow-tickets-designer-inspector")?.getBoundingClientRect();
-      const commandbarBounds = canvas.closest(".tn-workflow-tickets-workflow-designer-page")
-        ?.querySelector(".tn-workflow-tickets-designer-commandbar")?.getBoundingClientRect();
-      const overlapsVertically = (bounds?: DOMRect) => Boolean(bounds && bounds.bottom > canvasRect.top && bounds.top < canvasRect.bottom);
-      const overlapsHorizontally = (bounds?: DOMRect) => Boolean(bounds && bounds.right > canvasRect.left && bounds.left < canvasRect.right);
-      const viewport = {
-        left: overlapsVertically(leftPanelBounds) ? Math.max(canvasRect.left, leftPanelBounds?.right ?? canvasRect.left) : canvasRect.left,
-        right: overlapsVertically(inspectorBounds) ? Math.min(canvasRect.right, inspectorBounds?.left ?? canvasRect.right) : canvasRect.right,
-        top: overlapsHorizontally(commandbarBounds) ? Math.max(canvasRect.top, commandbarBounds?.bottom ?? canvasRect.top) : canvasRect.top,
-        bottom: canvasRect.bottom,
-      };
-      const available = {
-        right: viewport.right - anchorRect.right - gap - margin,
-        left: anchorRect.left - viewport.left - gap - margin,
-        bottom: viewport.bottom - anchorRect.bottom - gap - margin,
-        top: anchorRect.top - viewport.top - gap - margin,
-      };
-      const candidates: NodePreviewPlacement[] = ["right", "left", "bottom", "top"];
-      const placement = candidates.find((side) => (side === "right" || side === "left" ? available[side] >= previewWidth : available[side] >= previewHeight))
-        ?? candidates.reduce((best, side) => available[side] > available[best] ? side : best, "right");
-      let left = anchorRect.right - canvasRect.left + gap;
-      let top = anchorRect.top - canvasRect.top + (anchorRect.height - previewHeight) / 2;
-      if (placement === "left") left = anchorRect.left - canvasRect.left - gap - previewWidth;
-      if (placement === "bottom") {
-        left = anchorRect.left - canvasRect.left + (anchorRect.width - previewWidth) / 2;
-        top = anchorRect.bottom - canvasRect.top + gap;
-      }
-      if (placement === "top") {
-        left = anchorRect.left - canvasRect.left + (anchorRect.width - previewWidth) / 2;
-        top = anchorRect.top - canvasRect.top - gap - previewHeight;
-      }
-      const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
-      setNodePreviewPlacement(placement);
-      setNodePreviewStyle({
-        left: clamp(left, viewport.left - canvasRect.left + margin, viewport.right - canvasRect.left - previewWidth - margin),
-        top: clamp(top, viewport.top - canvasRect.top + margin, viewport.bottom - canvasRect.top - previewHeight - margin),
-      });
+    const anchor = canvas.querySelector<HTMLElement>(`[data-node-id="${hoveredNodeId}"]`);
+    if (!anchor) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    const previewWidth = preview.offsetWidth;
+    const previewHeight = preview.offsetHeight;
+    const spacingToken = getComputedStyle(canvas).getPropertyValue("--spacing").trim();
+    const spacingValue = Number.parseFloat(spacingToken);
+    const rootFontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const spacing = Number.isFinite(spacingValue)
+      ? spacingValue * (spacingToken.endsWith("rem") ? rootFontSize : spacingToken.endsWith("px") ? 1 : rootFontSize)
+      : 4;
+    const margin = spacing * 3;
+    const gap = spacing * 5;
+    const designer = canvas.closest(".tn-workflow-tickets-designer");
+    const leftPanelBounds = designer?.querySelector(".tn-workflow-tickets-designer-left")?.getBoundingClientRect();
+    const inspectorBounds = designer?.querySelector(".tn-workflow-tickets-designer-inspector")?.getBoundingClientRect();
+    const commandbarBounds = canvas.closest(".tn-workflow-tickets-workflow-designer-page")
+      ?.querySelector(".tn-workflow-tickets-designer-commandbar")?.getBoundingClientRect();
+    const overlapsVertically = (bounds?: DOMRect) => Boolean(bounds && bounds.bottom > canvasRect.top && bounds.top < canvasRect.bottom);
+    const overlapsHorizontally = (bounds?: DOMRect) => Boolean(bounds && bounds.right > canvasRect.left && bounds.left < canvasRect.right);
+    const viewport = {
+      left: overlapsVertically(leftPanelBounds) ? Math.max(canvasRect.left, leftPanelBounds?.right ?? canvasRect.left) : canvasRect.left,
+      right: overlapsVertically(inspectorBounds) ? Math.min(canvasRect.right, inspectorBounds?.left ?? canvasRect.right) : canvasRect.right,
+      top: overlapsHorizontally(commandbarBounds) ? Math.max(canvasRect.top, commandbarBounds?.bottom ?? canvasRect.top) : canvasRect.top,
+      bottom: canvasRect.bottom,
+    };
+    const available = {
+      right: viewport.right - anchorRect.right - gap - margin,
+      left: anchorRect.left - viewport.left - gap - margin,
+      bottom: viewport.bottom - anchorRect.bottom - gap - margin,
+      top: anchorRect.top - viewport.top - gap - margin,
+    };
+    const candidates: NodePreviewPlacement[] = ["right", "left", "bottom", "top"];
+    const placement = candidates.find((side) => (side === "right" || side === "left" ? available[side] >= previewWidth : available[side] >= previewHeight))
+      ?? candidates.reduce((best, side) => available[side] > available[best] ? side : best, "right");
+    let left = anchorRect.right - canvasRect.left + gap;
+    let top = anchorRect.top - canvasRect.top + (anchorRect.height - previewHeight) / 2;
+    if (placement === "left") left = anchorRect.left - canvasRect.left - gap - previewWidth;
+    if (placement === "bottom") {
+      left = anchorRect.left - canvasRect.left + (anchorRect.width - previewWidth) / 2;
+      top = anchorRect.bottom - canvasRect.top + gap;
+    }
+    if (placement === "top") {
+      left = anchorRect.left - canvasRect.left + (anchorRect.width - previewWidth) / 2;
+      top = anchorRect.top - canvasRect.top - gap - previewHeight;
+    }
+    const clamp = (value: number, minimum: number, maximum: number) => Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+    setNodePreviewPlacement(placement);
+    setNodePreviewStyle({
+      left: clamp(left, viewport.left - canvasRect.left + margin, viewport.right - canvasRect.left - previewWidth - margin),
+      top: clamp(top, viewport.top - canvasRect.top + margin, viewport.bottom - canvasRect.top - previewHeight - margin),
     });
-    return () => window.cancelAnimationFrame(frame);
   }, [hoveredNodeId, pan.x, pan.y, zoom]);
 
   useEffect(() => () => {
@@ -624,6 +752,9 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   if (!selected || !sectionMeta) {
     return <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page"><Alert><AlertDescription>当前工作流没有可配置的节点。</AlertDescription></Alert></section>;
   }
+
+  const completionRule = (selected.completion_rule ?? { type: "group", operator: "AND", children: [] }) as RuleRecord;
+  const configuredCompletionRuleCount = countCompletionRules(completionRule);
 
   return (
     <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page">
@@ -658,7 +789,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
           </div>
           <div className="tn-workflow-tickets-designer-list">
             {filteredNodes.map((node) => <button key={node.id} type="button" className={`tn-workflow-tickets-designer-list-item${node.id === selected.id ? " is-active" : ""}`} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }}>
-              <RiMenuLine className="tn-workflow-tickets-designer-list-handle" aria-hidden="true" />
+              <RiDraggable className="tn-workflow-tickets-designer-list-handle" aria-hidden="true" />
               <span className="tn-workflow-tickets-designer-list-copy"><strong>{node.name}</strong><small>{node.key}</small></span>
             </button>)}
           </div>
@@ -672,13 +803,13 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
           </DropdownMenu>
         </aside>
 
-        <section ref={canvasRef} className="tn-workflow-tickets-designer-canvas" style={canvasStyle} aria-label="工作流画布" onPointerDown={startPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan} onWheel={handleCanvasWheel}>
+        <section ref={canvasRef} className="tn-workflow-tickets-designer-canvas" style={canvasStyle} aria-label="工作流画布" onPointerDown={startPan} onPointerMove={moveCanvasPointer} onPointerUp={endCanvasPointer} onPointerCancel={endCanvasPointer} onWheel={handleCanvasWheel}>
           <div className="tn-workflow-tickets-canvas-inner" style={innerStyle}>
             <svg className="tn-workflow-tickets-canvas-edges" viewBox="0 0 1400 1000" preserveAspectRatio="none" aria-label="工作流连线">
               <defs><marker id="tn-workflow-edge-arrow-default" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--border)" /></marker><marker id="tn-workflow-edge-arrow-active" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--primary)" /></marker></defs>
               {edges.map((edge) => <g key={edge.id}><path className="tn-workflow-tickets-canvas-edge-hit-area" d={edgePath(edge, nodes)} role="button" tabIndex={0} aria-label="选择工作流连线" onClick={(event) => { event.stopPropagation(); setSelectedEdgeId(edge.id); }} /><path className={`tn-workflow-tickets-canvas-edge-path${selectedEdgeId === edge.id || selected?.id === edge.source_node_id ? " is-selected" : ""}`} d={edgePath(edge, nodes)} markerEnd={`url(#${selectedEdgeId === edge.id || selected?.id === edge.source_node_id ? "tn-workflow-edge-arrow-active" : "tn-workflow-edge-arrow-default"})`} /></g>)}
             </svg>
-            {nodes.map((node) => <article key={node.id} data-node-id={node.id} className={`tn-workflow-tickets-node-card${node.id === selected.id ? " is-selected" : ""}`} style={{ left: `${node.position.x}px`, top: `${node.position.y}px` }} role="button" tabIndex={0} aria-label={`选择节点：${node.name}`} aria-describedby={hoveredNodeId === node.id ? "tn-workflow-tickets-node-field-preview" : undefined} onPointerEnter={(event) => scheduleNodePreview(node, event)} onPointerLeave={scheduleNodePreviewClose} onFocus={(event) => scheduleNodePreview(node, event)} onBlur={scheduleNodePreviewClose} onPointerDown={(event) => startNodeDrag(event, node)} onPointerMove={moveNodeDrag} onPointerUp={endNodeDrag} onPointerCancel={endNodeDrag} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); setSelectedEdgeId(""); } }}>
+            {nodes.map((node) => <article key={node.id} data-node-id={node.id} className={`tn-workflow-tickets-node-card${node.id === selected.id ? " is-selected" : ""}`} style={{ left: `${node.position.x}px`, top: `${node.position.y}px` }} role="button" tabIndex={0} aria-label={`选择节点：${node.name}`} aria-describedby={hoveredNodeId === node.id ? "tn-workflow-tickets-node-field-preview" : undefined} onPointerEnter={(event) => scheduleNodePreview(node, event)} onPointerLeave={scheduleNodePreviewClose} onFocus={(event) => scheduleNodePreview(node, event)} onBlur={scheduleNodePreviewClose} onPointerDown={(event) => startNodeDrag(event, node)} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); setSelectedEdgeId(""); } }}>
               <div className="tn-workflow-tickets-node-title"><span className="tn-workflow-tickets-node-dot" />{node.name}</div>
               <div className="tn-workflow-tickets-node-summary"><span>{node.form_schema.fields.length} 个字段 · {Array.isArray(node.completion_rule?.children) ? node.completion_rule.children.length : 0} 条完成条件</span><span>{node.actions.length} 个动作</span></div>
               <div className="tn-workflow-tickets-card-footer"><Badge variant="secondary">{node.node_type === "summary" ? "总结节点" : "通用节点"}</Badge><span className="tn-workflow-tickets-muted">{node.key}</span></div>
@@ -704,12 +835,18 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
                 <h2>{sectionMeta.title}</h2>
                 <InspectorHelp label={sectionMeta.title} hint={sectionMeta.help} />
               </div>
-              {activeSection !== "version" ? <Button className="h-7 px-2 text-sm" size="sm" variant="destructiveSolid" disabled={readOnly} onClick={() => void removeNode()}>删除节点</Button> : null}
+              {activeSection !== "version" ? <Button type="button" className="h-7 px-2" size="sm" variant="destructiveSolid" disabled={readOnly || saving} onClick={() => setNodeDeleteOpen(true)}><RiDeleteBinLine data-icon="inline-start" aria-hidden="true" />删除节点</Button> : null}
             </header>
             <div className="tn-workflow-tickets-inspector-body"><div className="tn-workflow-tickets-inspector-scroll">
               {activeSection === "basic" ? <section className="tn-workflow-tickets-inspector-section"><FieldGroup><Field><FieldLabel>节点名称</FieldLabel><Input value={selected.name} disabled={readOnly} placeholder="输入节点名称" onChange={(event) => changeNode({ name: event.target.value })} onBlur={saveNodeChanges} /></Field><Field><FieldLabel>节点类型</FieldLabel><Select value={selected.node_type} onValueChange={(value) => { changeNode({ node_type: (value ?? "general") as WorkflowNode["node_type"] }); window.setTimeout(saveNodeChanges, 0); }} disabled={readOnly}><SelectTrigger aria-label="节点类型"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>节点类型</SelectLabel><SelectItem value="general">通用节点</SelectItem><SelectItem value="summary">总结节点</SelectItem></SelectGroup></SelectContent></Select></Field><Field><FieldLabel>节点描述</FieldLabel><Textarea value={selected.description} rows={3} disabled={readOnly} placeholder="说明节点目标和处理要求" onChange={(event) => changeNode({ description: event.target.value })} onBlur={saveNodeChanges} /></Field></FieldGroup></section> : null}
               {activeSection === "form" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-inspector-summary"><span><strong>{selected.form_schema.fields.length}</strong> 个字段</span><span><strong>{selected.inputs.length}</strong> 个输入</span><span><strong>{selected.outputs.length}</strong> 个输出</span></div>{selected.form_schema.fields.length ? <div className="tn-workflow-tickets-inspector-field-list">{selected.form_schema.fields.map((field) => <button key={field.id} type="button" className="tn-workflow-tickets-inspector-field-item" disabled={readOnly} onClick={() => { setFormInitialFieldId(field.id); setFormOpen(true); }}><span><strong>{field.label}</strong><small>{fieldTypeLabels[field.type] ?? "字段"} · {field.id}</small></span>{field.required ? <Badge variant="outline">必填</Badge> : null}</button>)}</div> : <p className="tn-workflow-tickets-inspector-empty">还没有字段，打开表单设计后即可添加。</p>}<Button className="w-full" variant="secondary" disabled={readOnly} onClick={() => { setFormInitialFieldId(""); setFormOpen(true); }}>编辑节点表单</Button></section> : null}
-              {activeSection === "conditions" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-condition-editor-toolbar"><span className="tn-workflow-tickets-muted">{Array.isArray(selected.completion_rule?.children) && selected.completion_rule.children.length ? `已配置 ${selected.completion_rule.children.length} 条顶层规则。` : "未配置规则时节点可直接完成。"}</span><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => setCompletionOpen(true)}><RiEditLine data-icon="inline-start" />弹窗编辑</Button></div></section> : null}
+              {activeSection === "conditions" ? <section className="tn-workflow-tickets-inspector-section">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="tn-workflow-tickets-muted">{configuredCompletionRuleCount ? `已配置 ${configuredCompletionRuleCount} 条规则` : "未配置完成规则"}</span>
+                  <Button size="sm" variant="secondary" disabled={readOnly} onClick={() => setCompletionOpen(true)}><RiEditLine data-icon="inline-start" />弹窗编辑</Button>
+                </div>
+                {configuredCompletionRuleCount ? <CompletionRuleSummary rule={completionRule} fields={selected.form_schema.fields} nodes={nodes} /> : <p className="m-0 text-xs leading-relaxed text-muted-foreground">未配置规则时，节点可直接完成。</p>}
+              </section> : null}
               {activeSection === "flow" ? <>
                 <section className="tn-workflow-tickets-inspector-section">
                   <div className="tn-workflow-tickets-inspector-section-heading"><div><h3>前序节点</h3><p>组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div><Badge variant="outline">{incomingNodes.length} 个</Badge></div>
@@ -732,10 +869,11 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
       </div>
 
       <WorkflowFormDesignerDialog key={`${selected.id}-${formInitialFieldId}`} open={formOpen} onOpenChange={setFormOpen} node={selected} initialFieldId={formInitialFieldId} variables={formVariables} onApply={applyFormFields} />
-      <Dialog open={completionOpen} onOpenChange={setCompletionOpen}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={(selected.completion_rule ?? { type: "group", operator: "AND", children: [] }) as RuleRecord} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={updateCompletionRule} /><DialogFooter><Button variant="outline" onClick={() => setCompletionOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={completionOpen} onOpenChange={setCompletionOpen}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={completionRule} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={updateCompletionRule} /><DialogFooter><Button variant="outline" onClick={() => setCompletionOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}><DialogContent><DialogHeader><DialogTitle>模板信息</DialogTitle><DialogDescription>修改模板名称、描述和分组。</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>模板名称</FieldLabel><Input value={metaDraft.name} onChange={(event) => setMetaDraft({ ...metaDraft, name: event.target.value })} /></Field><Field><FieldLabel>模板描述</FieldLabel><Textarea value={metaDraft.description} onChange={(event) => setMetaDraft({ ...metaDraft, description: event.target.value })} /></Field><Field><FieldLabel>模板分组</FieldLabel><Input value={metaDraft.group_name} onChange={(event) => setMetaDraft({ ...metaDraft, group_name: event.target.value })} /></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => setMetaOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void saveMeta()}>保存修改</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent><DialogHeader><DialogTitle>发布工作流</DialogTitle><DialogDescription>发布后会生成不可修改的版本快照，新建工单将使用当前发布版本。</DialogDescription></DialogHeader><Field><FieldLabel>版本说明</FieldLabel><Textarea value={publishNote} onChange={(event) => setPublishNote(event.target.value)} placeholder="例如：增加结果复核节点，调整附件要求" /></Field><DialogFooter><Button variant="outline" onClick={() => setPublishOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void publish()}>确认发布</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={dryRunOpen} onOpenChange={setDryRunOpen}><DialogContent><DialogHeader><DialogTitle>流程预演</DialogTitle><DialogDescription>按当前版本计算节点和连线，不创建工单，也不会执行节点动作。</DialogDescription></DialogHeader><Field><FieldLabel>根节点初始值（JSON）</FieldLabel><Textarea value={dryRunInput} onChange={(event) => setDryRunInput(event.target.value)} /></Field>{dryRunResult ? <div className="tn-workflow-tickets-dry-run-result"><strong>v{dryRunResult.version} 预演结果</strong>{dryRunResult.nodes.map((node) => <div key={node.name}><RiCheckLine />{node.name}<span>{node.status}</span></div>)}<p>{dryRunResult.explanation}</p></div> : null}<DialogFooter><Button variant="outline" onClick={() => setDryRunOpen(false)}>关闭</Button><Button onClick={() => void runDryRun()}>开始预演</Button></DialogFooter></DialogContent></Dialog>
+      <AlertDialog open={nodeDeleteOpen} onOpenChange={setNodeDeleteOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除节点？</AlertDialogTitle><AlertDialogDescription>确定删除“{selected.name}”吗？与该节点相连的流转关系也会一并删除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={(event) => { event.preventDefault(); setNodeDeleteOpen(false); void removeNode(); }}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </section>
   );
 }

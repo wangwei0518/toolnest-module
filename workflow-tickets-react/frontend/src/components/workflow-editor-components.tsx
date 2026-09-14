@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
-import { RiAddLine, RiArrowDownLine, RiArrowUpLine, RiDeleteBinLine, RiEyeLine, RiFileTextLine, RiMenuLine, RiPencilLine } from "@remixicon/react";
+import { RiAddLine, RiArrowDownLine, RiArrowUpLine, RiDeleteBinLine, RiDraggable, RiEyeLine, RiFileTextLine, RiPencilLine } from "@remixicon/react";
 
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,6 +54,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
 }) {
   const initialFields = useMemo(() => (node.form_schema?.fields ?? []).map((field) => ({ ...clone(field), config: { rows: ["textarea", "markdown"].includes(field.type) ? 4 : ["code", "json"].includes(field.type) ? 10 : undefined, language: field.type === "json" ? "json" : field.type === "markdown" ? "markdown" : "plaintext", markdown_mode: "split", max_files: 1, max_size_mb: 100, ...field.config } })) as FieldDraft[], [node.id, node.form_schema]);
   const [fields, setFields] = useState<FieldDraft[]>(initialFields);
+  const [pendingFieldDelete, setPendingFieldDelete] = useState<FieldDraft>();
   const [activeId, setActiveId] = useState(initialFieldId && initialFields.some((field) => field.id === initialFieldId) ? initialFieldId : initialFields[0]?.id ?? "");
   const [originIds, setOriginIds] = useState<Record<string, string>>(() => Object.fromEntries(initialFields.map((field) => [field.id, field.id])));
   const [selectedType, setSelectedType] = useState("text");
@@ -126,9 +128,17 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   };
   const removeField = (id: string) => {
     const index = fields.findIndex((field) => field.id === id);
+    if (index < 0) return;
     const next = fields.filter((field) => field.id !== id);
     setOriginIds((current) => { const copy = { ...current }; delete copy[id]; return copy; });
-    setFields(next); setActiveId(next[Math.min(index, next.length - 1)]?.id ?? "");
+    setFields(next);
+    if (activeId === id) setActiveId(next[Math.min(index, next.length - 1)]?.id ?? "");
+    setPreviewValues((current) => { if (!(id in current)) return current; const copy = { ...current }; delete copy[id]; return copy; });
+    setFieldIdDraft((current) => current?.fieldId === id ? undefined : current);
+  };
+  const requestFieldDelete = (id: string) => {
+    const field = fields.find((item) => item.id === id);
+    if (field) setPendingFieldDelete(field);
   };
   const changeType = (type: string) => {
     if (!active || active.type === type) return;
@@ -184,7 +194,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   };
 
   return <>
-  <Dialog open={open} onOpenChange={(next) => { if (!next) { setFields(initialFields); setActiveId(initialFieldId && initialFields.some((field) => field.id === initialFieldId) ? initialFieldId : initialFields[0]?.id ?? ""); setOriginIds(Object.fromEntries(initialFields.map((field) => [field.id, field.id]))); setFieldIdDraft(undefined); setError(""); } onOpenChange(next); }}>
+  <Dialog open={open} onOpenChange={(next) => { if (!next) { setFields(initialFields); setActiveId(initialFieldId && initialFields.some((field) => field.id === initialFieldId) ? initialFieldId : initialFields[0]?.id ?? ""); setOriginIds(Object.fromEntries(initialFields.map((field) => [field.id, field.id]))); setFieldIdDraft(undefined); setPendingFieldDelete(undefined); setError(""); } onOpenChange(next); }}>
     <DialogContent className="flex h-[min(54rem,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[min(90rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0">
       <DialogHeader className="flex-row items-center justify-between border-b px-5 py-4 pr-12">
         <div><p className="text-xs text-muted-foreground">节点表单</p><DialogTitle className="mt-1">{node.name}</DialogTitle><DialogDescription className="mt-1">{fields.length} 个字段 · 修改会在应用后写入当前节点</DialogDescription></div>
@@ -195,9 +205,12 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
           <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold">字段结构</h3><p className="text-xs text-muted-foreground">拖动调整顺序</p></div><Badge variant="secondary">{fields.length}</Badge></div>
           <div className="mb-3 flex gap-2"><Select value={selectedType} onValueChange={(value) => value && setSelectedType(value)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["基础字段", "选择字段", "高级字段", "执行字段", "附件字段"].map((group) => <SelectGroup key={group}><SelectLabel>{group}</SelectLabel>{fieldTypes.filter((field) => field.group === group).map((field) => <SelectItem key={field.value} value={field.value}>{field.label}</SelectItem>)}</SelectGroup>)}</SelectContent></Select><Button size="icon" aria-label="新增字段" onClick={addField}><RiAddLine /></Button></div>
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto" onDragOver={(event) => event.preventDefault()} onDrop={dropField}>
-            {fields.map((field) => <button key={field.id} draggable onDragStart={() => { setDraggingId(field.id); setActiveId(field.id); }} onDragOver={(event) => { event.preventDefault(); setDropId(field.id); }} onDragEnd={() => { setDraggingId(""); setDropId(""); }} onClick={() => setActiveId(field.id)} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left transition-colors ${field.id === activeId ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/60"} ${dropId === field.id ? "border-primary" : ""}`}>
-              <RiMenuLine className="shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{field.label || "未命名字段"}</strong><small className="block truncate text-xs text-muted-foreground">{fieldTypeLabel(field.type)}</small></span>
-            </button>)}
+            {fields.map((field) => <div key={field.id} onDragOver={(event) => { event.preventDefault(); setDropId(field.id); }} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 transition-colors ${field.id === activeId ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/60"} ${dropId === field.id ? "border-primary" : ""}`}>
+              <button type="button" draggable onDragStart={() => { setDraggingId(field.id); setActiveId(field.id); }} onDragEnd={() => { setDraggingId(""); setDropId(""); }} onClick={() => setActiveId(field.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+                <RiDraggable className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{field.label || "未命名字段"}</strong><small className="block truncate text-xs text-muted-foreground">{fieldTypeLabel(field.type)}</small></span>
+              </button>
+              <Button type="button" variant="destructiveSolid" size="icon-sm" aria-label={`删除字段 ${field.label || "未命名字段"}`} onClick={() => requestFieldDelete(field.id)}><RiDeleteBinLine /></Button>
+            </div>)}
             {!fields.length ? <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">选择字段类型并新增。</p> : null}
           </div>
         </aside>
@@ -210,7 +223,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
           </div>
         </main>
         <aside className="flex min-h-0 flex-col overflow-hidden p-4">
-          {active ? <><div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold">字段配置</h3><p className="text-xs text-muted-foreground">{fieldTypeLabel(active.type)}</p></div><Button variant="ghost" size="icon-sm" aria-label="删除字段" onClick={() => removeField(active.id)}><RiDeleteBinLine /></Button></div>
+          {active ? <><div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold">字段配置</h3><p className="text-xs text-muted-foreground">{fieldTypeLabel(active.type)}</p></div><Button type="button" variant="destructiveSolid" size="icon-sm" aria-label={`删除字段 ${active.label || "未命名字段"}`} onClick={() => requestFieldDelete(active.id)}><RiDeleteBinLine /></Button></div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1"><FieldGroup>
               <Field><FieldLabel>字段类型</FieldLabel><Select value={active.type} onValueChange={(value) => value && changeType(value)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{fieldTypes.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select></Field>
               <Field><FieldLabel>字段名称</FieldLabel><Input value={active.label} onChange={(event) => setField(active.id, { label: event.target.value })} placeholder="输入字段名称" /></Field>
@@ -244,6 +257,18 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
       <DialogFooter><Button variant="outline" onClick={() => setAdvancedOpen(false)}>取消</Button><Button onClick={applyAdvancedEditor}>应用修改</Button></DialogFooter>
     </DialogContent>
   </Dialog>
+  <AlertDialog open={Boolean(pendingFieldDelete)} onOpenChange={(next) => { if (!next) setPendingFieldDelete(undefined); }}>
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>删除字段？</AlertDialogTitle>
+        <AlertDialogDescription>确认从当前表单草稿中删除“{pendingFieldDelete?.label || "未命名字段"}”？点击“应用到节点”后才会写入当前节点。</AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel>取消</AlertDialogCancel>
+        <AlertDialogAction variant="destructive" onClick={(event) => { event.preventDefault(); if (!pendingFieldDelete) return; removeField(pendingFieldDelete.id); setPendingFieldDelete(undefined); }}>确认删除</AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
   </>;
 }
 

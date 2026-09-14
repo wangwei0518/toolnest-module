@@ -123,12 +123,12 @@
   justify-content: space-between;
   gap: calc(var(--spacing) * 4);
   border-bottom: 1px solid var(--border);
-  padding-bottom: calc(var(--spacing) * 3);
+  padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4);
 }
 
 .tn-workflow-tickets-react__header--create {
   border-bottom: 0;
-  padding-bottom: 0;
+  padding-block: 0;
 }
 
 .tn-workflow-tickets-react__identity,
@@ -1450,7 +1450,7 @@
 
 .tn-workflow-tickets-designer-inspector {
   right: calc(var(--spacing) * 3);
-  width: clamp(20rem, 22vw, 26.25rem);
+  width: clamp(18rem, 19vw, 22rem);
   padding: 0;
   background: transparent;
 }
@@ -1504,13 +1504,14 @@
 
 .tn-workflow-tickets-designer-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-inline-end: calc(var(--spacing) * -4);
   min-height: 0;
   flex: 1;
   align-content: start;
   gap: var(--spacing);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 
 .tn-workflow-tickets-designer-list-item {
@@ -1546,8 +1547,8 @@
 .tn-workflow-tickets-designer-list-handle {
   flex: 0 0 auto;
   color: var(--muted-foreground);
-  width: 0.8125rem;
-  height: 0.8125rem;
+  width: 1rem;
+  height: 1rem;
 }
 
 .tn-workflow-tickets-designer-list-copy {
@@ -1596,7 +1597,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--popover);
-  box-shadow: var(--tn-shadow-card, none);
+  box-shadow: var(--tn-shadow-card, var(--shadow-md));
   color: var(--popover-foreground);
   cursor: default;
   user-select: text;
@@ -1928,7 +1929,7 @@
   padding: calc(var(--spacing) * 4);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
 }
 
 .tn-workflow-tickets-inspector-section {
@@ -2201,8 +2202,12 @@
 }
 
 .tn-workflow-tickets-inspector-nav-item:hover {
-  background: var(--muted);
+  background: transparent;
   color: var(--foreground);
+}
+
+.tn-workflow-tickets-inspector-nav-item:hover::before {
+  background: var(--muted);
 }
 
 .tn-workflow-tickets-inspector-nav-item.is-active {
@@ -2283,7 +2288,7 @@
   }
 
   .tn-workflow-tickets-designer-inspector {
-    width: 22.5rem;
+    width: 18rem;
   }
 
   .tn-workflow-tickets-designer-commandbar-actions {
@@ -2305,7 +2310,7 @@
 
   .tn-workflow-tickets-workflow-designer-page .tn-workflow-tickets-designer-inspector {
     right: calc(var(--spacing) * 3);
-    width: clamp(20rem, 22vw, 26.25rem);
+    width: clamp(18rem, 19vw, 22rem);
     padding: 0;
     border: 0;
     border-radius: 0;
