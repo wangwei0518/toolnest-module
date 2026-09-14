@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
-import { RiArrowLeftSLine, RiBarChartLine, RiCalendarLine, RiCalendarScheduleLine, RiFileTextLine, RiFlagLine, RiFolderLine, RiGitBranchLine, RiInboxLine, RiLayoutGridLine, RiLinkM, RiSettings3Line, RiTimeLine } from "@remixicon/react";
+import { RiArrowLeftSLine, RiBarChartLine, RiCalendarLine, RiCalendarScheduleLine, RiFileTextLine, RiFlagLine, RiFolderLine, RiGitBranchLine, RiLayoutGridLine, RiLinkM, RiSettings3Line, RiTimeLine } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -26,7 +26,7 @@ export function useModulePageMeta() {
 
 function resolvePageMeta(relativePath: string): ModulePageMeta {
   if (!relativePath || relativePath === "overview") return { title: "总览", description: "从待办、项目和动态开始推进工作。" };
-  if (relativePath === "inbox") return { title: "收件箱", description: "先快速记录，再整理成可执行工单。" };
+  if (relativePath === "schedule") return { title: "日程", description: "按日期查看和安排事项。" };
   if (relativePath === "projects") return { title: "项目", description: "围绕目标组织工单、里程碑和复盘数据。" };
   if (relativePath === "projects/new") return { title: "新建项目", description: "为一组关联工单建立协作上下文。" };
   if (/^projects\/[^/]+\/milestones\/[^/]+$/.test(relativePath)) return { title: "里程碑详情", description: "查看阶段目标、工单进度与风险复盘。" };
@@ -47,7 +47,7 @@ function resolvePageMeta(relativePath: string): ModulePageMeta {
 
 function ModuleNavigationIcon({ itemKey }: { itemKey: string }) {
   if (itemKey === "overview") return <RiFlagLine data-icon="inline-start" aria-hidden="true" />;
-  if (itemKey === "inbox") return <RiInboxLine data-icon="inline-start" aria-hidden="true" />;
+  if (itemKey === "schedule") return <RiCalendarScheduleLine data-icon="inline-start" aria-hidden="true" />;
   if (itemKey === "projects") return <RiFolderLine data-icon="inline-start" aria-hidden="true" />;
   if (itemKey === "tickets") return <RiFileTextLine data-icon="inline-start" aria-hidden="true" />;
   if (itemKey === "workspace") return <RiLayoutGridLine data-icon="inline-start" aria-hidden="true" />;
@@ -102,24 +102,27 @@ function ProjectNavigation({ projectId, activeKey, router }: { projectId: string
 function ModulePageContent({ relativePath, query, activeKey, router, children }: { relativePath: string; query: Record<string, string>; activeKey: string; router: ToolNestModuleRouteRenderProps["router"]; children: ReactNode }) {
   const [pageMeta, setPageMeta] = useState<ModulePageMeta>(() => resolvePageMeta(relativePath));
   const projectContext = resolveProjectContext(relativePath, query);
+  const isWorkflowDesigner = /^workflows\/[^/]+\/designer(?:\/|$)/.test(relativePath);
   return (
     <ModulePageMetaContext.Provider value={{ setPageMeta }}>
-      <header className={`tn-workflow-tickets-react__header${relativePath === "create" || relativePath === "tickets/new" ? " tn-workflow-tickets-react__header--create" : ""}`}>
-        <div className="tn-workflow-tickets-react__identity">
-          {projectContext ? <Button type="button" size="icon-lg" variant="ghost" aria-label={projectContext.backLabel} onClick={() => void router.push(projectContext.backPath)}><RiArrowLeftSLine /></Button> : null}
-          <span className="tn-workflow-tickets-react__mark"><RiInboxLine aria-hidden="true" /></span>
-          <div className="grid min-w-0 gap-0.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <strong className="tn-workflow-tickets-react__title">{pageMeta.title}</strong>
-              {pageMeta.badge}
+      {!isWorkflowDesigner ? (
+        <header className={`tn-workflow-tickets-react__header${relativePath === "create" || relativePath === "tickets/new" ? " tn-workflow-tickets-react__header--create" : ""}`}>
+          <div className="tn-workflow-tickets-react__identity">
+            {projectContext ? <Button type="button" size="icon-lg" variant="ghost" aria-label={projectContext.backLabel} onClick={() => void router.push(projectContext.backPath)}><RiArrowLeftSLine /></Button> : null}
+            <span className="tn-workflow-tickets-react__mark"><RiCalendarScheduleLine aria-hidden="true" /></span>
+            <div className="grid min-w-0 gap-0.5">
+              <div className="flex min-w-0 items-center gap-2">
+                <strong className="tn-workflow-tickets-react__title">{pageMeta.title}</strong>
+                {pageMeta.badge}
+              </div>
+              {pageMeta.description ? <span className="tn-workflow-tickets-react__description">{pageMeta.description}</span> : null}
             </div>
-            {pageMeta.description ? <span className="tn-workflow-tickets-react__description">{pageMeta.description}</span> : null}
           </div>
-        </div>
-        <nav aria-label={projectContext ? "项目导航" : "工单模块导航"} className="tn-workflow-tickets-react__navigation">
-          {projectContext ? <ProjectNavigation projectId={projectContext.projectId} activeKey={projectContext.activeKey} router={router} /> : <Tabs value={activeKey} onValueChange={(value) => { if (value === null) return; const target = navigation.find((item) => item.key === value); if (!target) return; void router.push(`/modules/workflow-tickets-react${target.path ? `/${target.path}` : ""}`); }} className="max-w-full min-w-0"><TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">{navigation.map((item) => <TabsTrigger key={item.key} value={item.key}><ModuleNavigationIcon itemKey={item.key} />{item.label}</TabsTrigger>)}</TabsList></Tabs>}
-        </nav>
-      </header>
+          <nav aria-label={projectContext ? "项目导航" : "工单模块导航"} className="tn-workflow-tickets-react__navigation">
+            {projectContext ? <ProjectNavigation projectId={projectContext.projectId} activeKey={projectContext.activeKey} router={router} /> : <Tabs value={activeKey} onValueChange={(value) => { if (value === null) return; const target = navigation.find((item) => item.key === value); if (!target) return; void router.push(`/modules/workflow-tickets-react${target.path ? `/${target.path}` : ""}`); }} className="max-w-full min-w-0"><TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">{navigation.map((item) => <TabsTrigger key={item.key} value={item.key}><ModuleNavigationIcon itemKey={item.key} />{item.label}</TabsTrigger>)}</TabsList></Tabs>}
+          </nav>
+        </header>
+      ) : null}
       {children}
     </ModulePageMetaContext.Provider>
   );
@@ -141,7 +144,7 @@ export function ModuleLayout({
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.altKey && event.key.toLowerCase() === "n") {
         event.preventDefault();
-        void router.push("/modules/workflow-tickets-react/inbox?quick=1");
+        void router.push("/modules/workflow-tickets-react/schedule?quick=1");
       }
     };
     window.addEventListener("keydown", handleShortcut);

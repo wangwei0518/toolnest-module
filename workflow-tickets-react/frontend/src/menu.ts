@@ -2,7 +2,7 @@ import type { ToolNestModuleMenuItem } from "@toolnest/react-module-sdk";
 
 export const navigation = [
   { key: "overview", label: "总览", path: "" },
-  { key: "inbox", label: "收件箱", path: "inbox" },
+  { key: "schedule", label: "日程", path: "schedule" },
   { key: "projects", label: "项目", path: "projects" },
   { key: "tickets", label: "工单", path: "tickets" },
   { key: "workspace", label: "工作台", path: "create" },

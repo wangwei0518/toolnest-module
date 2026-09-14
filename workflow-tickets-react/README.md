@@ -2,7 +2,7 @@
 
 工作流工单与项目协作
 
-这是旧版 `modules/workflow-tickets` 内置/Vue 模块的 React runtime 迁移实现，保留工单、流程模板、节点运行、收件箱、项目/里程碑、定时任务、通知规则、自动化和数据迁移能力。模块使用独立 Node 进程和 `TOOLNEST_PLUGIN_DATA_DIR` 下的 JSON 数据存储，业务请求统一经过平台 Gateway。
+这是旧版 `modules/workflow-tickets` 内置/Vue 模块的 React runtime 迁移实现，保留工单、流程模板、节点运行、日程、项目/里程碑、定时任务、通知规则、自动化和数据迁移能力。模块使用独立 Node 进程和 `TOOLNEST_PLUGIN_DATA_DIR` 下的 JSON 数据存储，业务请求统一经过平台 Gateway。
 
 ## 目录结构
 

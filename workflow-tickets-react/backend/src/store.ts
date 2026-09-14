@@ -44,16 +44,19 @@ export class JsonStore {
 
   private normalize(value: Partial<WorkflowStore>): WorkflowStore {
     const initial = emptyStore();
+    const normalizedValue = { ...value } as Partial<WorkflowStore> & { inbox_items?: unknown };
+    delete normalizedValue.inbox_items;
     return {
       ...initial,
-      ...value,
+      ...normalizedValue,
+      schema_version: 3,
       settings: { ...initial.settings, ...(value.settings ?? {}), notification_rules: { ...initial.settings.notification_rules, ...(value.settings?.notification_rules ?? {}) } },
       workflows: value.workflows ?? [],
       tickets: value.tickets ?? [],
       timeline: value.timeline ?? [],
       projects: value.projects ?? [],
       milestones: value.milestones ?? [],
-      inbox_items: value.inbox_items ?? [],
+      schedule_items: value.schedule_items ?? [],
       schedules: value.schedules ?? [],
       schedule_runs: value.schedule_runs ?? [],
       saved_views: value.saved_views ?? [],

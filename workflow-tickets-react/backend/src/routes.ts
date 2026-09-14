@@ -33,6 +33,16 @@ function run(reply: FastifyReply, operation: () => unknown | Promise<unknown>) {
   return Promise.resolve().then(operation).then((value) => reply.send({ data: value })).catch((error) => sendError(reply, error));
 }
 
+function registerScheduleItemRoutes(app: FastifyInstance, service: WorkflowTicketsService) {
+  const prefix = "/schedule-items";
+  app.get(prefix, (request, reply) => run(reply, () => service.listScheduleItems(Boolean((request.query as Body).include_archived))));
+  app.post(prefix, (request, reply) => run(reply, () => service.createScheduleItem(body(request), actor(request))));
+  app.post(`${prefix}/:itemId/convert`, (request, reply) => run(reply, () => service.convertScheduleItem(params(request).itemId, body(request), actor(request))));
+  app.post(`${prefix}/:itemId/archive`, (request, reply) => run(reply, () => service.archiveScheduleItem(params(request).itemId)));
+  app.post(`${prefix}/:itemId/completion`, (request, reply) => run(reply, () => service.updateScheduleItem(params(request).itemId, { completed: body(request).completed ?? true })));
+  app.put(`${prefix}/:itemId`, (request, reply) => run(reply, () => service.updateScheduleItem(params(request).itemId, body(request))));
+}
+
 export function registerRoutes(app: FastifyInstance, service: WorkflowTicketsService) {
   app.get("/overview", (request, reply) => run(reply, () => service.overview()));
   app.get("/timeline", (request, reply) => {
@@ -78,13 +88,7 @@ export function registerRoutes(app: FastifyInstance, service: WorkflowTicketsSer
   app.get("/attachments/:attachmentId", async (request, reply) => { try { const item = service.getAttachment(params(request).attachmentId); return reply.type(item.attachment.mime_type).header("content-disposition", `inline; filename="${item.attachment.filename.replaceAll('"', "")}"`).send(createReadStream(item.path)); } catch (error) { return sendError(reply, error); } });
   app.get("/temp/:token", async (request, reply) => { try { const result = await service.consumeTemporaryResource(params(request).token); return reply.header("cache-control", "no-store").header("x-content-type-options", "nosniff").type(String(result.resource.mime_type ?? "text/plain")).send(result.content); } catch (error) { return sendError(reply, error); } });
 
-  app.get("/inbox", (request, reply) => run(reply, () => service.listInbox(Boolean((request.query as Body).include_archived))));
-  app.post("/inbox", (request, reply) => run(reply, () => service.createInbox(body(request), actor(request))));
-  app.post("/inbox/:itemId/convert", (request, reply) => run(reply, () => service.convertInbox(params(request).itemId, body(request), actor(request))));
-  app.post("/inbox/:itemId/archive", (request, reply) => run(reply, () => service.archiveInbox(params(request).itemId)));
-  app.post("/inbox/:itemId/complete", (request, reply) => run(reply, () => service.updateInbox(params(request).itemId, { completed: body(request).completed ?? true })));
-  app.put("/inbox/:itemId", (request, reply) => run(reply, () => service.updateInbox(params(request).itemId, body(request))));
-  app.delete("/inbox/:itemId", (request, reply) => run(reply, () => service.deleteInbox(params(request).itemId)));
+  registerScheduleItemRoutes(app, service);
 
   app.get("/projects", (_request, reply) => run(reply, () => service.listProjects()));
   app.post("/projects", (request, reply) => run(reply, () => service.createProject(body(request), actor(request))));

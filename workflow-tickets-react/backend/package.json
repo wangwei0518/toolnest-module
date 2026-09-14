@@ -1,6 +1,6 @@
 {
   "name": "@toolnest/workflow-tickets-react-react-backend",
-  "version": "0.1.72",
+  "version": "0.1.73",
   "private": true,
   "type": "module",
   "engines": {

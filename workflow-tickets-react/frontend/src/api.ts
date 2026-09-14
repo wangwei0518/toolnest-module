@@ -27,7 +27,7 @@ export interface Milestone {
   ticket_count?: number; completed_ticket_count?: number; notification_sent_at?: string | null;
   created_at: string; updated_at: string;
 }
-export interface InboxItem { id: Id; title: string; note: string; status: Status; owner_name: string; due_at?: string | null; reminder_at?: string | null; ticket_id?: Id | null; created_at: string; updated_at: string }
+export interface ScheduleItem { id: Id; title: string; note: string; status: Status; owner_name: string; due_at?: string | null; reminder_at?: string | null; ticket_id?: Id | null; created_at: string; updated_at: string }
 export interface Schedule { id: Id; workflow_id: Id; name: string; schedule_type: Status; timezone: string; start_at: string; end_at?: string | null; weekday?: number | null; day_of_month?: number | null; cron_expression: string; title_template: string; note_template: string; project_id?: Id | null; milestone_id?: Id | null; enabled: boolean; next_run_at?: string | null; last_run_at?: string | null; last_run_status?: string | null; last_run_error?: string | null; run_count: number; created_at: string; updated_at: string }
 export interface ScheduleRun { id: Id; schedule_id: Id; status: Status; planned_at: string; executed_at: string; ticket_id?: Id | null; error?: string | null }
 export interface SavedView { id: Id; name: string; filters: Record<string, unknown>; favorite: boolean; is_default: boolean; updated_at: string }
@@ -41,7 +41,7 @@ export interface TimelineEvent { id: Id; type: string; title: string; detail?: s
 export interface TimelineActivityTicket { id: Id; number: string; title: string }
 export interface TimelineActivityDay { date: string; count: number; samples: string[]; tickets?: TimelineActivityTicket[] }
 export interface TimelineActivity { total: number; days: TimelineActivityDay[] }
-export interface Overview { todo: Ticket[]; in_progress: Ticket[]; today: Ticket[]; timeline: TimelineEvent[]; counts: Record<string, number>; inbox_count: number; project_counts: Record<string, number> }
+export interface Overview { todo: Ticket[]; in_progress: Ticket[]; today: Ticket[]; timeline: TimelineEvent[]; counts: Record<string, number>; schedule_item_count: number; project_counts: Record<string, number> }
 export interface Settings { max_file_size_mb: number; temporary_resource_days: number; temporary_resource_access_count: number; notification_rules: Record<string, { enabled: boolean; level: string; channels: string[] }> }
 export interface DryRunResult { version: number; nodes: Array<{ node_id: Id; name: string; status: string; completion_rule: Record<string, unknown> }>; actions_executed: boolean; explanation: string }
 
@@ -86,12 +86,11 @@ export function createWorkflowApi(client: ToolNestModuleApiClient, moduleId = "w
    getTicketDiagnostics: (id: string) => call(client.get<Envelope<Record<string, unknown>>>(`${base}/tickets/${id}/diagnostics`)),
     uploadAttachment: (ticketId: string, nodeId: string, payload: Record<string, unknown>) => call(client.post<Envelope<TicketAttachment>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/attachments`, payload)),
     deleteAttachment: (attachmentId: string) => call(client.delete<Envelope<null>>(`${base}/attachments/${attachmentId}`)),
-    listInboxItems: () => call(client.get<Envelope<InboxItem[]>>(`${base}/inbox`)),
-    createInboxItem: (payload: Record<string, unknown>) => call(client.post<Envelope<InboxItem>>(`${base}/inbox`, payload)),
-    convertInboxItem: (id: string, payload: Record<string, unknown>) => call(client.post<Envelope<Ticket>>(`${base}/inbox/${id}/convert`, payload)),
-    archiveInboxItem: (id: string) => call(client.post<Envelope<InboxItem>>(`${base}/inbox/${id}/archive`)),
-    setInboxItemCompleted: (id: string, completed: boolean) => call(client.post<Envelope<InboxItem>>(`${base}/inbox/${id}/complete`, { completed })),
-    deleteInboxItem: (id: string) => call(client.delete<Envelope<null>>(`${base}/inbox/${id}`)),
+    listScheduleItems: () => call(client.get<Envelope<ScheduleItem[]>>(`${base}/schedule-items`)),
+    createScheduleItem: (payload: Record<string, unknown>) => call(client.post<Envelope<ScheduleItem>>(`${base}/schedule-items`, payload)),
+    convertScheduleItem: (id: string, payload: Record<string, unknown>) => call(client.post<Envelope<Ticket>>(`${base}/schedule-items/${id}/convert`, payload)),
+    archiveScheduleItem: (id: string) => call(client.post<Envelope<ScheduleItem>>(`${base}/schedule-items/${id}/archive`)),
+    setScheduleItemCompleted: (id: string, completed: boolean) => call(client.post<Envelope<ScheduleItem>>(`${base}/schedule-items/${id}/completion`, { completed })),
     listProjects: () => call(client.get<Envelope<Project[]>>(`${base}/projects`)),
     getProject: (id: string) => call(client.get<Envelope<Project>>(`${base}/projects/${id}`)),
     createProject: (payload: Record<string, unknown>) => call(client.post<Envelope<Project>>(`${base}/projects`, payload)),

@@ -253,11 +253,11 @@ export interface Milestone {
   updated_at: string;
 }
 
-export interface InboxItem {
+export interface ScheduleItem {
   id: string;
   title: string;
   note: string;
-  status: "inbox" | "completed" | "converted" | "archived";
+  status: "pending" | "completed" | "converted" | "archived";
   owner_id?: string | null;
   owner_name: string;
   due_at?: string | null;
@@ -402,7 +402,7 @@ export interface WorkflowStore {
   timeline: TimelineEvent[];
   projects: Project[];
   milestones: Milestone[];
-  inbox_items: InboxItem[];
+  schedule_items: ScheduleItem[];
   schedules: Schedule[];
   schedule_runs: ScheduleRun[];
   saved_views: SavedView[];
@@ -456,13 +456,13 @@ export function defaultSettings(): Settings {
 
 export function emptyStore(): WorkflowStore {
   return {
-    schema_version: 2,
+    schema_version: 3,
     workflows: [],
     tickets: [],
     timeline: [],
     projects: [],
     milestones: [],
-    inbox_items: [],
+    schedule_items: [],
     schedules: [],
     schedule_runs: [],
     saved_views: [],

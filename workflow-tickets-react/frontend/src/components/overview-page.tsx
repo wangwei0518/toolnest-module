@@ -7,7 +7,7 @@ import {
   RiArrowRightSLine,
   RiCheckLine,
   RiGitBranchLine,
-  RiInboxLine,
+  RiCalendarScheduleLine,
   RiRefreshLine,
   RiSearchLine,
 } from "@remixicon/react";
@@ -520,8 +520,8 @@ function SearchCommand({
               </CommandGroup>
               <CommandSeparator />
               <CommandGroup heading="快捷入口">
-                <CommandItem onSelect={() => { close(); void router.push("/modules/workflow-tickets-react/inbox"); }}>
-                  <RiInboxLine />收件箱
+                <CommandItem onSelect={() => { close(); void router.push("/modules/workflow-tickets-react/schedule"); }}>
+                  <RiCalendarScheduleLine />日程
                 </CommandItem>
               </CommandGroup>
             </>
@@ -832,7 +832,7 @@ function ProjectWorkspace({
   );
 }
 
-function QuickEntryCards({ inboxCount, projects, workflows, router }: { inboxCount: number; projects: Project[]; workflows: Workflow[]; router: OverviewPageProps["router"] }) {
+function QuickEntryCards({ scheduleCount, projects, workflows, router }: { scheduleCount: number; projects: Project[]; workflows: Workflow[]; router: OverviewPageProps["router"] }) {
   const visibleProjects = projects.filter((project) => project.status !== "archived").slice(0, 2);
   const publishedWorkflows = workflows.filter((workflow) => workflow.status === "published");
   const riskyProjects = visibleProjects.filter((project) => project.health === "risk" || project.health === "overdue").length;
@@ -840,12 +840,12 @@ function QuickEntryCards({ inboxCount, projects, workflows, router }: { inboxCou
     <div className="grid gap-5 lg:grid-cols-3">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><RiInboxLine />收件箱</CardTitle>
-          <CardDescription>先记录，再整理成可执行工单。</CardDescription>
+          <CardTitle className="flex items-center gap-2"><RiCalendarScheduleLine />日程</CardTitle>
+          <CardDescription>按日期查看和安排待办事项。</CardDescription>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-3">
-          <div><p className="text-2xl font-semibold">{inboxCount}</p><p className="text-xs text-muted-foreground">条待整理事项</p></div>
-          <Button variant="outline" onClick={() => void router.push("/modules/workflow-tickets-react/inbox")}>打开收件箱</Button>
+          <div><p className="text-2xl font-semibold">{scheduleCount}</p><p className="text-xs text-muted-foreground">条日程事项</p></div>
+          <Button variant="outline" onClick={() => void router.push("/modules/workflow-tickets-react/schedule")}>查看日程</Button>
         </CardContent>
       </Card>
       <Card>
@@ -1059,7 +1059,7 @@ export function OverviewPage({ api, router }: OverviewPageProps) {
         router={router}
       />
 
-      <QuickEntryCards inboxCount={data.inbox_count} projects={visibleProjects} workflows={workflows} router={router} />
+      <QuickEntryCards scheduleCount={data.schedule_item_count} projects={visibleProjects} workflows={workflows} router={router} />
     </section>
   );
 }
