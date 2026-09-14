@@ -14,6 +14,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { ScheduleItem, Ticket, createWorkflowApi, Workflow } from "../api";
@@ -158,21 +159,35 @@ function TicketCalendarEvent({ event, onOpen }: { event: Extract<CalendarEvent, 
   const accessibleDateLabel = isOngoingToday ? `${dateLabel}；${ongoingLabel}` : dateLabel;
 
   return (
-    <button
-      type="button"
-      className="flex min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={`${ticket.title}，工单编号 ${ticket.number}，${statusLabel}，${accessibleDateLabel}`}
-      title={`${ticket.title}（${ticket.number}） · ${statusLabel} · ${accessibleDateLabel}`}
-      onClick={() => onOpen(ticket)}
-    >
-      <span
-        aria-hidden="true"
-        className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", blocked ? "bg-destructive" : "bg-primary")}
-      />
-      <span className="min-w-0 truncate">{ticket.title}</span>
-      {isOngoingToday ? <Badge variant="secondary" className="hidden h-4 shrink-0 px-1 text-[10px] font-normal leading-3 md:inline-flex">今日</Badge> : null}
-      {usesCreatedDate ? <Badge variant="secondary" className="hidden h-4 shrink-0 px-1 text-[10px] font-normal leading-3 md:inline-flex">创建日</Badge> : null}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        delay={0}
+        closeDelay={0}
+        render={
+          <button
+            type="button"
+            className="flex min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={`${ticket.title}，工单编号 ${ticket.number}，${statusLabel}，${accessibleDateLabel}`}
+            onClick={() => onOpen(ticket)}
+          />
+        }
+      >
+        <span
+          aria-hidden="true"
+          className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", blocked ? "bg-destructive" : "bg-primary")}
+        />
+        <span className="min-w-0 truncate">{ticket.title}</span>
+        {isOngoingToday ? <Badge variant="secondary" className="hidden h-4 shrink-0 px-1 text-[10px] font-normal leading-3 md:inline-flex">今日</Badge> : null}
+        {usesCreatedDate ? <Badge variant="secondary" className="hidden h-4 shrink-0 px-1 text-[10px] font-normal leading-3 md:inline-flex">创建日</Badge> : null}
+      </TooltipTrigger>
+      <TooltipContent side="top" align="center" className="max-w-72">
+        <div className="grid gap-1">
+          <p className="break-words font-medium">{ticket.title}</p>
+          <p className="text-background/80">{ticket.number} · {statusLabel}</p>
+          <p className="break-words text-background/80">{accessibleDateLabel}</p>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
