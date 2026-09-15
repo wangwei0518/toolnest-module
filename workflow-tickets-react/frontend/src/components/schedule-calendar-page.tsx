@@ -14,10 +14,12 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import type { ScheduleItem, Ticket, createWorkflowApi, Workflow } from "../api";
+import { notifyModule } from "../module-notifications";
 
 type Router = ToolNestModuleRouteRenderProps["router"];
 type WorkflowApi = ReturnType<typeof createWorkflowApi>;
@@ -221,12 +223,12 @@ function ScheduleCalendarCell({
     <div
       role="gridcell"
       aria-label={`${format(date, "yyyy年M月d日", { locale: zhCN })}，${events.length} 条日程或工单`}
-      className={`flex min-h-24 min-w-0 flex-col gap-1.5 border-b border-r border-border p-1.5 sm:min-h-32 sm:gap-2 sm:p-2 ${!inDisplayedMonth ? "bg-muted/30" : "bg-background"} ${today ? "bg-primary/5" : selected ? "bg-accent/40" : ""}`}
+      className={`flex min-h-24 min-w-0 flex-col gap-1.5 border-b border-r border-border p-1.5 sm:min-h-32 sm:gap-2 sm:p-2 ${!inDisplayedMonth ? "bg-muted/30" : "bg-background"} ${today ? "bg-primary/5" : ""}`}
     >
       <div className="flex min-w-0 items-start justify-between gap-1">
         <button
           type="button"
-          className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-7 sm:text-sm ${today ? "bg-primary text-primary-foreground hover:bg-primary/90" : selected ? "text-primary ring-1 ring-primary" : inDisplayedMonth ? "text-foreground" : "text-muted-foreground"}`}
+          className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-7 sm:text-sm ${today ? "bg-primary text-primary-foreground hover:bg-primary/90" : inDisplayedMonth ? "text-foreground" : "text-muted-foreground"}`}
           aria-label={`选择${format(date, "yyyy年M月d日", { locale: zhCN })}`}
           aria-pressed={selected}
           onClick={() => onSelectDate(date)}
@@ -270,7 +272,7 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
   const [pendingItemId, setPendingItemId] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (notifyOnSuccess = false) => {
     setLoading(true);
     setError("");
     setTicketLoadError("");
@@ -292,6 +294,9 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
       } else {
         setTickets([]);
         setTicketLoadError(ticketsResult.reason instanceof Error ? ticketsResult.reason.message : "进行中工单加载失败。");
+      }
+      if (notifyOnSuccess && ticketsResult.status === "fulfilled") {
+        notifyModule({ type: "success", content: "日程已刷新。" });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "日程加载失败。");
@@ -443,14 +448,16 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
 
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           <Button size="sm" variant="secondary" onClick={() => setSelectedDate(new Date())}>今天</Button>
-          <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5" role="group" aria-label="日历视图">
-            {([ ["day", "日"], ["week", "周"], ["month", "月"] ] as const).map(([value, label]) => (
-              <Button key={value} size="sm" variant={view === value ? "outline" : "ghost"} aria-pressed={view === value} onClick={() => setView(value)}>{label}</Button>
-            ))}
-          </div>
+          <Tabs value={view} onValueChange={(value) => { if (value) setView(value as CalendarView); }}>
+            <TabsList className="h-6 data-[orientation=horizontal]:h-6" aria-label="日历视图">
+              <TabsTrigger value="day">日</TabsTrigger>
+              <TabsTrigger value="week">周</TabsTrigger>
+              <TabsTrigger value="month">月</TabsTrigger>
+            </TabsList>
+          </Tabs>
           <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
             <PopoverTrigger render={<Button size="icon-sm" variant="outline" aria-label="选择日期" />}><RiCalendarLine /></PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="end">
+            <PopoverContent className="w-auto overflow-clip p-0" align="end">
               <Calendar
                 mode="single"
                 locale={zhCN}
@@ -461,13 +468,13 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
               />
             </PopoverContent>
           </Popover>
-          <Button size="icon-sm" variant="ghost" aria-label="刷新日程" onClick={() => void load()} disabled={loading}><RiRefreshLine /></Button>
+          <Button size="icon-sm" variant="ghost" aria-label="刷新日程" onClick={() => void load(true)} disabled={loading}><span className={loading ? "animate-spin" : undefined}><RiRefreshLine /></span></Button>
         </div>
       </header>
 
       {error ? <Alert variant="destructive"><AlertTitle>日程操作失败</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-2">{error}<Button size="sm" variant="outline" onClick={() => void load()}>重试</Button></AlertDescription></Alert> : null}
       {ticketLoadError ? <Alert variant="destructive"><AlertTitle>工单加载失败</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-2">{ticketLoadError}<Button size="sm" variant="outline" onClick={() => void load()}>重试</Button></AlertDescription></Alert> : null}
-      {loading ? <p className="text-xs text-muted-foreground" role="status">正在加载日程和工单…</p> : null}
+      {loading ? <p className="sr-only" role="status">正在加载日程和工单…</p> : null}
 
       <div className="min-w-0" role="grid" aria-label={`${displayedTitle}日历`}>
         <div role="row" className={`grid ${view === "day" ? "grid-cols-1" : "grid-cols-7"} border-l border-t border-border`}>

@@ -31,7 +31,12 @@ export interface ScheduleItem { id: Id; title: string; note: string; status: Sta
 export interface Schedule { id: Id; workflow_id: Id; name: string; schedule_type: Status; timezone: string; start_at: string; end_at?: string | null; weekday?: number | null; day_of_month?: number | null; cron_expression: string; title_template: string; note_template: string; project_id?: Id | null; milestone_id?: Id | null; enabled: boolean; next_run_at?: string | null; last_run_at?: string | null; last_run_status?: string | null; last_run_error?: string | null; run_count: number; created_at: string; updated_at: string }
 export interface ScheduleRun { id: Id; schedule_id: Id; status: Status; planned_at: string; executed_at: string; ticket_id?: Id | null; error?: string | null }
 export interface SavedView { id: Id; name: string; filters: Record<string, unknown>; favorite: boolean; is_default: boolean; updated_at: string }
-export interface AutomationRule { id: Id; name: string; enabled: boolean; trigger: string; conditions: Record<string, unknown>; actions: Array<Record<string, unknown>>; created_at: string; updated_at: string }
+export type AutomationTrigger = "ticket_created" | "ticket_completed" | "ticket_cancelled" | "ticket_reopened" | "node_ready" | "node_completed" | "node_blocked" | "ticket_reminder";
+export type AutomationActionType = "set_priority" | "add_tag" | "set_project" | "set_milestone" | "set_due_at" | "archive";
+export interface AutomationAction { type: AutomationActionType; value?: string | null }
+export interface AutomationConditions { workflow_id?: Id; project_id?: Id; priority?: string; status?: string }
+export interface AutomationRule { id: Id; name: string; enabled: boolean; trigger: string; conditions: AutomationConditions & Record<string, unknown>; actions: Array<AutomationAction & Record<string, unknown>>; created_at: string; updated_at: string }
+export interface AutomationExecution { id: Id; ticket_id: Id; ticket_title: string; ticket_number: string; event: string; status: string; input: Record<string, unknown>; output: Record<string, unknown>; error?: string | null; created_at: string; completed_at?: string | null }
 export interface RelatedResource {
   id: Id; project_id?: Id | null; project_ids?: Id[]; name: string; type: string; resource_type?: string;
   url?: string | null; external_url?: string | null; identifier?: string; description: string;
@@ -42,7 +47,11 @@ export interface TimelineActivityTicket { id: Id; number: string; title: string 
 export interface TimelineActivityDay { date: string; count: number; samples: string[]; tickets?: TimelineActivityTicket[] }
 export interface TimelineActivity { total: number; days: TimelineActivityDay[] }
 export interface Overview { todo: Ticket[]; in_progress: Ticket[]; today: Ticket[]; timeline: TimelineEvent[]; counts: Record<string, number>; schedule_item_count: number; project_counts: Record<string, number> }
-export interface Settings { max_file_size_mb: number; temporary_resource_days: number; temporary_resource_access_count: number; notification_rules: Record<string, { enabled: boolean; level: string; channels: string[] }> }
+export type NotificationEvent = "ticket_created" | "node_ready" | "node_completed" | "ticket_completed" | "ticket_blocked" | "ticket_reopened" | "ticket_cancelled" | "ticket_reminder" | "milestone_due" | "project_risk";
+export type NotificationLevel = "info" | "success" | "warning" | "error";
+export type NotificationChannel = "web_internal" | "qqbot" | "email" | "webhook";
+export interface NotificationRule { enabled: boolean; level: NotificationLevel | string; channels: Array<NotificationChannel | string> }
+export interface Settings { max_file_size_mb: number; temporary_resource_days: number; temporary_resource_access_count: number; notification_rules: Record<string, NotificationRule> }
 export interface DryRunResult { version: number; nodes: Array<{ node_id: Id; name: string; status: string; completion_rule: Record<string, unknown> }>; actions_executed: boolean; explanation: string }
 
 type Envelope<T> = { data: T };
@@ -107,6 +116,7 @@ export function createWorkflowApi(client: ToolNestModuleApiClient, moduleId = "w
     updateSavedView: (id: string, payload: Record<string, unknown>) => call(client.put<Envelope<SavedView>>(`${base}/saved-views/${id}`, payload)),
     deleteSavedView: (id: string) => call(client.delete<Envelope<null>>(`${base}/saved-views/${id}`)),
     listAutomations: () => call(client.get<Envelope<AutomationRule[]>>(`${base}/automations`)),
+    listAutomationExecutions: (id: string, limit = 30) => call(client.get<Envelope<AutomationExecution[]>>(`${base}/automations/${id}/executions`, { params: { limit } })),
     createAutomation: (payload: Record<string, unknown>) => call(client.post<Envelope<AutomationRule>>(`${base}/automations`, payload)),
     updateAutomation: (id: string, payload: Record<string, unknown>) => call(client.put<Envelope<AutomationRule>>(`${base}/automations/${id}`, payload)),
     deleteAutomation: (id: string) => call(client.delete<Envelope<null>>(`${base}/automations/${id}`)),

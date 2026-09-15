@@ -109,6 +109,7 @@ export function registerRoutes(app: FastifyInstance, service: WorkflowTicketsSer
   app.get("/automations", (_request, reply) => run(reply, () => service.listAutomations()));
   app.post("/automations", (request, reply) => run(reply, () => service.createAutomation(body(request))));
   app.put("/automations/:ruleId", (request, reply) => run(reply, () => service.updateAutomation(params(request).ruleId, body(request))));
+  app.get("/automations/:ruleId/executions", (request, reply) => run(reply, () => service.listAutomationExecutions(params(request).ruleId, Number((request.query as Body).limit) || 30)));
   app.delete("/automations/:ruleId", (request, reply) => run(reply, () => service.deleteAutomation(params(request).ruleId)));
   app.get("/resources", (request, reply) => { const query = request.query as Body; return run(reply, () => service.listResources(text(query.project_id) || undefined, text(query.ticket_id) || undefined, text(query.milestone_id) || undefined)); });
   app.post("/resources", (request, reply) => run(reply, () => service.createResource(body(request))));

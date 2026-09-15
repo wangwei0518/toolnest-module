@@ -7,6 +7,7 @@ import {
   id,
   nowIso,
   type ActionExecution,
+  type AutomationExecutionRead,
   type Attachment,
   type AutomationRule,
   type CompletionRule,
@@ -21,6 +22,7 @@ import {
   type SavedView,
   type Schedule,
   type ScheduleRun,
+  type NotificationRule,
   type Settings,
   type Ticket,
   type TicketNode,
@@ -44,6 +46,11 @@ export class DomainError extends Error {
 const ACTIVE_NODE_STATUSES = new Set(["ready", "in_progress", "waiting", "blocked"]);
 const TERMINAL_TICKET_STATUSES = new Set(["completed", "cancelled", "archived"]);
 const RELATED_RESOURCE_TYPES = new Set(["server", "repository", "document", "custom"]);
+const AUTOMATION_TRIGGERS = new Set(["ticket_created", "ticket_completed", "ticket_cancelled", "ticket_reopened", "node_ready", "node_completed", "node_blocked", "ticket_reminder"]);
+const AUTOMATION_TRIGGER_ALIASES: Record<string, string> = { ticket_blocked: "node_blocked", ticket_reminder_sent: "ticket_reminder" };
+const AUTOMATION_ACTION_TYPES = new Set(["set_priority", "add_tag", "set_project", "set_milestone", "set_due_at", "archive"]);
+const AUTOMATION_PRIORITIES = new Set(["none", "low", "medium", "high", "urgent"]);
+const AUTOMATION_TICKET_STATUSES = new Set(["draft", "in_progress", "blocked", "completed", "cancelled", "archived"]);
 
 function canonicalResourceType(value: string): string {
   return value === "link" || value === "url" ? "custom" : value;
@@ -67,6 +74,68 @@ function asObject(value: unknown): Record<string, unknown> {
 
 function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function canonicalAutomationTrigger(value: string): string {
+  return AUTOMATION_TRIGGER_ALIASES[value] ?? value;
+}
+
+const SETTING_LIMITS = {
+  max_file_size_mb: { min: 1, max: 2048, label: "最大附件大小" },
+  temporary_resource_days: { min: 1, max: 365, label: "临时资源有效期" },
+  temporary_resource_access_count: { min: 1, max: 10000, label: "临时资源最大访问次数" },
+} as const;
+const SUPPORTED_NOTIFICATION_CHANNELS = new Set(["web_internal", "qqbot", "email", "webhook"]);
+const NOTIFICATION_CHANNEL_ALIASES: Record<string, string> = { in_app: "web_internal" };
+const SUPPORTED_NOTIFICATION_LEVELS = new Set(["info", "success", "warning", "error"]);
+const FALLBACK_NOTIFICATION_RULE: NotificationRule = { enabled: true, level: "info", channels: ["web_internal"] };
+
+function normalizeStoredRule(value: unknown, fallback = FALLBACK_NOTIFICATION_RULE): NotificationRule {
+  const raw = asObject(value);
+  const rawChannels = Array.isArray(raw.channels) ? raw.channels : fallback.channels;
+  const channels = [...new Set(rawChannels.map(text).map((channel) => NOTIFICATION_CHANNEL_ALIASES[channel] ?? channel).filter((channel) => SUPPORTED_NOTIFICATION_CHANNELS.has(channel)))];
+  return {
+    enabled: typeof raw.enabled === "boolean" ? raw.enabled : fallback.enabled,
+    level: SUPPORTED_NOTIFICATION_LEVELS.has(text(raw.level)) ? text(raw.level) : fallback.level,
+    channels: channels.length ? channels : [...fallback.channels],
+  };
+}
+
+function normalizeStoredSettings(value: unknown): Settings {
+  const raw = asObject(value);
+  const defaults = defaultSettings();
+  const settings = { ...defaults };
+  for (const key of Object.keys(SETTING_LIMITS) as Array<keyof typeof SETTING_LIMITS>) {
+    const number = Number(raw[key]);
+    const limit = SETTING_LIMITS[key];
+    settings[key] = Number.isInteger(number) && number >= limit.min && number <= limit.max ? number : defaults[key];
+  }
+  const storedRules = asObject(raw.notification_rules);
+  const rules: Record<string, NotificationRule> = { ...defaults.notification_rules };
+  for (const [event, value] of Object.entries(storedRules)) rules[event] = normalizeStoredRule(value, rules[event] ?? FALLBACK_NOTIFICATION_RULE);
+  if (storedRules.node_blocked && !storedRules.ticket_blocked) rules.ticket_blocked = normalizeStoredRule(storedRules.node_blocked, rules.ticket_blocked ?? FALLBACK_NOTIFICATION_RULE);
+  settings.notification_rules = rules;
+  return settings;
+}
+
+function validatedSettingNumber(value: unknown, key: keyof typeof SETTING_LIMITS, fallback: number): number {
+  const number = Number(value);
+  const limit = SETTING_LIMITS[key];
+  if (!Number.isInteger(number) || number < limit.min || number > limit.max) fail(422, `${limit.label}必须是 ${limit.min}–${limit.max} 之间的整数`);
+  return number || fallback;
+}
+
+function validateRule(value: unknown, fallback: NotificationRule): NotificationRule {
+  const raw = asObject(value);
+  if (raw.enabled !== undefined && typeof raw.enabled !== "boolean") fail(422, "通知开关必须是布尔值");
+  const level = raw.level === undefined ? fallback.level : text(raw.level);
+  if (!SUPPORTED_NOTIFICATION_LEVELS.has(level)) fail(422, "通知级别无效");
+  if (raw.channels !== undefined && (!Array.isArray(raw.channels) || raw.channels.some((item) => typeof item !== "string"))) fail(422, "通知渠道必须是字符串数组");
+  const channels = [...new Set((Array.isArray(raw.channels) ? raw.channels : fallback.channels).map(text).map((channel) => NOTIFICATION_CHANNEL_ALIASES[channel] ?? channel))];
+  if (channels.some((channel) => !SUPPORTED_NOTIFICATION_CHANNELS.has(channel))) fail(422, "通知渠道包含不支持的类型");
+  const enabled = raw.enabled === undefined ? fallback.enabled : raw.enabled;
+  if (enabled && !channels.length) fail(422, "启用通知时至少选择一个通知渠道");
+  return { enabled, level, channels };
 }
 
 function normalizeIds(value: unknown): string[] {
@@ -346,13 +415,13 @@ export class WorkflowTicketsService {
 
   async saveNode(ticketId: string, nodeId: string, values: Record<string, unknown>): Promise<Ticket> { const ticket = this.executableTicket(ticketId); const node = this.ticketNode(ticket, nodeId); if (node.status === "pending") fail(409, "节点尚未满足前序条件"); const definition = this.nodeDefinition(ticket, node); const errors = this.validateValues(definition.form_schema.fields.map((field) => ({ ...field, required: false })), values); if (Object.keys(errors).length) fail(422, Object.values(errors).join("；")); node.values = clone(values); this.prepareRuntimeResources(ticket, node, definition); if (["ready", "blocked", "waiting"].includes(node.status)) { node.status = "in_progress"; node.started_at = node.started_at ?? nowIso(); } ticket.status = "in_progress"; ticket.updated_at = nowIso(); this.event("field_submitted", `节点「${node.name}」已保存表单`, node.node_id, ticket.id, ticket.project_id, ticket.milestone_id); await this.store.save(); return this.getTicket(ticket.id); }
 
-  async completeNode(ticketId: string, nodeId: string): Promise<Ticket> { const ticket = this.executableTicket(ticketId); const node = this.ticketNode(ticket, nodeId); const definition = this.nodeDefinition(ticket, node); const errors = this.validateValues(definition.form_schema.fields, node.values); if (Object.keys(errors).length) fail(422, Object.values(errors).join("；")); if (!this.evaluateRule(definition.completion_rule, ticket, node)) fail(422, "完成条件尚未满足"); node.status = "completed"; node.completed_at = nowIso(); node.outputs = [{ key: "result", value: clone(node.values) }]; this.event("node_completed", `节点「${node.name}」已完成`, node.node_id, ticket.id, ticket.project_id, ticket.milestone_id); const activated = this.activateEdges(ticket); if (ticket.node_instances.every((item) => ["completed", "skipped", "cancelled"].includes(item.status))) { ticket.status = "completed"; this.event("ticket_completed", "工单已完成", undefined, ticket.id, ticket.project_id, ticket.milestone_id); await this.notify("ticket_completed", "工单已完成", ticket); } else { ticket.status = "in_progress"; for (const ready of activated) await this.notify("node_ready", `节点「${ready.name}」已进入待处理`, ticket, ready.node_id); } ticket.updated_at = nowIso(); await this.store.save(); return this.getTicket(ticket.id); }
+  async completeNode(ticketId: string, nodeId: string): Promise<Ticket> { const ticket = this.executableTicket(ticketId); const node = this.ticketNode(ticket, nodeId); const definition = this.nodeDefinition(ticket, node); const errors = this.validateValues(definition.form_schema.fields, node.values); if (Object.keys(errors).length) fail(422, Object.values(errors).join("；")); if (!this.evaluateRule(definition.completion_rule, ticket, node)) fail(422, "完成条件尚未满足"); node.status = "completed"; node.completed_at = nowIso(); node.outputs = [{ key: "result", value: clone(node.values) }]; this.event("node_completed", `节点「${node.name}」已完成`, node.node_id, ticket.id, ticket.project_id, ticket.milestone_id); await this.notify("node_completed", `节点「${node.name}」已完成`, ticket, node.node_id); const activated = this.activateEdges(ticket); if (ticket.node_instances.every((item) => ["completed", "skipped", "cancelled"].includes(item.status))) { ticket.status = "completed"; this.event("ticket_completed", "工单已完成", undefined, ticket.id, ticket.project_id, ticket.milestone_id); await this.notify("ticket_completed", "工单已完成", ticket); } else { ticket.status = "in_progress"; for (const ready of activated) await this.notify("node_ready", `节点「${ready.name}」已进入待处理`, ticket, ready.node_id); } ticket.updated_at = nowIso(); await this.store.save(); return this.getTicket(ticket.id); }
 
   async blockNode(ticketId: string, nodeId: string, reason: string): Promise<Ticket> { const ticket = this.executableTicket(ticketId); const node = this.ticketNode(ticket, nodeId); if (!text(reason)) fail(422, "请填写阻塞原因"); node.status = "blocked"; node.blocked_reason = text(reason); ticket.status = "blocked"; ticket.updated_at = nowIso(); this.event("node_blocked", `节点「${node.name}」已阻塞`, node.node_id, ticket.id, ticket.project_id, ticket.milestone_id, reason); await this.notify("ticket_blocked", `工单「${ticket.title}」已阻塞`, ticket, node.node_id); await this.store.save(); return this.getTicket(ticket.id); }
 
   async reopenTicket(ticketId: string): Promise<Ticket> { const ticket = this.findTicket(ticketId); if (ticket.status === "cancelled") { for (const node of ticket.node_instances) if (node.status === "cancelled") { node.status = "pending"; node.started_at = null; node.completed_at = null; node.blocked_reason = ""; } ticket.status = "in_progress"; this.activateEdges(ticket, true); this.event("ticket_restarted", "工单已重新启动", undefined, ticket.id, ticket.project_id, ticket.milestone_id); } else { ticket.status = "in_progress"; for (const node of ticket.node_instances) if (node.status === "blocked") { node.status = "ready"; node.blocked_reason = ""; } this.event("ticket_reopened", "工单已重新打开", undefined, ticket.id, ticket.project_id, ticket.milestone_id); } ticket.updated_at = nowIso(); await this.notify("ticket_reopened", "工单已重新打开", ticket); await this.store.save(); return this.getTicket(ticket.id); }
 
-  async cancelTicket(ticketId: string, reason = ""): Promise<Ticket> { const ticket = this.findTicket(ticketId); if (TERMINAL_TICKET_STATUSES.has(ticket.status)) fail(409, "当前工单无法终止"); for (const node of ticket.node_instances) if (!['completed', 'skipped'].includes(node.status)) { node.status = "cancelled"; node.blocked_reason = text(reason); } for (const resource of this.data.temporary_resources) if (resource.ticket_id === ticket.id) resource.revoked = true; ticket.status = "cancelled"; ticket.updated_at = nowIso(); this.event("ticket_cancelled", "工单已终止", undefined, ticket.id, ticket.project_id, ticket.milestone_id, reason); await this.store.save(); return this.getTicket(ticket.id); }
+  async cancelTicket(ticketId: string, reason = ""): Promise<Ticket> { const ticket = this.findTicket(ticketId); if (TERMINAL_TICKET_STATUSES.has(ticket.status)) fail(409, "当前工单无法终止"); for (const node of ticket.node_instances) if (!['completed', 'skipped'].includes(node.status)) { node.status = "cancelled"; node.blocked_reason = text(reason); } for (const resource of this.data.temporary_resources) if (resource.ticket_id === ticket.id) resource.revoked = true; ticket.status = "cancelled"; ticket.updated_at = nowIso(); this.event("ticket_cancelled", "工单已终止", undefined, ticket.id, ticket.project_id, ticket.milestone_id, reason); await this.store.save(); await this.notify("ticket_cancelled", `工单「${ticket.title}」已终止`, ticket); return this.getTicket(ticket.id); }
 
   async rollbackNode(ticketId: string, currentNodeId: string, targetNodeId: string, reason: string): Promise<Ticket> { const ticket = this.executableTicket(ticketId); const workflow = this.findWorkflow(ticket.workflow_id); const version = workflow.versions.find((item) => item.id === ticket.workflow_version_id); if (!version) fail(409, "工单绑定版本不存在"); const direct = version.edges.filter((edge) => edge.target_node_id === currentNodeId && ticket.node_instances.find((item) => item.node_id === edge.source_node_id)?.status === "completed").map((edge) => edge.source_node_id); if (!targetNodeId) { if (direct.length !== 1) fail(422, "多个前序节点已完成，请指定回退节点"); targetNodeId = direct[0] ?? ""; } if (!direct.includes(targetNodeId)) fail(422, "只能回退到当前节点的直接完成前序节点"); const reachable = new Set<string>(); const pending = [currentNodeId]; while (pending.length) { const next = pending.pop()!; if (reachable.has(next)) continue; reachable.add(next); for (const edge of version.edges.filter((item) => item.source_node_id === next)) pending.push(edge.target_node_id); } for (const node of ticket.node_instances) if (reachable.has(node.node_id) || node.node_id === targetNodeId) { if (node.node_id !== targetNodeId) { node.status = "pending"; node.values = {}; node.outputs = []; node.completed_at = null; } else { node.status = "ready"; node.completed_at = null; } node.blocked_reason = ""; } ticket.status = "in_progress"; ticket.updated_at = nowIso(); this.event("node_rolled_back", `工单已回退到节点「${ticket.node_instances.find((item) => item.node_id === targetNodeId)?.name ?? targetNodeId}」`, targetNodeId, ticket.id, ticket.project_id, ticket.milestone_id, reason); await this.store.save(); return this.getTicket(ticket.id); }
 
@@ -473,9 +542,95 @@ export class WorkflowTicketsService {
   async updateSavedView(viewId: string, body: Record<string, unknown>): Promise<SavedView> { const view = this.data.saved_views.find((item) => item.id === viewId); if (!view) fail(404, "保存的视图不存在"); if (body.name !== undefined) view.name = text(body.name); if (body.filters !== undefined) view.filters = asObject(body.filters); if (body.favorite !== undefined) view.favorite = Boolean(body.favorite); if (body.is_default !== undefined) { view.is_default = Boolean(body.is_default); if (view.is_default) for (const item of this.data.saved_views) if (item.id !== view.id) item.is_default = false; } view.updated_at = nowIso(); await this.store.save(); return clone(view); }
   async deleteSavedView(viewId: string): Promise<void> { if (!this.data.saved_views.some((item) => item.id === viewId)) fail(404, "保存的视图不存在"); this.data.saved_views = this.data.saved_views.filter((item) => item.id !== viewId); await this.store.save(); }
 
-  listAutomations(): AutomationRule[] { return sortedUpdated(this.data.automations); }
-  async createAutomation(body: Record<string, unknown>): Promise<AutomationRule> { const item: AutomationRule = { id: id(), name: text(body.name), enabled: body.enabled !== false, trigger: text(body.trigger) || "ticket_created", conditions: asObject(body.conditions), actions: asArray(body.actions).filter((value): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)), created_at: nowIso(), updated_at: nowIso() }; this.data.automations.unshift(item); await this.store.save(); return clone(item); }
-  async updateAutomation(ruleId: string, body: Record<string, unknown>): Promise<AutomationRule> { const item = this.data.automations.find((value) => value.id === ruleId); if (!item) fail(404, "自动化规则不存在"); if (body.name !== undefined) item.name = text(body.name); if (body.enabled !== undefined) item.enabled = Boolean(body.enabled); if (body.trigger !== undefined) item.trigger = text(body.trigger); if (body.conditions !== undefined) item.conditions = asObject(body.conditions); if (body.actions !== undefined) item.actions = asArray(body.actions).filter((value): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)); item.updated_at = nowIso(); await this.store.save(); return clone(item); }
+  private normalizeAutomation(input: { name: unknown; enabled: unknown; trigger: unknown; conditions: unknown; actions: unknown }): Pick<AutomationRule, "name" | "enabled" | "trigger" | "conditions" | "actions"> {
+    const name = text(input.name);
+    if (!name) fail(422, "规则名称不能为空");
+    const trigger = canonicalAutomationTrigger(text(input.trigger) || "ticket_created");
+    if (!AUTOMATION_TRIGGERS.has(trigger)) fail(422, "自动化触发事件无效");
+    const rawConditions = asObject(input.conditions);
+    const conditions: Record<string, unknown> = { ...clone(rawConditions) };
+    const workflowId = text(rawConditions.workflow_id);
+    const projectId = text(rawConditions.project_id);
+    const priority = text(rawConditions.priority);
+    const status = text(rawConditions.status);
+    if (workflowId) this.findWorkflow(workflowId);
+    if (projectId) this.findProject(projectId);
+    if (priority && !AUTOMATION_PRIORITIES.has(priority)) fail(422, "自动化优先级无效");
+    if (status && !AUTOMATION_TICKET_STATUSES.has(status)) fail(422, "自动化工单状态无效");
+    if (workflowId) conditions.workflow_id = workflowId; else delete conditions.workflow_id;
+    if (projectId) conditions.project_id = projectId; else delete conditions.project_id;
+    if (priority) conditions.priority = priority; else delete conditions.priority;
+    if (status) conditions.status = status; else delete conditions.status;
+
+    const rawActions = asArray(input.actions);
+    if (!rawActions.length) fail(422, "至少配置一个自动化动作");
+    if (rawActions.length > 20) fail(422, "单条规则最多配置 20 个动作");
+    let actionProjectId: string | undefined;
+    let actionMilestoneProjectId: string | undefined;
+    const actions = rawActions.map((value, index) => {
+      const raw = asObject(value);
+      const type = text(raw.type);
+      if (!AUTOMATION_ACTION_TYPES.has(type)) fail(422, `第 ${index + 1} 个自动化动作无效`);
+      const action = { ...clone(raw), type } as Record<string, unknown>;
+      const actionValue = text(raw.value ?? raw.project_id ?? raw.milestone_id);
+      if (type === "set_priority") {
+        if (!AUTOMATION_PRIORITIES.has(actionValue)) fail(422, `第 ${index + 1} 个动作的优先级无效`);
+        action.value = actionValue;
+      } else if (type === "add_tag") {
+        if (!actionValue || actionValue.length > 50) fail(422, `第 ${index + 1} 个动作的标签不能为空且不能超过 50 个字符`);
+        action.value = actionValue;
+      } else if (type === "set_project") {
+        if (!actionValue) fail(422, `第 ${index + 1} 个动作必须选择项目`);
+        this.findProject(actionValue);
+        actionProjectId = actionValue;
+        action.value = actionValue;
+      } else if (type === "set_milestone") {
+        if (!actionValue) fail(422, `第 ${index + 1} 个动作必须选择里程碑`);
+        const milestone = this.getMilestone(actionValue);
+        if (projectId && milestone.project_id !== projectId) fail(422, `第 ${index + 1} 个里程碑不属于限定项目`);
+        actionMilestoneProjectId = milestone.project_id;
+        action.value = actionValue;
+      } else if (type === "set_due_at") {
+        if (!actionValue || !safeDate(actionValue)) fail(422, `第 ${index + 1} 个动作的目标时间无效`);
+        action.value = actionValue;
+      } else {
+        delete action.value;
+      }
+      return action;
+    });
+    if (actionProjectId && actionMilestoneProjectId && actionProjectId !== actionMilestoneProjectId) fail(422, "关联项目与里程碑不属于同一项目");
+    return { name, enabled: input.enabled === true, trigger, conditions, actions };
+  }
+
+  listAutomations(): AutomationRule[] { return sortedUpdated(this.data.automations).map((rule) => clone({ ...rule, trigger: canonicalAutomationTrigger(rule.trigger) })); }
+  async createAutomation(body: Record<string, unknown>): Promise<AutomationRule> {
+    const normalized = this.normalizeAutomation({ name: body.name, enabled: body.enabled === true, trigger: body.trigger, conditions: body.conditions, actions: body.actions });
+    const timestamp = nowIso();
+    const item: AutomationRule = { id: id(), ...normalized, created_at: timestamp, updated_at: timestamp };
+    this.data.automations.unshift(item);
+    await this.store.save();
+    return clone(item);
+  }
+  async updateAutomation(ruleId: string, body: Record<string, unknown>): Promise<AutomationRule> {
+    const item = this.data.automations.find((value) => value.id === ruleId);
+    if (!item) fail(404, "自动化规则不存在");
+    const normalized = this.normalizeAutomation({ name: body.name === undefined ? item.name : body.name, enabled: body.enabled === undefined ? item.enabled : body.enabled === true, trigger: body.trigger === undefined ? item.trigger : body.trigger, conditions: body.conditions === undefined ? item.conditions : body.conditions, actions: body.actions === undefined ? item.actions : body.actions });
+    Object.assign(item, normalized, { updated_at: nowIso() });
+    await this.store.save();
+    return clone(item);
+  }
+  listAutomationExecutions(ruleId: string, limit = 30): AutomationExecutionRead[] {
+    if (!this.data.automations.some((rule) => rule.id === ruleId)) fail(404, "自动化规则不存在");
+    const safeLimit = Math.max(1, Math.min(100, Number.isFinite(limit) ? Math.floor(limit) : 30));
+    return this.data.action_executions
+      .filter((execution) => execution.provider_key === `automation:${ruleId}`)
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      .slice(0, safeLimit)
+      .map((execution) => {
+        const ticket = this.data.tickets.find((item) => item.id === execution.ticket_id);
+        return { ...clone(execution), ticket_title: ticket?.title ?? "工单已删除", ticket_number: ticket?.number ?? "未知工单" };
+      });
+  }
   async deleteAutomation(ruleId: string): Promise<void> { if (!this.data.automations.some((item) => item.id === ruleId)) fail(404, "自动化规则不存在"); this.data.automations = this.data.automations.filter((item) => item.id !== ruleId); await this.store.save(); }
 
   listResources(projectId?: string, ticketId?: string, milestoneId?: string): RelatedResource[] { return this.data.resources.filter((resource) => { const projectIds = resource.project_ids?.length ? resource.project_ids : resource.project_id ? [resource.project_id] : []; return (!projectId || projectIds.includes(projectId)) && (!ticketId || resource.ticket_ids.includes(ticketId)) && (!milestoneId || resource.milestone_ids.includes(milestoneId)); }).map((resource) => { const type = canonicalResourceType(resource.resource_type ?? resource.type); return clone({ ...resource, type, project_id: resource.project_id ?? resource.project_ids?.[0] ?? null, project_ids: resource.project_ids ?? (resource.project_id ? [resource.project_id] : []), resource_type: type, external_url: resource.external_url ?? resource.url, identifier: resource.identifier ?? "" }); }); }
@@ -513,8 +668,20 @@ export class WorkflowTicketsService {
   }
 
 
-  settings(): Settings { return clone({ ...defaultSettings(), ...this.data.settings, notification_rules: { ...defaultSettings().notification_rules, ...(this.data.settings.notification_rules ?? {}) } }); }
-  async updateSettings(body: Record<string, unknown>): Promise<Settings> { const values = asObject(body.values ?? body); const defaults = this.settings(); for (const key of ["max_file_size_mb", "temporary_resource_days", "temporary_resource_access_count"] as const) if (values[key] !== undefined) defaults[key] = Math.max(1, Number(values[key]) || defaults[key]); if (values.notification_rules && typeof values.notification_rules === "object") defaults.notification_rules = values.notification_rules as Settings["notification_rules"]; this.data.settings = defaults; await this.store.save(); return this.settings(); }
+  settings(): Settings { return clone(normalizeStoredSettings(this.data.settings)); }
+  async updateSettings(body: Record<string, unknown>): Promise<Settings> {
+    const values = asObject(body.values ?? body);
+    const current = this.settings();
+    const next = clone(current);
+    for (const key of Object.keys(SETTING_LIMITS) as Array<keyof typeof SETTING_LIMITS>) if (values[key] !== undefined) next[key] = validatedSettingNumber(values[key], key, current[key]);
+    if (values.notification_rules !== undefined) {
+      if (!values.notification_rules || typeof values.notification_rules !== "object" || Array.isArray(values.notification_rules)) fail(422, "通知规则必须是对象");
+      for (const [event, value] of Object.entries(values.notification_rules as Record<string, unknown>)) next.notification_rules[event] = validateRule(value, next.notification_rules[event] ?? FALLBACK_NOTIFICATION_RULE);
+    }
+    this.data.settings = next;
+    await this.store.save();
+    return this.settings();
+  }
   actionProviders(): Array<Record<string, unknown>> { return [{ key: "notification", label: "平台通知", description: "向 ToolNest 通知中心发送通知", events: ["on_enter", "on_complete", "on_fail", "on_block"] }]; }
 
   async consumeTemporaryResource(token: string): Promise<{ resource: Record<string, unknown>; content: string }> {
@@ -643,16 +810,18 @@ export class WorkflowTicketsService {
   private evaluateRule(rule: RuleGroup | CompletionRule | undefined, ticket: Ticket, node: TicketNode): boolean { if (!rule) return true; const raw = rule as Record<string, unknown>; const children = Array.isArray(raw.children) ? raw.children : Array.isArray(raw.rules) ? raw.rules : null; let result: boolean; if (children) { const values = children.map((child) => this.evaluateRule(child as RuleGroup | CompletionRule, ticket, node)); result = text(raw.operator).toUpperCase() === "OR" ? values.some(Boolean) : values.every(Boolean); } else { const kind = text(raw.kind); const value = raw.field_id ? node.values[text(raw.field_id)] : undefined; switch (kind) { case "field_filled": result = hasValue(value); break; case "manual_confirm": result = value === true || value === "true"; break; case "checklist_complete": result = asArray(value).length > 0 && asArray(value).every((item) => typeof item === "object" ? Boolean(asObject(item).completed ?? asObject(item).checked) : true); break; case "attachment_count": result = this.data.attachments.filter((item) => item.ticket_node_id === node.id && (!raw.field_id || item.field_id === raw.field_id)).length >= Number(raw.count ?? 1); break; case "node_status": { const other = ticket.node_instances.find((item) => item.node_id === text(raw.node_id)); result = other?.status === text(raw.status) || (Array.isArray(raw.statuses) && (raw.statuses as unknown[]).map(text).includes(other?.status ?? "")); break; } case "value_compare": { const expected = raw.operator_value ?? raw.value; const operator = text(raw.operator); const left = value; result = operator === "=" || operator === "==" ? String(left) === String(expected) : operator === "!=" ? String(left) !== String(expected) : operator === ">" ? Number(left) > Number(expected) : operator === "<" ? Number(left) < Number(expected) : operator === ">=" ? Number(left) >= Number(expected) : operator === "<=" ? Number(left) <= Number(expected) : operator === "contains" ? String(left).includes(String(expected)) : hasValue(left); break; } default: result = true; } } return raw.negate === true ? !result : result; }
   private activateEdges(ticket: Ticket, force = false): TicketNode[] { const workflow = this.findWorkflow(ticket.workflow_id); const version = workflow.versions.find((item) => item.id === ticket.workflow_version_id); if (!version) return []; const ready: TicketNode[] = []; for (const node of ticket.node_instances) { if (node.status !== "pending") continue; const incoming = version.edges.filter((edge) => edge.target_node_id === node.node_id); if (!incoming.length) continue; const eligible = incoming.filter((edge) => ticket.node_instances.find((item) => item.node_id === edge.source_node_id)?.status === "completed").sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)); const definition = version.nodes.find((item) => item.id === node.node_id); if (!definition) continue; const predecessor = definition.predecessor_rule; const predecessorValues = predecessor?.conditions.map((condition: PredecessorCondition) => { const source = ticket.node_instances.find((item) => item.node_id === condition.node_id); const states = condition.statuses ?? (condition.status ? [condition.status] : ["completed"]); const value = Boolean(source && states.includes(source.status)); return condition.negate ? !value : value; }); const predecessorSatisfied = !predecessor || (predecessor.operator === "OR" ? predecessorValues?.some(Boolean) : predecessorValues?.every(Boolean)); for (const edge of eligible) { const conditionSatisfied = edge.condition_mode === "unconditional" || !edge.condition || this.evaluateRule(edge.condition, ticket, ticket.node_instances.find((item) => item.node_id === edge.source_node_id)!); const final = edge.condition_mode === "unless" ? !conditionSatisfied : conditionSatisfied; if (final && (predecessorSatisfied || force)) { node.status = "ready"; this.hydrateDefaults(ticket, version, node, definition); this.prepareRuntimeResources(ticket, node, definition); ready.push(node); break; } } } for (const node of ready) this.event("node_ready", `节点「${node.name}」已进入待处理`, node.node_id, ticket.id, ticket.project_id, ticket.milestone_id); return ready; }
   private runAutomations(trigger: string, ticket: Ticket): void {
+    const normalizedTrigger = canonicalAutomationTrigger(trigger);
     for (const rule of this.data.automations) {
-      if (!rule.enabled || rule.trigger !== trigger) continue;
+      if (!rule.enabled || canonicalAutomationTrigger(rule.trigger) !== normalizedTrigger) continue;
       const conditions = rule.conditions;
       if (conditions.workflow_id && conditions.workflow_id !== ticket.workflow_id) continue;
       if (conditions.project_id && conditions.project_id !== ticket.project_id) continue;
       if (conditions.priority && conditions.priority !== ticket.priority) continue;
       if (conditions.status && conditions.status !== ticket.status) continue;
       const providerKey = "automation:" + rule.id;
-      if (this.data.action_executions.some((item) => item.ticket_id === ticket.id && item.provider_key === providerKey && item.event === trigger)) continue;
-      const execution: ActionExecution = { id: id(), ticket_id: ticket.id, node_id: null, provider_key: providerKey, event: trigger, status: "succeeded", input: clone(conditions), output: {}, error: null, created_at: nowIso(), completed_at: null };
+      if (this.data.action_executions.some((item) => item.ticket_id === ticket.id && item.provider_key === providerKey && canonicalAutomationTrigger(item.event) === normalizedTrigger)) continue;
+      const execution: ActionExecution = { id: id(), ticket_id: ticket.id, node_id: null, provider_key: providerKey, event: normalizedTrigger, status: "succeeded", input: clone(conditions), output: {}, error: null, created_at: nowIso(), completed_at: null };
+      let applied = 0;
       try {
         for (const action of rule.actions) {
           const type = text(action.type);
@@ -663,11 +832,13 @@ export class WorkflowTicketsService {
           else if (type === "set_milestone") { const milestoneId = text(value || action.milestone_id) || null; this.resolveScope(ticket.project_id, milestoneId); ticket.milestone_id = milestoneId; }
           else if (type === "set_due_at") ticket.due_at = text(value) || null;
           else if (type === "archive") ticket.status = "archived";
+          applied++;
         }
         ticket.updated_at = nowIso();
-        execution.output = { applied: rule.actions.length };
+        execution.output = { applied, total: rule.actions.length };
       } catch (error) {
         execution.status = "failed";
+        execution.output = { applied, total: rule.actions.length };
         execution.error = error instanceof Error ? error.message : String(error);
       }
       execution.completed_at = nowIso();

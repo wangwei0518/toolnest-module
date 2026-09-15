@@ -388,11 +388,22 @@ export interface ActionExecution {
   completed_at?: string | null;
 }
 
+export interface AutomationExecutionRead extends ActionExecution {
+  ticket_title: string;
+  ticket_number: string;
+}
+
+export interface NotificationRule {
+  enabled: boolean;
+  level: string;
+  channels: string[];
+}
+
 export interface Settings {
   max_file_size_mb: number;
   temporary_resource_days: number;
   temporary_resource_access_count: number;
-  notification_rules: Record<string, { enabled: boolean; level: string; channels: string[] }>;
+  notification_rules: Record<string, NotificationRule>;
 }
 
 export interface WorkflowStore {
@@ -441,15 +452,16 @@ export function defaultSettings(): Settings {
     temporary_resource_days: 7,
     temporary_resource_access_count: 3,
     notification_rules: {
-      ticket_created: { enabled: true, level: "info", channels: ["in_app"] },
-      node_ready: { enabled: true, level: "info", channels: ["in_app"] },
-      node_completed: { enabled: false, level: "success", channels: ["in_app"] },
-      ticket_completed: { enabled: true, level: "success", channels: ["in_app"] },
-      ticket_blocked: { enabled: true, level: "warning", channels: ["in_app"] },
-      ticket_reopened: { enabled: true, level: "info", channels: ["in_app"] },
-      ticket_reminder: { enabled: true, level: "warning", channels: ["in_app"] },
-      milestone_due: { enabled: true, level: "warning", channels: ["in_app"] },
-      project_risk: { enabled: true, level: "warning", channels: ["in_app"] },
+      ticket_created: { enabled: true, level: "info", channels: ["web_internal"] },
+      node_ready: { enabled: true, level: "info", channels: ["web_internal"] },
+      node_completed: { enabled: false, level: "success", channels: ["web_internal"] },
+      ticket_completed: { enabled: true, level: "success", channels: ["web_internal"] },
+      ticket_blocked: { enabled: true, level: "warning", channels: ["web_internal"] },
+      ticket_reopened: { enabled: true, level: "info", channels: ["web_internal"] },
+      ticket_cancelled: { enabled: true, level: "warning", channels: ["web_internal"] },
+      ticket_reminder: { enabled: true, level: "warning", channels: ["web_internal"] },
+      milestone_due: { enabled: true, level: "warning", channels: ["web_internal"] },
+      project_risk: { enabled: true, level: "warning", channels: ["web_internal"] },
     },
   };
 }
