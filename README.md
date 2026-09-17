@@ -23,6 +23,7 @@ modules/<module-id>/
 
 ```bash
 pnpm install
+pnpm create:module --id demo-module --name 示例模块
 pnpm typecheck:modules
 pnpm build:modules
 pnpm package:module -- --id workflow-tickets-react --no-version-bump

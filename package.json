@@ -5,6 +5,7 @@
   "scripts": {
     "build:modules": "pnpm --filter \"./modules/*/frontend\" build",
     "typecheck:modules": "pnpm --filter \"./modules/*/frontend\" typecheck && pnpm --filter \"./modules/*/backend\" typecheck",
+    "create:module": "node scripts/create-module.mjs",
     "package:module": "node scripts/package-module.mjs",
     "package:all": "node scripts/package-all.mjs",
     "catalog:build": "node scripts/build-catalog.mjs"

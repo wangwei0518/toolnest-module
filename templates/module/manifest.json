@@ -1,0 +1,56 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "{{MODULE_ID}}",
+  "name": "{{MODULE_NAME}}",
+  "version": "{{MODULE_VERSION}}",
+  "description": "{{MODULE_DESCRIPTION}}",
+  "author": "ToolNest",
+  "icon": "box",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "node",
+    "entry": "backend/dist/main.js",
+    "transport": "http",
+    "startup": "lazy",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 30000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": []
+  },
+  "api": {
+    "base_path": "/api/v1/modules/{{MODULE_ID}}"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@toolnest/react-module-sdk"
+    ]
+  },
+  "permissions": [
+    "{{MODULE_PERMISSION_PREFIX}}.read",
+    "{{MODULE_PERMISSION_PREFIX}}.create",
+    "{{MODULE_PERMISSION_PREFIX}}.update",
+    "{{MODULE_PERMISSION_PREFIX}}.delete"
+  ],
+  "capabilities": [
+    "{{MODULE_PERMISSION_PREFIX}}.basic"
+  ],
+  "menus": [
+    {
+      "key": "{{MODULE_ID}}",
+      "label": "{{MODULE_NAME}}",
+      "path": "",
+      "icon": "box",
+      "order": 100
+    }
+  ],
+  "settings": []
+}

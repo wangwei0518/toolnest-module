@@ -1,0 +1,20 @@
+{
+  "name": "@toolnest/{{MODULE_ID}}-react-backend",
+  "version": "{{MODULE_VERSION}}",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^5.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "7.0.2"
+  }
+}
