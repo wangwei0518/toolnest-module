@@ -1,0 +1,15 @@
+{
+  "name": "toolnest-module",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:modules": "pnpm --filter \"./modules/*/frontend\" build",
+    "typecheck:modules": "pnpm --filter \"./modules/*/frontend\" typecheck && pnpm --filter \"./modules/*/backend\" typecheck",
+    "package:module": "node scripts/package-module.mjs",
+    "package:all": "node scripts/package-all.mjs",
+    "catalog:build": "node scripts/build-catalog.mjs"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}

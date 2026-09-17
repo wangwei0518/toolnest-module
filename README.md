@@ -1,42 +1,49 @@
-# React 模块源码
+# ToolNest 模块仓库
 
-`module-react/` 只存放面向 React 新平台的模块源码，按模块独立目录组织：
+这里维护可被 ToolNest 运行时安装的独立模块。模块以完整的 `.tnmod` 发布包交付，平台不会把源码编译进主程序。
+
+## 当前模块
+
+- `workflow-tickets-react`：工单模板与项目协作。模块 ID 保持不变，以兼容已有安装记录。
+- `python-runner-react`：Python 项目运行、调度和环境管理。模块 ID 为 `python-runner`。
+
+目录结构：
 
 ```text
-module-react/<module-id>/
+modules/<module-id>/
 ├── manifest.json
-├── frontend/       # React + TypeScript ESM
-├── backend/        # 独立进程后端
-└── dist/            # 可选的 .tnmod 发布产物
+├── frontend/       # 独立 ESM 前端
+├── backend/        # 独立 Node.js 运行时
+└── dist/           # 本地生成的 .tnmod，不提交到 Git
 ```
 
-旧 Vue/兼容模块继续放在 `modules/`，两者不混用：
+## 本地开发
 
-- `modules/`：旧 Vue 平台和仓库内置模块；
-- `module-react/`：React 新平台模块源码；
-- `data/plugins/`：平台运行期间安装的 `.tnmod` 模块及 release 数据，不属于源码目录。
-
-React 模块必须通过 `@toolnest/react-module-sdk` 接入宿主，不能依赖旧 Vue SDK，也不能把业务代码编译进 `frontend-react` 或 `backend-react` 主程序。
-
-当前示例模块：
-
-- [Python Runner React](./python-runner-react/)
-
-新模块请从仓库根目录使用 `templates/react-module` 生成，不要复制示例模块的业务代码：
+环境要求：Node.js 22、pnpm 10。
 
 ```bash
-pnpm create:react-module --id demo-module --name 示例模块 --description "示例 React 模块"
+pnpm install
+pnpm typecheck:modules
+pnpm build:modules
+pnpm package:module -- --id workflow-tickets-react --no-version-bump
 ```
 
-开发、打包和验收规范见：
-
-- [React 模块开发指南](../docs/modules/runtime/react-module-development-guide.md)
-- [Vue / Python Runner 到 React 模块迁移指南](../docs/modules/runtime/react-module-migration-guide.md)
-
-常用命令：
+开发模块页面时，在 ToolNest 主仓库的 React Host 中配置对应的开发入口，例如：
 
 ```bash
-pnpm build:modules-react
-pnpm package:python-runner-react
-pnpm package:react-module --id <module-id>
+VITE_WORKFLOW_TICKETS_REACT_DEV_ENTRY=http://127.0.0.1:5175/src/index.tsx
 ```
+
+模块通过 `@toolnest/react-module-sdk` 使用宿主公开能力。SDK 是本仓库的构建依赖，发布包中的前端仍由 ToolNest Host 提供共享运行时。
+
+## 远程订阅
+
+GitHub Actions 会构建每个模块、创建 GitHub Release，并生成目录文件。ToolNest 中添加以下来源即可订阅当前目录：
+
+```text
+https://raw.githubusercontent.com/wangwei0518/toolnest-module/main/catalog.json
+```
+
+目录只保存模块元数据；安装时 ToolNest 会从对应 Release 下载 `.tnmod`，校验 SHA-256 后再进入运行时安装队列。
+
+发布前应先提交对应模块版本变更，再手动运行 `Publish ToolNest modules` workflow。workflow 默认生成 `module-release-<run_number>` Release，也可以传入自定义 tag。

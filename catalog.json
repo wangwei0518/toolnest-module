@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "name": "ToolNest 官方模块目录",
+  "modules": [
+    {
+      "id": "python-runner",
+      "name": "Python 工具",
+      "version": "2.0.0",
+      "description": "本地 Python 项目运行、调度和环境管理。",
+      "author": "ToolNest",
+      "icon": "code",
+      "minimum_core_version": ">=0.1.0",
+      "release_notes": "由 module-release-initial 发布。",
+      "tags": [
+        "ToolNest",
+        "模块"
+      ],
+      "published_at": "2026-09-17T07:07:45.010Z",
+      "package": {
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-initial/python-runner-2.0.0.tnmod",
+        "sha256": "54d5925dfa2fc220abcc1822ce13122fec82308b788d2be1beb61d6f7ed93492",
+        "size_bytes": 7587121
+      }
+    },
+    {
+      "id": "workflow-tickets-react",
+      "name": "工单模板",
+      "version": "0.1.73",
+      "description": "工作流工单与项目协作",
+      "author": "ToolNest",
+      "icon": "box",
+      "minimum_core_version": ">=0.1.0",
+      "release_notes": "由 module-release-initial 发布。",
+      "tags": [
+        "ToolNest",
+        "模块"
+      ],
+      "published_at": "2026-09-17T07:07:45.040Z",
+      "package": {
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-initial/workflow-tickets-react-0.1.73.tnmod",
+        "sha256": "68669b8df22c165808a65577539c26a0167794f8a7639d53e2a85707b0b87a83",
+        "size_bytes": 2779141
+      }
+    }
+  ]
+}

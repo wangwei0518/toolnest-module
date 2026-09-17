@@ -1,0 +1,8 @@
+packages:
+  - "modules/*/frontend"
+  - "modules/*/backend"
+  - "packages/*"
+
+allowBuilds:
+  esbuild: true
+  sharp: true

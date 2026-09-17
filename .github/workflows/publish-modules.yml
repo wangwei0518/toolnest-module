@@ -1,0 +1,73 @@
+name: Publish ToolNest modules
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub Release tag"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and package modules
+        run: pnpm package:all
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        env:
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          release_tag="${INPUT_RELEASE_TAG:-module-release-${RUN_NUMBER}}"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Build catalog
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: pnpm catalog:build
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" modules/*/dist/*.tnmod \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes "ToolNest module release $RELEASE_TAG"
+
+      - name: Commit catalog
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog.json
+          git commit -m "发布模块目录 ${RELEASE_TAG} [skip ci]" || exit 0
+          git push origin HEAD:main
