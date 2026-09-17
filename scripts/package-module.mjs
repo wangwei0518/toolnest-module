@@ -28,7 +28,7 @@ function parseArgs(argv) {
     else if (value === '--no-version-bump') result.versionBump = false
     else if (!result.id && !value.startsWith('-')) result.id = value
   }
-  if (!result.id) throw new Error('请提供模块 ID，例如：pnpm package:react-module --id demo-module')
+  if (!result.id) throw new Error('请提供模块 ID，例如：pnpm package:module -- --id demo-module')
   return result
 }
 
@@ -49,9 +49,9 @@ function run(command, args, cwd = rootDir, extraEnv = {}) {
 
 function runStep(label, command, args, cwd = rootDir, extraEnv = {}) {
   const startedAt = Date.now()
-  console.log(`[react-module] ${label}：开始`)
+  console.log(`[toolnest-module] ${label}：开始`)
   run(command, args, cwd, extraEnv)
-  console.log(`[react-module] ${label}：完成（${Date.now() - startedAt}ms）`)
+  console.log(`[toolnest-module] ${label}：完成（${Date.now() - startedAt}ms）`)
 }
 
 function quoteWindowsArg(value) {
@@ -139,18 +139,18 @@ function ensureBackendProductionDependencies() {
   const packageJsonPath = path.join(backendDir, 'package.json')
   const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
   const cacheKey = productionDependencyCacheKey(packageJson)
-  const cacheRoot = path.join(os.tmpdir(), 'toolnest-react-module-dependency-cache', options.id)
+  const cacheRoot = path.join(os.tmpdir(), 'toolnest-module-dependency-cache', options.id)
   const cacheDir = path.join(cacheRoot, cacheKey)
   const cachedNodeModules = path.join(cacheDir, 'node_modules')
   const cacheReady = existsSync(cachedNodeModules) && lstatSync(cachedNodeModules).isDirectory()
   if (cacheReady) {
-    console.log(`[react-module] 后端生产依赖缓存：命中（${cacheKey}）`)
+    console.log(`[toolnest-module] 后端生产依赖缓存：命中（${cacheKey}）`)
     return cachedNodeModules
   }
 
   if (!hasProductionDependencies(packageJson)) {
     mkdirSync(cachedNodeModules, { recursive: true })
-    console.log(`[react-module] 后端无生产依赖，使用空依赖目录（${cacheKey}）`)
+    console.log(`[toolnest-module] 后端无生产依赖，使用空依赖目录（${cacheKey}）`)
     return cachedNodeModules
   }
 
@@ -170,7 +170,7 @@ function ensureBackendProductionDependencies() {
     } else {
       rmSync(cacheBuildDir, { recursive: true, force: true })
     }
-    console.log(`[react-module] 后端生产依赖缓存：已写入（${cacheKey}）`)
+    console.log(`[toolnest-module] 后端生产依赖缓存：已写入（${cacheKey}）`)
     return cachedNodeModules
   } finally {
     rmSync(installDir, { recursive: true, force: true })
@@ -191,7 +191,7 @@ assertDirectory(backendDir, 'Node 后端目录')
 if (options.versionBump) {
   const nextVersion = incrementPatchVersion(currentManifest.version)
   syncModuleVersion(currentManifest.version, nextVersion)
-  console.log(`[react-module] 版本自动递增：${currentManifest.version} → ${nextVersion}`)
+  console.log(`[toolnest-module] 版本自动递增：${currentManifest.version} → ${nextVersion}`)
 }
 
 const manifest = readManifest()
@@ -211,18 +211,18 @@ cpSync(manifestPath, path.join(stagingDir, 'manifest.json'))
 cpSync(path.join(frontendDir, 'dist'), path.join(stagingDir, 'frontend', 'dist'), { recursive: true })
 cpSync(path.join(backendDir, 'dist'), path.join(stagingDir, 'backend', 'dist'), { recursive: true })
 cpSync(path.join(backendDir, 'package.json'), path.join(stagingDir, 'backend', 'package.json'))
-console.log(`[react-module] 准备发布目录：完成（${Date.now() - stagingStartedAt}ms）`)
+console.log(`[toolnest-module] 准备发布目录：完成（${Date.now() - stagingStartedAt}ms）`)
 
 const cachedNodeModules = ensureBackendProductionDependencies()
 const dependencyCopyStartedAt = Date.now()
 copyDereferenced(cachedNodeModules, path.join(stagingDir, 'backend', 'node_modules'))
-console.log(`[react-module] 复制后端生产依赖：完成（${Date.now() - dependencyCopyStartedAt}ms）`)
+console.log(`[toolnest-module] 复制后端生产依赖：完成（${Date.now() - dependencyCopyStartedAt}ms）`)
 
 const archive = new AdmZip()
 const archiveStartedAt = Date.now()
 addDirectory(stagingDir)
 archive.writeZip(outputFile)
-console.log(`[react-module] 压缩 tnmod 包：完成（${Date.now() - archiveStartedAt}ms）`)
+console.log(`[toolnest-module] 压缩 tnmod 包：完成（${Date.now() - archiveStartedAt}ms）`)
 rmSync(stagingDir, { recursive: true, force: true })
 console.log(`已生成 ${path.relative(rootDir, outputFile)}`)
 
