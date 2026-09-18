@@ -131,6 +131,10 @@
   padding-block: 0;
 }
 
+.tn-workflow-tickets-react__header--with-back {
+  padding-inline-start: 0;
+}
+
 .tn-workflow-tickets-react__identity,
 .tn-workflow-tickets-react__navigation {
   display: flex;
@@ -302,9 +306,9 @@
   align-items: center;
   justify-content: center;
   padding-inline: calc(var(--spacing) * 2);
-  border: 1px solid color-mix(in oklch, var(--primary), var(--border) 66%);
+  border: 1px solid color-mix(in srgb, var(--primary), var(--border) 66%);
   border-radius: 999px;
-  background: color-mix(in oklch, var(--primary), var(--card) 88%);
+  background: color-mix(in srgb, var(--primary), var(--card) 88%);
   color: var(--primary);
   font-size: 0.75rem;
   font-weight: 600;
@@ -335,8 +339,8 @@
 }
 
 .tn-workflow-tickets-workflow-list-card:hover {
-  border-color: color-mix(in oklch, var(--primary), var(--border) 55%);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary), transparent 88%);
+  border-color: color-mix(in srgb, var(--primary), var(--border) 55%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary), transparent 88%);
 }
 
 .tn-workflow-tickets-workflow-list-card:focus-visible {
@@ -372,16 +376,16 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border: 1px solid color-mix(in oklch, var(--primary), var(--border) 82%);
+  border: 1px solid color-mix(in srgb, var(--primary), var(--border) 82%);
   border-radius: 17%;
-  background: color-mix(in oklch, var(--primary), var(--card) 92%);
+  background: color-mix(in srgb, var(--primary), var(--card) 92%);
   color: var(--primary);
   font-size: 1.25em;
 }
 
 .tn-workflow-tickets-workflow-list-card-icon.is-published {
-  border-color: color-mix(in oklch, var(--primary), var(--border) 82%);
-  background: color-mix(in oklch, var(--primary), var(--card) 90%);
+  border-color: color-mix(in srgb, var(--primary), var(--border) 82%);
+  background: color-mix(in srgb, var(--primary), var(--card) 90%);
   color: var(--primary);
 }
 
@@ -511,7 +515,7 @@
 }
 
 .tn-workflow-tickets-workflow-status.is-published {
-  background: color-mix(in oklch, var(--primary), var(--card) 86%);
+  background: color-mix(in srgb, var(--primary), var(--card) 86%);
   color: var(--primary);
 }
 
@@ -713,7 +717,7 @@
 
 .tn-workflow-tickets-create-progress > div.is-current > .tn-workflow-tickets-create-progress-marker {
   border-color: var(--primary);
-  background: color-mix(in oklch, var(--primary), var(--card) 88%);
+  background: color-mix(in srgb, var(--primary), var(--card) 88%);
   color: var(--primary);
 }
 
@@ -760,7 +764,7 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--primary), var(--card) 88%);
+  background: color-mix(in srgb, var(--primary), var(--card) 88%);
   color: var(--primary);
   font-size: 1.125rem;
 }
@@ -1505,7 +1509,7 @@
 .tn-workflow-tickets-designer-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  margin-inline-end: calc(var(--spacing) * -4);
+  margin-inline-end: 0;
   min-height: 0;
   flex: 1;
   align-content: start;
@@ -1788,8 +1792,27 @@
   cursor: pointer;
 }
 
+.tn-workflow-tickets-canvas-edge-delete {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, -50%);
+}
+
+.tn-workflow-tickets-canvas-edge-preview {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  pointer-events: none;
+}
+
+.tn-workflow-tickets-canvas-edge-preview.is-valid {
+  stroke-width: 3;
+}
+
 .tn-workflow-tickets-node-card {
   position: absolute;
+  isolation: isolate;
   z-index: 2;
   display: grid;
   width: 210px;
@@ -1808,12 +1831,71 @@
 .tn-workflow-tickets-node-card:hover,
 .tn-workflow-tickets-node-card.is-selected {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--primary), transparent 76%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary), transparent 76%);
 }
 
 .tn-workflow-tickets-node-card:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+.tn-workflow-tickets-node-connection-point {
+  position: absolute;
+  z-index: 10;
+  width: calc(var(--spacing) * 2.5);
+  height: calc(var(--spacing) * 2.5);
+  border: 2px solid var(--card);
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary), transparent 24%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tn-workflow-tickets-node-card.is-selected > .tn-workflow-tickets-node-connection-point,
+.tn-workflow-tickets-node-card:focus-visible > .tn-workflow-tickets-node-connection-point,
+.tn-workflow-tickets-node-card.is-connection-mode > .tn-workflow-tickets-node-connection-point {
+  opacity: 1;
+}
+
+.tn-workflow-tickets-node-card.is-selected > .tn-workflow-tickets-node-connection-point,
+.tn-workflow-tickets-node-card:focus-visible > .tn-workflow-tickets-node-connection-point {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.tn-workflow-tickets-node-card.is-connection-mode > .tn-workflow-tickets-node-connection-point {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.tn-workflow-tickets-node-card.is-connection-target > .tn-workflow-tickets-node-connection-point {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary), transparent 24%);
+}
+
+.tn-workflow-tickets-node-connection-point.is-top {
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.tn-workflow-tickets-node-connection-point.is-right {
+  top: 50%;
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.tn-workflow-tickets-node-connection-point.is-bottom {
+  bottom: 0;
+  left: 50%;
+  transform: translate(-50%, 50%);
+}
+
+.tn-workflow-tickets-node-connection-point.is-left {
+  top: 50%;
+  left: 0;
+  transform: translate(-50%, -50%);
 }
 
 .tn-workflow-tickets-node-title {
@@ -1923,6 +2005,14 @@
   white-space: nowrap;
 }
 
+.tn-workflow-tickets-inspector-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
 .tn-workflow-tickets-inspector-scroll {
   min-height: 0;
   flex: 1;
@@ -1934,8 +2024,21 @@
 
 .tn-workflow-tickets-inspector-section {
   display: grid;
+  min-width: 0;
   gap: calc(var(--spacing) * 3);
   padding-bottom: calc(var(--spacing) * 5);
+}
+
+.tn-workflow-tickets-inspector-section > *,
+.tn-workflow-tickets-inspector-section-heading > *,
+.tn-workflow-tickets-edge-config > *,
+.tn-workflow-tickets-edge-config > * > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tn-workflow-tickets-edge-config * {
+  min-width: 0;
 }
 
 .tn-workflow-tickets-inspector-section textarea[data-slot="textarea"] {
@@ -1960,6 +2063,12 @@
   justify-content: space-between;
   gap: calc(var(--spacing) * 3);
   align-items: flex-start;
+}
+
+.tn-workflow-tickets-inspector-section-heading > button {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
 }
 
 .tn-workflow-tickets-inspector-section-heading > div {

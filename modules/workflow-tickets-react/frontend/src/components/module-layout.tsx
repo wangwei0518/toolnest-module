@@ -95,6 +95,20 @@ function resolveProjectContext(relativePath: string, query: Record<string, strin
   };
 }
 
+type TicketContext = { backPath: string; backLabel: string };
+
+function resolveTicketContext(relativePath: string, query: Record<string, string>): TicketContext | null {
+  if (!/^tickets\/[^/]+$/.test(relativePath) || relativePath === "tickets/new") return null;
+  if (query.from !== "project" || !query.project_id) {
+    return { backPath: "/modules/workflow-tickets-react/tickets", backLabel: "返回工单列表" };
+  }
+  const tab = query.project_tab && query.project_tab !== "overview" ? `?tab=${encodeURIComponent(query.project_tab)}` : "";
+  return {
+    backPath: `/modules/workflow-tickets-react/projects/${encodeURIComponent(query.project_id)}${tab}`,
+    backLabel: "返回项目工单",
+  };
+}
+
 function ProjectNavigation({ projectId, activeKey, router }: { projectId: string; activeKey: string; router: ToolNestModuleRouteRenderProps["router"] }) {
   return <Tabs value={activeKey} onValueChange={(value) => { if (value === null) return; void router.push(`/modules/workflow-tickets-react/projects/${projectId}${value === "overview" ? "" : `?tab=${value}`}`); }} className="max-w-full min-w-0"><TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">{projectNavigation.map((item) => <TabsTrigger key={item.key} value={item.key}><ProjectNavigationIcon itemKey={item.key} />{item.label}</TabsTrigger>)}</TabsList></Tabs>;
 }
@@ -102,13 +116,14 @@ function ProjectNavigation({ projectId, activeKey, router }: { projectId: string
 function ModulePageContent({ relativePath, query, activeKey, router, children }: { relativePath: string; query: Record<string, string>; activeKey: string; router: ToolNestModuleRouteRenderProps["router"]; children: ReactNode }) {
   const [pageMeta, setPageMeta] = useState<ModulePageMeta>(() => resolvePageMeta(relativePath));
   const projectContext = resolveProjectContext(relativePath, query);
+  const headerBackContext = projectContext ?? resolveTicketContext(relativePath, query);
   const isWorkflowDesigner = /^workflows\/[^/]+\/designer(?:\/|$)/.test(relativePath);
   return (
     <ModulePageMetaContext.Provider value={{ setPageMeta }}>
       {!isWorkflowDesigner ? (
-        <header className={`tn-workflow-tickets-react__header${relativePath === "create" || relativePath === "tickets/new" ? " tn-workflow-tickets-react__header--create" : ""}`}>
+        <header className={`tn-workflow-tickets-react__header${relativePath === "create" || relativePath === "tickets/new" ? " tn-workflow-tickets-react__header--create" : ""}${headerBackContext ? " tn-workflow-tickets-react__header--with-back" : ""}`}>
           <div className="tn-workflow-tickets-react__identity">
-            {projectContext ? <Button type="button" size="icon-lg" variant="ghost" aria-label={projectContext.backLabel} onClick={() => void router.push(projectContext.backPath)}><RiArrowLeftSLine /></Button> : null}
+            {headerBackContext ? <Button type="button" size="icon-lg" variant="ghost" aria-label={headerBackContext.backLabel} onClick={() => void router.push(headerBackContext.backPath)}><RiArrowLeftSLine /></Button> : null}
             <span className="tn-workflow-tickets-react__mark"><RiCalendarScheduleLine aria-hidden="true" /></span>
             <div className="grid min-w-0 gap-0.5">
               <div className="flex min-w-0 items-center gap-2">

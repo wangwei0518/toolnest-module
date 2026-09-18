@@ -31,6 +31,23 @@ type Props = {
 type SectionKey = "basic" | "form" | "conditions" | "flow" | "actions" | "version";
 type Point = { x: number; y: number };
 type NodePreviewPlacement = "top" | "right" | "bottom" | "left";
+type ConnectionPointSide = "top" | "right" | "bottom" | "left";
+type ConnectionDrag = {
+  pointerId: number;
+  sourceNodeId: string;
+  sourceSide: ConnectionPointSide;
+  start: Point;
+  current: Point;
+  targetNodeId?: string;
+  targetSide?: ConnectionPointSide;
+};
+
+const connectionPointSides: Array<{ side: ConnectionPointSide; label: string }> = [
+  { side: "top", label: "上方连接点" },
+  { side: "right", label: "右侧连接点" },
+  { side: "bottom", label: "下方连接点" },
+  { side: "left", label: "左侧连接点" },
+];
 
 const statusLabels: Record<string, string> = {
   draft: "草稿",
@@ -235,21 +252,78 @@ function connectionSide(dx: number, dy: number): "top" | "right" | "bottom" | "l
   return dy >= 0 ? "bottom" : "top";
 }
 
-function edgePath(edge: WorkflowEdge, nodes: WorkflowNode[]): string {
-  const source = nodes.find((node) => node.id === edge.source_node_id);
-  const target = nodes.find((node) => node.id === edge.target_node_id);
-  if (!source || !target) return "";
+function nearestConnectionSides(source: WorkflowNode, target: WorkflowNode): { source: "top" | "right" | "bottom" | "left"; target: "top" | "right" | "bottom" | "left" } {
   const sourceCenter = nodeCenter(source);
   const targetCenter = nodeCenter(target);
-  const sourceSide = (edge.source_side as "top" | "right" | "bottom" | "left" | undefined) ?? connectionSide(targetCenter.x - sourceCenter.x, targetCenter.y - sourceCenter.y);
-  const targetSide = (edge.target_side as "top" | "right" | "bottom" | "left" | undefined) ?? connectionSide(sourceCenter.x - targetCenter.x, sourceCenter.y - targetCenter.y);
-  const start = connectionPoint(source, sourceSide);
-  const end = connectionPoint(target, targetSide);
+  return {
+    source: connectionSide(targetCenter.x - sourceCenter.x, targetCenter.y - sourceCenter.y),
+    target: connectionSide(sourceCenter.x - targetCenter.x, sourceCenter.y - targetCenter.y),
+  };
+}
+
+function resolveConnectionSides(edge: WorkflowEdge, source: WorkflowNode, target: WorkflowNode): { source: ConnectionPointSide; target: ConnectionPointSide } {
+  const nearest = nearestConnectionSides(source, target);
+  const sourceSide = edge.source_side as ConnectionPointSide | undefined;
+  const targetSide = edge.target_side as ConnectionPointSide | undefined;
+  const isExplicitSameTopOrBottomSide = sourceSide === targetSide && (sourceSide === "top" || sourceSide === "bottom");
+  if (sourceSide && targetSide && (isExplicitSameTopOrBottomSide || (sourceSide === nearest.source && targetSide === nearest.target))) {
+    return { source: sourceSide, target: targetSide };
+  }
+  return nearest;
+}
+
+function connectionCurve(start: Point, end: Point, sourceSide?: ConnectionPointSide, targetSide?: ConnectionPointSide): string {
+  const isSameTopOrBottomSide = sourceSide === targetSide && (sourceSide === "top" || sourceSide === "bottom") && Math.abs(end.x - start.x) > 8;
+  if (isSameTopOrBottomSide) {
+    const bend = Math.max(28, Math.min(96, Math.abs(end.x - start.x) * 0.28));
+    const direction = sourceSide === "top" ? -1 : 1;
+    const controlA = { x: start.x + (end.x - start.x) * 0.28, y: start.y + direction * bend };
+    const controlB = { x: end.x - (end.x - start.x) * 0.28, y: end.y + direction * bend };
+    return `M ${start.x} ${start.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${end.x} ${end.y}`;
+  }
   const horizontal = Math.abs(end.x - start.x) >= Math.abs(end.y - start.y);
   const bend = Math.max(34, Math.min(120, (horizontal ? Math.abs(end.x - start.x) : Math.abs(end.y - start.y)) * 0.42));
   const controlA = horizontal ? { x: start.x + (end.x >= start.x ? bend : -bend), y: start.y } : { x: start.x, y: start.y + (end.y >= start.y ? bend : -bend) };
   const controlB = horizontal ? { x: end.x - (end.x >= start.x ? bend : -bend), y: end.y } : { x: end.x, y: end.y - (end.y >= start.y ? bend : -bend) };
   return `M ${start.x} ${start.y} C ${controlA.x} ${controlA.y}, ${controlB.x} ${controlB.y}, ${end.x} ${end.y}`;
+}
+
+function edgePath(edge: WorkflowEdge, nodes: WorkflowNode[]): string {
+  const source = nodes.find((node) => node.id === edge.source_node_id);
+  const target = nodes.find((node) => node.id === edge.target_node_id);
+  if (!source || !target) return "";
+  const { source: sourceSide, target: targetSide } = resolveConnectionSides(edge, source, target);
+  const start = connectionPoint(source, sourceSide);
+  const end = connectionPoint(target, targetSide);
+  return connectionCurve(start, end, sourceSide, targetSide);
+}
+
+function edgeAnchor(edge: WorkflowEdge, nodes: WorkflowNode[]): Point | undefined {
+  const source = nodes.find((node) => node.id === edge.source_node_id);
+  const target = nodes.find((node) => node.id === edge.target_node_id);
+  if (!source || !target) return undefined;
+  const { source: sourceSide, target: targetSide } = resolveConnectionSides(edge, source, target);
+  const start = connectionPoint(source, sourceSide);
+  const end = connectionPoint(target, targetSide);
+  if (sourceSide === targetSide && (sourceSide === "top" || sourceSide === "bottom") && Math.abs(end.x - start.x) > 8) {
+    const bend = Math.max(28, Math.min(96, Math.abs(end.x - start.x) * 0.28));
+    const direction = sourceSide === "top" ? -1 : 1;
+    return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 + direction * bend * 0.75 };
+  }
+  return { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+}
+
+function edgeDeletePosition(edge: WorkflowEdge, nodes: WorkflowNode[]): Point | undefined {
+  const anchor = edgeAnchor(edge, nodes);
+  if (!anchor) return undefined;
+  const offset = 28;
+  const buttonHalfSize = 16;
+  const canvasSafeTop = 24;
+  const canvasSafeBottom = 1000 - 24;
+  const canPlaceAbove = anchor.y - offset - buttonHalfSize >= canvasSafeTop;
+  const canPlaceBelow = anchor.y + offset + buttonHalfSize <= canvasSafeBottom;
+  const placeAbove = canPlaceAbove || !canPlaceBelow;
+  return { x: anchor.x, y: anchor.y + (placeAbove ? -offset : offset) };
 }
 
 function statusVariant(value: string): "default" | "secondary" | "outline" | "destructive" {
@@ -297,10 +371,12 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const [formInitialFieldId, setFormInitialFieldId] = useState("");
   const [nodeDeleteOpen, setNodeDeleteOpen] = useState(false);
   const [completionOpen, setCompletionOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [actionProviders, setActionProviders] = useState<ActionProvider[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
   const [nodePreviewPlacement, setNodePreviewPlacement] = useState<NodePreviewPlacement>("right");
   const [nodePreviewStyle, setNodePreviewStyle] = useState<CSSProperties>({});
+  const [connectionDrag, setConnectionDrag] = useState<ConnectionDrag>();
   const [dryRunInput, setDryRunInput] = useState("{}");
   const [dryRunResult, setDryRunResult] = useState<{ version: number; nodes: Array<{ name: string; status: string }>; explanation: string }>();
   const [metaDraft, setMetaDraft] = useState({ name: "", description: "", group_name: "" });
@@ -311,6 +387,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const nodePreviewRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<{ pointerId: number; start: Point; origin: Point } | undefined>(undefined);
   const nodeDragRef = useRef<{ pointerId: number; nodeId: string; start: Point; origin: Point; nodes: WorkflowNode[] } | undefined>(undefined);
+  const connectionDragRef = useRef<ConnectionDrag | undefined>(undefined);
   const pendingNodesRef = useRef<WorkflowNode[] | undefined>(undefined);
 
   useEffect(() => {
@@ -339,7 +416,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const formVariables = useMemo<FormVariable[]>(() => [
     { label: "工单标题", value: "ticket.title", group: "工单", source_type: "text" },
     { label: "工单编号", value: "ticket.number", group: "工单", source_type: "text" },
-    ...formAncestors.flatMap((node) => node.form_schema.fields.map((field) => ({ label: `${node.name} / ${field.label}`, value: `nodes.${node.key}.${field.type === "script" ? "resources" : "values"}.${field.id}`, group: node.name, source_type: field.type }))),
+    ...formAncestors.flatMap((node) => node.form_schema.fields.map((field) => ({ label: `${node.name} / ${field.label}`, value: `nodes.${node.key}.${field.type === "script" ? "resources" : "values"}.${field.id}`, group: node.name, source_type: field.type, field_id: field.id }))),
     ...formAncestors.flatMap((node) => node.outputs.map((output) => ({ label: `${node.name} / 输出 / ${String(output.key ?? "")}`, value: `nodes.${node.key}.outputs.${String(output.key ?? "")}`, group: `${node.name}输出`, source_type: "output" }))),
   ], [formAncestors]);
   const sectionMeta = sectionItems.find((item) => item.key === activeSection);
@@ -391,12 +468,13 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   }, [loading, versionId, nodes.length]);
 
   const updateWorkflow = async (nextNodes: WorkflowNode[], nextEdges = edges, extra: Record<string, unknown> = {}) => {
-    if (!workflow || !version || readOnly) return;
+    if (!workflow || !version || readOnly) return undefined;
     try {
       setSaving(true);
       setError("");
       const updated = await api.updateWorkflow(workflow.id, { version_id: version.id, nodes: nextNodes, edges: nextEdges, ...extra });
       setWorkflow(updated);
+      return updated;
     } catch (err) {
       setError(errorMessage(err, "保存设计失败"));
     } finally {
@@ -498,7 +576,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const scheduleNodePreview = (node: WorkflowNode, event: React.PointerEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => {
     if ("pointerType" in event && event.pointerType === "touch") return;
-    if (nodeDragRef.current) return;
+    if (nodeDragRef.current || connectionDragRef.current) return;
     if (hoverCloseTimerRef.current) window.clearTimeout(hoverCloseTimerRef.current);
     if (hoverOpenTimerRef.current) window.clearTimeout(hoverOpenTimerRef.current);
     if (hoveredNodeId === node.id) return;
@@ -534,7 +612,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
       await api.publishWorkflow(workflow.id, { version_id: version.id, publish_note: publishNote.trim() || "通过 React 设计器发布" });
       setPublishOpen(false);
       setPublishNote("");
-      await load();
+      await router.push("/modules/workflow-tickets-react/workflows");
     } catch (err) {
       setError(errorMessage(err, "发布失败"));
     } finally {
@@ -604,8 +682,37 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const endPan = () => { dragRef.current = undefined; };
 
+  const connectionSideAtClient = (nodeId: string, clientX: number, clientY: number): ConnectionPointSide | undefined => {
+    const card = [...document.querySelectorAll<HTMLElement>('[data-node-id]')].find((element) => element.dataset.nodeId === nodeId);
+    if (!card) return undefined;
+    const handleSide = connectionPointSides.find(({ side }) => {
+      const handle = card.querySelector<HTMLElement>(`.tn-workflow-tickets-node-connection-point.is-${side}`);
+      if (!handle) return false;
+      const rect = handle.getBoundingClientRect();
+      const hitSlop = 12;
+      return clientX >= rect.left - hitSlop && clientX <= rect.right + hitSlop && clientY >= rect.top - hitSlop && clientY <= rect.bottom + hitSlop;
+    })?.side;
+    if (handleSide) return handleSide;
+    const cardRect = card.getBoundingClientRect();
+    const hitSlop = 32;
+    const withinCardHeight = clientY >= cardRect.top - hitSlop && clientY <= cardRect.bottom + hitSlop;
+    const withinCardWidth = clientX >= cardRect.left - hitSlop && clientX <= cardRect.right + hitSlop;
+    if (withinCardHeight && clientX >= cardRect.right - hitSlop && clientX <= cardRect.right + hitSlop) return "right";
+    if (withinCardHeight && clientX >= cardRect.left - hitSlop && clientX <= cardRect.left + hitSlop) return "left";
+    if (withinCardWidth && clientY >= cardRect.top - hitSlop && clientY <= cardRect.top + hitSlop) return "top";
+    if (withinCardWidth && clientY >= cardRect.bottom - hitSlop && clientY <= cardRect.bottom + hitSlop) return "bottom";
+    return undefined;
+  };
+
   const startNodeDrag = (event: React.PointerEvent<HTMLElement>, node: WorkflowNode) => {
-    if (readOnly || event.button !== 0 || (event.target as HTMLElement).closest("button, input, textarea, [role=button]") !== event.currentTarget) return;
+    if (connectionDragRef.current?.pointerId === event.pointerId) return;
+    const target = event.target as HTMLElement;
+    const connectionSide = connectionPointSides.find(({ side }) => target.closest(`.tn-workflow-tickets-node-connection-point.is-${side}`))?.side ?? connectionSideAtClient(node.id, event.clientX, event.clientY);
+    if (connectionSide) {
+      startConnectionDrag(event as React.PointerEvent<HTMLSpanElement>, node, connectionSide);
+      return;
+    }
+    if (readOnly || event.button !== 0 || target !== event.currentTarget) return;
     hideNodePreview();
     event.stopPropagation();
     setSelectedId(node.id);
@@ -633,7 +740,93 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     if (movedNode && (movedNode.position.x !== drag.origin.x || movedNode.position.y !== drag.origin.y)) void updateWorkflow(drag.nodes, edges);
   };
 
+  const connectionPointFromClient = (clientX: number, clientY: number): Point | undefined => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const rect = canvas.getBoundingClientRect();
+    return { x: (clientX - rect.left - pan.x) / zoom, y: (clientY - rect.top - pan.y) / zoom };
+  };
+
+  const connectionTargetFromClient = (clientX: number, clientY: number, sourceNodeId: string): Pick<ConnectionDrag, "targetNodeId" | "targetSide"> | undefined => {
+    const element = document.elementFromPoint(clientX, clientY);
+    const handle = element?.closest<HTMLElement>('.tn-workflow-tickets-node-connection-point');
+    const node = handle?.closest<HTMLElement>('[data-node-id]') ?? element?.closest<HTMLElement>('[data-node-id]') ?? [...document.querySelectorAll<HTMLElement>('[data-node-id]')].find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+    });
+    const targetNodeId = node?.dataset.nodeId;
+    if (!targetNodeId || targetNodeId === sourceNodeId || !node) return undefined;
+    const handleSide = connectionPointSides.find(({ side }) => handle?.classList.contains(`is-${side}`))?.side;
+    const rect = node.getBoundingClientRect();
+    const targetSide = handleSide ?? (Object.entries({
+      top: Math.abs(clientY - rect.top),
+      right: Math.abs(clientX - rect.right),
+      bottom: Math.abs(clientY - rect.bottom),
+      left: Math.abs(clientX - rect.left),
+    }).sort(([, first], [, second]) => first - second)[0]?.[0] as ConnectionPointSide | undefined);
+    if (!targetNodeId || targetNodeId === sourceNodeId || !targetSide) return undefined;
+    return { targetNodeId, targetSide };
+  };
+
+  const startConnectionDrag = (event: React.PointerEvent<HTMLSpanElement>, node: WorkflowNode, side: ConnectionPointSide) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (readOnly) return;
+    const start = connectionPoint(node, side);
+    const next: ConnectionDrag = { pointerId: event.pointerId, sourceNodeId: node.id, sourceSide: side, start, current: start };
+    connectionDragRef.current = next;
+    setConnectionDrag(next);
+    setSelectedId(node.id);
+    setSelectedEdgeId("");
+    hideNodePreview();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveConnectionDrag = (event: React.PointerEvent<HTMLSpanElement>) => {
+    const drag = connectionDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const current = connectionPointFromClient(event.clientX, event.clientY);
+    if (!current) return;
+    const target = connectionTargetFromClient(event.clientX, event.clientY, drag.sourceNodeId);
+    const next = { ...drag, current, ...target };
+    connectionDragRef.current = next;
+    setConnectionDrag(next);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const finishConnectionDrag = async (event: React.PointerEvent<HTMLSpanElement>) => {
+    const drag = connectionDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    connectionDragRef.current = undefined;
+    setConnectionDrag(undefined);
+    if (!drag.targetNodeId || !drag.targetSide) return;
+    const existing = edges.find((edge) => edge.source_node_id === drag.sourceNodeId && edge.target_node_id === drag.targetNodeId);
+    if (existing) {
+      setSelectedEdgeId(existing.id);
+      return;
+    }
+    const edge: WorkflowEdge = { id: crypto.randomUUID(), source_node_id: drag.sourceNodeId, target_node_id: drag.targetNodeId, source_side: drag.sourceSide, target_side: drag.targetSide, priority: edges.filter((item) => item.source_node_id === drag.sourceNodeId).length, condition: null, condition_mode: "unconditional" };
+    const updated = await updateWorkflow(nodes, [...edges, edge]);
+    if (updated) setSelectedEdgeId(edge.id);
+  };
+
+  const cancelConnectionDrag = (event: React.PointerEvent<HTMLSpanElement>) => {
+    if (connectionDragRef.current?.pointerId !== event.pointerId) return;
+    connectionDragRef.current = undefined;
+    setConnectionDrag(undefined);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   const moveCanvasPointer = (event: React.PointerEvent<HTMLElement>) => {
+    if (connectionDragRef.current?.pointerId === event.pointerId) {
+      moveConnectionDrag(event as React.PointerEvent<HTMLSpanElement>);
+      return;
+    }
     if (nodeDragRef.current?.pointerId === event.pointerId) {
       moveNodeDrag(event);
       return;
@@ -642,6 +835,10 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   };
 
   const endCanvasPointer = (event: React.PointerEvent<HTMLElement>) => {
+    if (connectionDragRef.current?.pointerId === event.pointerId) {
+      void finishConnectionDrag(event as React.PointerEvent<HTMLSpanElement>);
+      return;
+    }
     if (nodeDragRef.current?.pointerId === event.pointerId) {
       endNodeDrag(event);
       return;
@@ -808,8 +1005,15 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
             <svg className="tn-workflow-tickets-canvas-edges" viewBox="0 0 1400 1000" preserveAspectRatio="none" aria-label="工作流连线">
               <defs><marker id="tn-workflow-edge-arrow-default" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--border)" /></marker><marker id="tn-workflow-edge-arrow-active" markerWidth="10" markerHeight="10" refX="9" refY="0" orient="auto" markerUnits="userSpaceOnUse" viewBox="-1 -6 12 12"><path d="M 0 -5 L 10 0 L 0 5 Z" fill="var(--primary)" /></marker></defs>
               {edges.map((edge) => <g key={edge.id}><path className="tn-workflow-tickets-canvas-edge-hit-area" d={edgePath(edge, nodes)} role="button" tabIndex={0} aria-label="选择工作流连线" onClick={(event) => { event.stopPropagation(); setSelectedEdgeId(edge.id); }} /><path className={`tn-workflow-tickets-canvas-edge-path${selectedEdgeId === edge.id || selected?.id === edge.source_node_id ? " is-selected" : ""}`} d={edgePath(edge, nodes)} markerEnd={`url(#${selectedEdgeId === edge.id || selected?.id === edge.source_node_id ? "tn-workflow-edge-arrow-active" : "tn-workflow-edge-arrow-default"})`} /></g>)}
+              {connectionDrag ? <path className={`tn-workflow-tickets-canvas-edge-preview${connectionDrag.targetNodeId ? " is-valid" : ""}`} d={connectionCurve(connectionDrag.start, connectionDrag.current, connectionDrag.sourceSide, connectionDrag.targetSide)} /> : null}
             </svg>
-            {nodes.map((node) => <article key={node.id} data-node-id={node.id} className={`tn-workflow-tickets-node-card${node.id === selected.id ? " is-selected" : ""}`} style={{ left: `${node.position.x}px`, top: `${node.position.y}px` }} role="button" tabIndex={0} aria-label={`选择节点：${node.name}`} aria-describedby={hoveredNodeId === node.id ? "tn-workflow-tickets-node-field-preview" : undefined} onPointerEnter={(event) => scheduleNodePreview(node, event)} onPointerLeave={scheduleNodePreviewClose} onFocus={(event) => scheduleNodePreview(node, event)} onBlur={scheduleNodePreviewClose} onPointerDown={(event) => startNodeDrag(event, node)} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); setSelectedEdgeId(""); } }}>
+            {selectedEdge ? (() => {
+              const position = edgeDeletePosition(selectedEdge, nodes);
+              if (!position) return null;
+              return <Button className="tn-workflow-tickets-canvas-edge-delete" size="icon-sm" variant="destructiveSolid" disabled={readOnly || saving} aria-label="删除工作流连线" title="删除连线" style={{ left: `${position.x}px`, top: `${position.y}px` }} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeEdge(selectedEdge.id); }}><RiDeleteBinLine aria-hidden="true" /></Button>;
+            })() : null}
+            {nodes.map((node) => <article key={node.id} data-node-id={node.id} className={`tn-workflow-tickets-node-card${node.id === selected.id ? " is-selected" : ""}${connectionDrag ? " is-connection-mode" : ""}${connectionDrag?.sourceNodeId === node.id ? " is-connection-source" : ""}${connectionDrag?.targetNodeId === node.id ? " is-connection-target" : ""}`} style={{ left: `${node.position.x}px`, top: `${node.position.y}px` }} role="button" tabIndex={0} aria-label={`选择节点：${node.name}`} aria-describedby={hoveredNodeId === node.id ? "tn-workflow-tickets-node-field-preview" : undefined} onPointerEnter={(event) => scheduleNodePreview(node, event)} onPointerLeave={scheduleNodePreviewClose} onFocus={(event) => scheduleNodePreview(node, event)} onBlur={scheduleNodePreviewClose} onPointerDownCapture={(event) => { if (connectionDragRef.current?.pointerId === event.pointerId) return; const side = connectionSideAtClient(node.id, event.clientX, event.clientY); if (side) startConnectionDrag(event as React.PointerEvent<HTMLSpanElement>, node, side); }} onPointerDown={(event) => { if (connectionDragRef.current?.pointerId === event.pointerId) return; const side = connectionSideAtClient(node.id, event.clientX, event.clientY); if (side) startConnectionDrag(event as React.PointerEvent<HTMLSpanElement>, node, side); else startNodeDrag(event, node); }} onPointerMove={(event) => { if (connectionDragRef.current?.pointerId === event.pointerId) moveConnectionDrag(event as React.PointerEvent<HTMLSpanElement>); else if (nodeDragRef.current?.pointerId === event.pointerId) moveNodeDrag(event); }} onPointerUp={(event) => { if (connectionDragRef.current?.pointerId === event.pointerId) void finishConnectionDrag(event as React.PointerEvent<HTMLSpanElement>); else if (nodeDragRef.current?.pointerId === event.pointerId) endNodeDrag(event); }} onPointerCancel={(event) => { if (connectionDragRef.current?.pointerId === event.pointerId) cancelConnectionDrag(event as React.PointerEvent<HTMLSpanElement>); else if (nodeDragRef.current?.pointerId === event.pointerId) endNodeDrag(event); }} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedId(node.id); setSelectedEdgeId(""); } }}>
+              {connectionPointSides.map(({ side, label }) => <span key={side} className={`tn-workflow-tickets-node-connection-point is-${side}`} data-connection-side={side} aria-label={label} onPointerDown={(event) => startConnectionDrag(event, node, side)} onPointerMove={moveConnectionDrag} onPointerUp={finishConnectionDrag} onPointerCancel={cancelConnectionDrag} />)}
               <div className="tn-workflow-tickets-node-title"><span className="tn-workflow-tickets-node-dot" />{node.name}</div>
               <div className="tn-workflow-tickets-node-summary"><span>{node.form_schema.fields.length} 个字段 · {Array.isArray(node.completion_rule?.children) ? node.completion_rule.children.length : 0} 条完成条件</span><span>{node.actions.length} 个动作</span></div>
               <div className="tn-workflow-tickets-card-footer"><Badge variant="secondary">{node.node_type === "summary" ? "总结节点" : "通用节点"}</Badge><span className="tn-workflow-tickets-muted">{node.key}</span></div>
@@ -847,16 +1051,12 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
                 </div>
                 {configuredCompletionRuleCount ? <CompletionRuleSummary rule={completionRule} fields={selected.form_schema.fields} nodes={nodes} /> : <p className="m-0 text-xs leading-relaxed text-muted-foreground">未配置规则时，节点可直接完成。</p>}
               </section> : null}
-              {activeSection === "flow" ? <>
-                <section className="tn-workflow-tickets-inspector-section">
-                  <div className="tn-workflow-tickets-inspector-section-heading"><div><h3>前序节点</h3><p>组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div><Badge variant="outline">{incomingNodes.length} 个</Badge></div>
-                  {incomingNodes.length > 1 ? readOnly ? <div className="tn-workflow-tickets-inspector-readonly-list">{incomingNodes.map((node) => <div className="tn-workflow-tickets-inspector-readonly-item" key={node.id}>{node.name} · {String(selected.predecessor_rule?.operator ?? "OR")}</div>)}</div> : <PredecessorRuleEditor node={selected} incomingNodes={incomingNodes} onChange={updatePredecessorRule} /> : <p className="tn-workflow-tickets-inspector-empty">{incomingNodes.length ? "当前只有一个前序节点，无需配置组合条件。" : "当前节点没有前序节点，将作为起始节点进入流程。"}</p>}
-                </section>
-                <section className="tn-workflow-tickets-inspector-section">
-                  <div className="tn-workflow-tickets-inspector-section-heading"><div><h3>后继节点与分支</h3><p>设置完成当前节点后进入的节点和判断条件。</p></div><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => void addBranch()}>新增分支</Button></div>
-                  {outgoingEdges.length ? <div className="tn-workflow-tickets-edge-config">{outgoingEdges.map((edge, index) => readOnly ? <div className="tn-workflow-tickets-inspector-readonly-item" key={edge.id}>{nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点"} · 优先级 {edge.priority ?? 0} · {edge.condition ? "已配置条件" : "无条件进入"}</div> : <WorkflowEdgeEditor key={edge.id} edge={edge} index={index} nodes={nodes} onChange={updateEdge} onRemove={() => void removeEdge(edge.id)} />)}</div> : <p className="tn-workflow-tickets-inspector-empty">当前节点还没有后继节点，添加分支后可配置流向。</p>}
-                </section>
-              </> : null}
+              {activeSection === "flow" ? <section className="tn-workflow-tickets-inspector-section">
+                <div className="tn-workflow-tickets-inspector-section-heading"><div><h3>节点流转</h3><p>配置前序节点、后继节点和分支进入条件。</p></div><Button size="sm" variant="secondary" disabled={readOnly} onClick={() => setFlowOpen(true)}><RiEditLine data-icon="inline-start" />弹窗编辑</Button></div>
+                <div className="tn-workflow-tickets-inspector-summary"><span><strong>{incomingNodes.length}</strong> 个前序</span><span><strong>{outgoingEdges.length}</strong> 个后继</span><span><strong>{outgoingEdges.filter((edge) => Boolean(edge.condition)).length}</strong> 个条件分支</span></div>
+                {incomingNodes.length ? <p className="m-0 text-xs leading-relaxed text-muted-foreground">前序节点：{incomingNodes.map((node) => node.name).join("、")}{incomingNodes.length > 1 ? ` · ${String(selected.predecessor_rule?.operator ?? "OR")} 组合` : ""}</p> : <p className="m-0 text-xs leading-relaxed text-muted-foreground">当前没有前序节点，将作为起始节点进入流程。</p>}
+                {outgoingEdges.length ? <p className="m-0 text-xs leading-relaxed text-muted-foreground">后继节点：{outgoingEdges.map((edge) => nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点").join("、")}</p> : <p className="m-0 text-xs leading-relaxed text-muted-foreground">当前没有后继节点，可在弹窗中新增分支。</p>}
+              </section> : null}
               {activeSection === "actions" ? <section className="tn-workflow-tickets-inspector-section">{readOnly ? <div className="tn-workflow-tickets-inspector-readonly-list">{selected.actions.map((action, index) => <div className="tn-workflow-tickets-inspector-readonly-item" key={`${String(action.event)}-${String(action.key)}-${index}`}>{String(action.label || action.key || `动作 ${index + 1}`)} · {String(action.event ?? "")}</div>)}{!selected.actions.length ? <p className="tn-workflow-tickets-inspector-empty">此版本没有配置节点动作。</p> : null}</div> : <WorkflowActionEditor actions={selected.actions as Array<Record<string, unknown> & { key: string; event: string; label?: string }>} providers={actionProviders} onChange={updateActions} />}</section> : null}
               {activeSection === "version" ? <section className="tn-workflow-tickets-inspector-section"><div className="tn-workflow-tickets-version-overview"><div className="tn-workflow-tickets-version-overview-header"><div><span className="tn-workflow-tickets-version-overview-eyebrow">工作流快照</span><strong>v{version.version}</strong></div><WorkflowStatus value={version.status} /></div><div className="tn-workflow-tickets-inspector-version-stats"><div><strong>{version.nodes.length}</strong><span>个节点</span></div><div><strong>{version.edges.length}</strong><span>条连线</span></div><div><strong>{version.ticket_count}</strong><span>个工单</span></div></div><div className="tn-workflow-tickets-version-overview-meta"><span>{version.status === "published" ? "发布于" : "创建于"} {formatDate(version.status === "published" ? version.published_at : version.created_at)}</span>{version.source_version_id ? <span>基于历史版本创建</span> : null}</div><div className="tn-workflow-tickets-version-overview-note"><div className="tn-workflow-tickets-version-overview-note-header"><span>版本说明</span>{!readOnly ? <Button size="sm" variant="link" onClick={() => setPublishOpen(true)}>填写说明</Button> : null}</div><p>{version.change_note || "未填写版本说明"}</p></div><p className="tn-workflow-tickets-version-overview-tip">{version.status === "published" ? "当前是已发布版本。点击“编辑为草稿”后，系统会基于此版本创建新的草稿。" : "已创建的工单会继续绑定创建时的版本，新工单使用当前发布版本。"}</p><Button className="w-full" variant="secondary" onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/versions`)}>查看版本记录</Button></div></section> : null}
               {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
@@ -870,6 +1070,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
       <WorkflowFormDesignerDialog key={`${selected.id}-${formInitialFieldId}`} open={formOpen} onOpenChange={setFormOpen} node={selected} initialFieldId={formInitialFieldId} variables={formVariables} onApply={applyFormFields} />
       <Dialog open={completionOpen} onOpenChange={setCompletionOpen}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={completionRule} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={updateCompletionRule} /><DialogFooter><Button variant="outline" onClick={() => setCompletionOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={flowOpen} onOpenChange={setFlowOpen}><DialogContent className="flex max-h-[min(48rem,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0"><DialogHeader className="shrink-0 border-b px-5 py-4 pr-12"><DialogTitle>{selected.name} · 节点流转</DialogTitle><DialogDescription>配置前序节点、后继节点和分支进入条件，修改会即时写入当前草稿。</DialogDescription></DialogHeader><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4"><div className="grid gap-6"><section className="grid gap-3"><div><h3 className="text-sm font-semibold">前序节点</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div>{incomingNodes.length > 1 ? readOnly ? <div className="grid gap-2">{incomingNodes.map((node) => <div className="rounded-md border p-3 text-sm" key={node.id}>{node.name} · {String(selected.predecessor_rule?.operator ?? "OR")}</div>)}</div> : <PredecessorRuleEditor node={selected} incomingNodes={incomingNodes} onChange={updatePredecessorRule} /> : <p className="m-0 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">{incomingNodes.length ? "当前只有一个前序节点，无需配置组合条件。" : "当前节点没有前序节点，将作为起始节点进入流程。"}</p>}</section><section className="grid gap-3 border-t pt-5"><div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-sm font-semibold">后继节点与分支</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">设置完成当前节点后进入的节点和判断条件。</p></div><Button className="shrink-0" size="sm" variant="secondary" disabled={readOnly} onClick={() => void addBranch()}><RiAddLine data-icon="inline-start" />新增分支</Button></div>{outgoingEdges.length ? <div className="tn-workflow-tickets-edge-config">{outgoingEdges.map((edge, index) => readOnly ? <div className="rounded-md border p-3 text-sm" key={edge.id}>{nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点"} · 优先级 {edge.priority ?? 0} · {edge.condition ? "已配置条件" : "无条件进入"}</div> : <WorkflowEdgeEditor key={edge.id} edge={edge} index={index} nodes={nodes} onChange={updateEdge} onRemove={() => void removeEdge(edge.id)} />)}</div> : <p className="m-0 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">当前节点还没有后继节点，点击“新增分支”添加流向。</p>}</section></div></div><DialogFooter className="shrink-0 border-t px-5 py-3"><Button variant="outline" onClick={() => setFlowOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}><DialogContent><DialogHeader><DialogTitle>模板信息</DialogTitle><DialogDescription>修改模板名称、描述和分组。</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>模板名称</FieldLabel><Input value={metaDraft.name} onChange={(event) => setMetaDraft({ ...metaDraft, name: event.target.value })} /></Field><Field><FieldLabel>模板描述</FieldLabel><Textarea value={metaDraft.description} onChange={(event) => setMetaDraft({ ...metaDraft, description: event.target.value })} /></Field><Field><FieldLabel>模板分组</FieldLabel><Input value={metaDraft.group_name} onChange={(event) => setMetaDraft({ ...metaDraft, group_name: event.target.value })} /></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => setMetaOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void saveMeta()}>保存修改</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent><DialogHeader><DialogTitle>发布工作流</DialogTitle><DialogDescription>发布后会生成不可修改的版本快照，新建工单将使用当前发布版本。</DialogDescription></DialogHeader><Field><FieldLabel>版本说明</FieldLabel><Textarea value={publishNote} onChange={(event) => setPublishNote(event.target.value)} placeholder="例如：增加结果复核节点，调整附件要求" /></Field><DialogFooter><Button variant="outline" onClick={() => setPublishOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void publish()}>确认发布</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={dryRunOpen} onOpenChange={setDryRunOpen}><DialogContent><DialogHeader><DialogTitle>流程预演</DialogTitle><DialogDescription>按当前版本计算节点和连线，不创建工单，也不会执行节点动作。</DialogDescription></DialogHeader><Field><FieldLabel>根节点初始值（JSON）</FieldLabel><Textarea value={dryRunInput} onChange={(event) => setDryRunInput(event.target.value)} /></Field>{dryRunResult ? <div className="tn-workflow-tickets-dry-run-result"><strong>v{dryRunResult.version} 预演结果</strong>{dryRunResult.nodes.map((node) => <div key={node.name}><RiCheckLine />{node.name}<span>{node.status}</span></div>)}<p>{dryRunResult.explanation}</p></div> : null}<DialogFooter><Button variant="outline" onClick={() => setDryRunOpen(false)}>关闭</Button><Button onClick={() => void runDryRun()}>开始预演</Button></DialogFooter></DialogContent></Dialog>

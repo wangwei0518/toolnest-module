@@ -48,7 +48,8 @@ function hostDevSharedDependencyPlugin() {
         !id.includes("\\src\\") &&
         !id.includes("react-day-picker") &&
         !id.includes("recharts") &&
-        !id.includes("react-redux")
+        !id.includes("react-redux") &&
+        !id.includes("embla-carousel-react")
       ) return null;
       let transformed = code;
       for (const [specifier, replacement] of hostDevSharedDependencies) {
@@ -70,7 +71,7 @@ export default defineConfig(({ command }) => ({
     "process.env.NODE_ENV": JSON.stringify(command === "serve" ? "development" : "production"),
   },
   resolve: {
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "embla-carousel-react"],
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
       "use-sync-external-store/shim/with-selector": fileURLToPath(
@@ -88,7 +89,13 @@ export default defineConfig(({ command }) => ({
     },
   },
   optimizeDeps: {
-    exclude: ["react-day-picker", "recharts", "react-redux", "use-sync-external-store"],
+    exclude: [
+      "react-day-picker",
+      "recharts",
+      "react-redux",
+      "use-sync-external-store",
+      "embla-carousel-react",
+    ],
     include: [
       "recharts > @reduxjs/toolkit",
       "recharts > decimal.js-light",
