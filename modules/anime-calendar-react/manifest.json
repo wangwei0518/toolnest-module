@@ -1,0 +1,58 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "anime-calendar-react",
+  "name": "新番日历",
+  "version": "0.1.14",
+  "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
+  "author": "ToolNest",
+  "icon": "calendar",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "node",
+    "entry": "backend/dist/main.js",
+    "transport": "http",
+    "startup": "lazy",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 120000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": []
+  },
+  "api": {
+    "base_path": "/api/v1/modules/anime-calendar-react"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@tanstack/react-query",
+      "@toolnest/react-module-sdk",
+      "sonner"
+    ]
+  },
+  "permissions": [
+    "anime.calendar.read",
+    "anime.calendar.update"
+  ],
+  "capabilities": [
+    "anime.calendar.read",
+    "anime.calendar.update",
+    "notifications.send"
+  ],
+  "menus": [
+    {
+      "key": "anime-calendar-react",
+      "label": "新番日历",
+      "path": "",
+      "icon": "calendar",
+      "order": 100
+    }
+  ],
+  "settings": []
+}

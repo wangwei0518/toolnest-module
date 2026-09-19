@@ -1,0 +1,23 @@
+{
+  "name": "@toolnest/anime-calendar-react-react-backend",
+  "version": "0.1.14",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fastify": "^5.11.3",
+    "proxy-agent": "^6.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.0"
+  }
+}
