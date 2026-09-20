@@ -1,6 +1,9 @@
 name: Publish ToolNest modules
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       release_tag:
@@ -11,12 +14,19 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: publish-modules
+  cancel-in-progress: false
+
 jobs:
   publish:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -33,7 +43,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build and package modules
-        run: pnpm package:all
+        env:
+          RELEASE_BASE_SHA: ${{ github.event.before }}
+          RELEASE_HEAD_SHA: ${{ github.sha }}
+        run: pnpm release:package
 
       - name: Validate module bundle budgets
         run: pnpm budget:check
@@ -44,8 +57,11 @@ jobs:
         env:
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
-          release_tag="${INPUT_RELEASE_TAG:-module-release-${RUN_NUMBER}}"
+          short_sha="${SOURCE_SHA:0:7}"
+          release_tag="${INPUT_RELEASE_TAG:-module-release-${RUN_NUMBER}-${RUN_ATTEMPT}-${short_sha}}"
           echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
 
       - name: Build catalog
@@ -54,23 +70,32 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: pnpm catalog:build
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          gh release create "$RELEASE_TAG" modules/*/dist/*.tnmod \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_TAG" \
-            --notes "ToolNest module release $RELEASE_TAG"
-
-      - name: Commit catalog
+      - name: Commit versions and catalog
+        id: commit
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add catalog.json
-          git commit -m "发布模块目录 ${RELEASE_TAG} [skip ci]" || exit 0
+          git add catalog.json \
+            modules/*/manifest.json \
+            modules/*/frontend/package.json \
+            modules/*/frontend/src/index.tsx \
+            modules/*/backend/package.json
+          if ! git diff --cached --quiet; then
+            git commit -m "发布模块目录 ${RELEASE_TAG} [skip ci]"
+          fi
+          echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git push origin HEAD:main
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_TARGET: ${{ steps.commit.outputs.target }}
+        run: |
+          gh release create "$RELEASE_TAG" modules/*/dist/*.tnmod \
+            --target "$RELEASE_TARGET" \
+            --title "$RELEASE_TAG" \
+            --notes "ToolNest module release $RELEASE_TAG"

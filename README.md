@@ -47,4 +47,6 @@ https://raw.githubusercontent.com/wangwei0518/toolnest-module/main/catalog.json
 
 目录只保存模块元数据；安装时 ToolNest 会从对应 Release 下载 `.tnmod`，校验 SHA-256 后再进入运行时安装队列。
 
-发布前应先提交对应模块版本变更，再手动运行 `Publish ToolNest modules` workflow。workflow 默认生成 `module-release-<run_number>` Release，也可以传入自定义 tag。
+推送到 `main` 后，`Publish ToolNest modules` workflow 会自动识别受影响模块：若提交中尚未更新版本，则只为受影响模块递增补丁版本；随后构建全部模块、执行体积预算检查、生成包含下载 URL 与 SHA-256 的 `catalog.json`，并创建 GitHub Release。Action 生成的版本与目录提交带有 `[skip ci]`，不会形成发布循环。
+
+也可以手动运行该 workflow，并按需提供自定义 Release tag。默认 tag 格式为 `module-release-<run_number>-<run_attempt>-<short_sha>`。
