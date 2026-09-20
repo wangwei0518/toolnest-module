@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { lazy, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
 import { RiAddLine, RiAlertLine, RiArrowDownLine, RiArrowLeftLine, RiArrowRightLine, RiArrowUpLine, RiCheckLine, RiCloseLine, RiDeleteBinLine, RiEditLine, RiFileCopyLine, RiFilterLine, RiGitBranchLine, RiHistoryLine, RiInformationLine, RiMore2Line, RiPlayLine, RiRefreshLine, RiSaveLine, RiSettings3Line } from "@remixicon/react";
 
@@ -25,15 +25,20 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 
 import { createWorkflowApi, type AutomationActionType, type AutomationExecution, type AutomationRule, type AutomationTrigger, type FormField, type Milestone, type NotificationChannel, type NotificationEvent, type NotificationLevel, type NotificationRule, type Overview, type Project, type RelatedResource, type SavedView, type Schedule, type Settings, type Ticket, type TimelineEvent, type Workflow, type WorkflowNode, type WorkflowVersion } from "./api";
 import { getModuleApiClient } from "./api/client";
-import { OverviewPage as RedesignedOverviewPage } from "./components/overview-page";
-import { ScheduleCalendarContent } from "./components/schedule-calendar-page";
-import { TicketDetailParityPage, TicketListParityPage } from "./components/ticket-pages";
-import { WorkflowDesignerPage as WorkflowDesignerCanvasPage } from "./components/workflow-designer-page";
-import { WorkflowVersionsParityPage } from "./components/workflow-versions-page";
-import { MilestoneDetailPage, ProjectCreatePage, ProjectDetailPage, ProjectsPage } from "./components/project-pages";
-import { TicketCreatePage as TicketCreateWorkbench } from "./components/ticket-create-page";
-import { WorkflowListPage as WorkflowTemplatesPage } from "./components/workflow-list-page";
 import { useModulePageMeta } from "./components/module-layout";
+
+const RedesignedOverviewPage = lazy(() => import("./components/overview-page").then((module) => ({ default: module.OverviewPage })));
+const ScheduleCalendarContent = lazy(() => import("./components/schedule-calendar-page").then((module) => ({ default: module.ScheduleCalendarContent })));
+const TicketDetailParityPage = lazy(() => import("./components/ticket-pages").then((module) => ({ default: module.TicketDetailParityPage })));
+const TicketListParityPage = lazy(() => import("./components/ticket-pages").then((module) => ({ default: module.TicketListParityPage })));
+const WorkflowDesignerCanvasPage = lazy(() => import("./components/workflow-designer-page").then((module) => ({ default: module.WorkflowDesignerPage })));
+const WorkflowVersionsParityPage = lazy(() => import("./components/workflow-versions-page").then((module) => ({ default: module.WorkflowVersionsParityPage })));
+const MilestoneDetailPage = lazy(() => import("./components/project-pages").then((module) => ({ default: module.MilestoneDetailPage })));
+const ProjectCreatePage = lazy(() => import("./components/project-pages").then((module) => ({ default: module.ProjectCreatePage })));
+const ProjectDetailPage = lazy(() => import("./components/project-pages").then((module) => ({ default: module.ProjectDetailPage })));
+const ProjectsPage = lazy(() => import("./components/project-pages").then((module) => ({ default: module.ProjectsPage })));
+const TicketCreateWorkbench = lazy(() => import("./components/ticket-create-page").then((module) => ({ default: module.TicketCreatePage })));
+const WorkflowTemplatesPage = lazy(() => import("./components/workflow-list-page").then((module) => ({ default: module.WorkflowListPage })));
 
 type Router = ToolNestModuleRouteRenderProps["router"];
 type PageProps = ToolNestModuleRouteRenderProps & { api: ReturnType<typeof createWorkflowApi> };

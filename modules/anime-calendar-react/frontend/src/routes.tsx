@@ -1,17 +1,22 @@
-import type { ToolNestModuleRoute } from "@toolnest/react-module-sdk";
+import type { ToolNestModuleRoute, ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
+import { lazy, Suspense } from "react";
 
-import { ModuleApp } from "./app";
+const ModuleApp = lazy(() => import("./app").then((module) => ({ default: module.ModuleApp })));
+
+function renderModule(props: ToolNestModuleRouteRenderProps) {
+  return <Suspense fallback={<div role="status">正在加载新番日历…</div>}><ModuleApp {...props} /></Suspense>;
+}
 
 export const routes: ToolNestModuleRoute[] = [
   {
     key: "anime-calendar-react:cour",
     path: "",
-    render: (props) => <ModuleApp {...props} />,
+    render: renderModule,
   },
-  { key: "anime-calendar-react:weekly", path: "weekly", render: (props) => <ModuleApp {...props} /> },
+  { key: "anime-calendar-react:weekly", path: "weekly", render: renderModule },
   {
     key: "anime-calendar-react:settings",
     path: "settings",
-    render: (props) => <ModuleApp {...props} />,
+    render: renderModule,
   },
 ];

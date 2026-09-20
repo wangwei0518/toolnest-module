@@ -110,7 +110,9 @@ function dayAnnotation(date: Date): string {
   const lunarDate = lunarDateFormatter.format(date).match(/^(.+?月)(\d+)日$/);
   if (!lunarDate) return "";
   const month = lunarDate[1];
-  const day = Number(lunarDate[2]);
+  const dayText = lunarDate[2];
+  if (!month || !dayText) return "";
+  const day = Number(dayText);
   const monthNumber = lunarMonthNumbers[month.replace(/^闰/, "").replace(/月$/, "")];
   const festival = lunarFestivals[`${monthNumber}-${day}`];
   if (festival) return festival;

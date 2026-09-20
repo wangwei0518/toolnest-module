@@ -4,13 +4,12 @@ import { ModuleLayout } from "./components/module-layout";
 import { CourPage } from "./pages/cour-page";
 import { SettingsPage } from "./pages/settings-page";
 import { WeeklyPage } from "./pages/weekly-page";
-import { AnimeQueryProvider } from "./query";
 import { useSettings } from "./hooks/use-calendar";
 
 export function ModuleApp(props: ToolNestModuleRouteRenderProps) {
   const relative = props.path.replace(/^\/modules\/anime-calendar-react\/?/, "").replace(/^\/+|\/+$/g, "");
   const page = relative === "weekly" ? <WeeklyPage /> : relative === "settings" ? <SettingsPage /> : <DefaultPage {...props} />;
-  return <AnimeQueryProvider><ModuleLayout {...props}>{page}</ModuleLayout></AnimeQueryProvider>;
+  return <ModuleLayout {...props}>{page}</ModuleLayout>;
 }
 
 function DefaultPage(props: ToolNestModuleRouteRenderProps) {

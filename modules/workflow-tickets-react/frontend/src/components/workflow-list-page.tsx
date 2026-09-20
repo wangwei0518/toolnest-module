@@ -175,8 +175,9 @@ export function WorkflowListPage({ api, router }: WorkflowListPageProps) {
   const workflowGroups = useMemo(() => groupWorkflows(visibleWorkflows), [visibleWorkflows]);
 
   useEffect(() => {
-    if (!workflowGroups.length) return undefined;
-    setActiveGroupId((current) => current && workflowGroups.some((group) => group.id === current) ? current : workflowGroups[0].id);
+    const firstGroup = workflowGroups[0];
+    if (!firstGroup) return undefined;
+    setActiveGroupId((current) => current && workflowGroups.some((group) => group.id === current) ? current : firstGroup.id);
     if (typeof IntersectionObserver === "undefined") return undefined;
     const observer = new IntersectionObserver((entries) => {
       const visible = entries.filter((entry) => entry.isIntersecting).sort((left, right) => Math.abs(left.boundingClientRect.top) - Math.abs(right.boundingClientRect.top));

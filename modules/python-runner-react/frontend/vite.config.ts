@@ -2,6 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { isToolNestReactSharedDependency } from "@toolnest/react-module-sdk/vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -32,13 +33,7 @@ export default defineConfig({
       fileName: () => "index.js",
     },
     rollupOptions: {
-      external: [
-        "react",
-        "react-dom",
-        "react/jsx-runtime",
-        "@tanstack/react-query",
-        "@toolnest/react-module-sdk",
-      ],
+      external: isToolNestReactSharedDependency,
       output: {
         assetFileNames: "style.css",
       },

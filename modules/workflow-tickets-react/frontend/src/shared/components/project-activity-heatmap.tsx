@@ -125,7 +125,9 @@ function splitActivityDays(weeks: ActivityWeek[]): ActivityCell[][] {
   const lastRow = rows[rows.length - 1];
   if (!lastRow || lastRow.length === DAYS_PER_ROW) return rows;
 
-  const lastDate = new Date(`${lastRow[lastRow.length - 1].date}T00:00:00`);
+  const lastCell = lastRow[lastRow.length - 1];
+  if (!lastCell) return rows;
+  const lastDate = new Date(`${lastCell.date}T00:00:00`);
   const existingLength = lastRow.length;
   for (let index = existingLength; index < DAYS_PER_ROW; index += 1) {
     const date = addDays(lastDate, -(index - existingLength + 1));
@@ -288,7 +290,12 @@ function YearHeatmapGrid({ weeks, cellSize }: { weeks: ActivityWeek[]; cellSize:
         <div className="grid w-max" style={{ gridTemplateRows: rows, gap: YEAR_ACTIVITY_CELL_GAP_PX, width: gridWidth, height: gridHeight }}>
           {Array.from({ length: GRID_ROWS }, (_, rowIndex) => (
             <div key={rowIndex} className="grid h-full" style={{ gridTemplateColumns: columns, gap: YEAR_ACTIVITY_CELL_GAP_PX }}>
-              {weeks.map((week) => <ActivityCellView key={week[rowIndex]?.date ?? rowIndex} cell={week[rowIndex]} fill />)}
+              {weeks.map((week, weekIndex) => {
+                const cell = week[rowIndex];
+                return cell
+                  ? <ActivityCellView key={cell.date} cell={cell} fill />
+                  : <span key={`empty-${weekIndex}`} aria-hidden="true" />;
+              })}
             </div>
           ))}
         </div>

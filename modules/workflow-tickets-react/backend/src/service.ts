@@ -1,7 +1,7 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { JsonStore } from "./store.js";
+import type { WorkflowStoreRepository } from "./store.js";
 import {
   defaultSettings,
   id,
@@ -187,21 +187,36 @@ function normalizeTags(value: unknown): string[] {
   return [...new Set(asArray(value).map(text).filter(Boolean))];
 }
 
-function workflowRead(workflow: Workflow, tickets: Ticket[]): Workflow {
-  const usage = new Map<string, number>();
-  for (const ticket of tickets) usage.set(ticket.workflow_version_id, (usage.get(ticket.workflow_version_id) ?? 0) + 1);
+function workflowRead(workflow: Workflow, tickets: Ticket[] | ReadonlyMap<string, number>): Workflow {
+  const usage = Array.isArray(tickets) ? workflowVersionUsage(tickets) : tickets;
   const result = clone(workflow);
   for (const version of result.versions) version.ticket_count = usage.get(version.id) ?? 0;
   result.status = result.versions.some((item) => item.status === "published") ? "published" : result.status;
   return result;
 }
 
-function ticketRead(ticket: Ticket, workflows: Workflow[], projects: Project[] = [], milestones: Milestone[] = []): Ticket {
+function workflowVersionUsage(tickets: Ticket[]): Map<string, number> {
+  const usage = new Map<string, number>();
+  for (const ticket of tickets) usage.set(ticket.workflow_version_id, (usage.get(ticket.workflow_version_id) ?? 0) + 1);
+  return usage;
+}
+
+function findById<T extends { id: string }>(values: T[] | ReadonlyMap<string, T>, id: string | null | undefined): T | undefined {
+  if (!id) return undefined;
+  return Array.isArray(values) ? values.find((item) => item.id === id) : values.get(id);
+}
+
+function ticketRead(
+  ticket: Ticket,
+  workflows: Workflow[] | ReadonlyMap<string, Workflow>,
+  projects: Project[] | ReadonlyMap<string, Project> = [],
+  milestones: Milestone[] | ReadonlyMap<string, Milestone> = [],
+): Ticket {
   const result = clone(ticket);
-  const workflow = workflows.find((item) => item.id === ticket.workflow_id);
+  const workflow = findById(workflows, ticket.workflow_id);
   result.workflow_name = workflow?.name ?? ticket.workflow_name;
-  const project = projects.find((item) => item.id === ticket.project_id);
-  const milestone = milestones.find((item) => item.id === ticket.milestone_id);
+  const project = findById(projects, ticket.project_id);
+  const milestone = findById(milestones, ticket.milestone_id);
   result.project_name = project?.name ?? ticket.project_name ?? "";
   result.milestone_name = milestone?.name ?? ticket.milestone_name ?? "";
   result.weight = result.weight ?? 1;
@@ -226,7 +241,7 @@ function defaultWorkflow(name: string, description: string, groupName?: string |
 }
 
 export class WorkflowTicketsService {
-  constructor(private readonly store: JsonStore, private readonly moduleId: string, private readonly platformApiUrl?: string, private readonly platformToken?: string) {}
+  constructor(private readonly store: WorkflowStoreRepository, private readonly moduleId: string, private readonly platformApiUrl?: string, private readonly platformToken?: string) {}
 
   async init(): Promise<void> {
     await this.store.init();
@@ -252,7 +267,8 @@ export class WorkflowTicketsService {
     const projectCounts: Record<string, number> = {};
     for (const project of this.data.projects) projectCounts[project.status] = (projectCounts[project.status] ?? 0) + 1;
     const scheduleItemCount = this.data.schedule_items.filter((item) => item.status === "pending").length;
-    return { todo: todo.map((ticket) => ticketRead(ticket, this.data.workflows, this.data.projects, this.data.milestones)), in_progress: inProgress.map((ticket) => ticketRead(ticket, this.data.workflows, this.data.projects, this.data.milestones)), today: today.map((ticket) => ticketRead(ticket, this.data.workflows, this.data.projects, this.data.milestones)), timeline: this.timeline(undefined, 8), counts, schedule_item_count: scheduleItemCount, project_counts: projectCounts };
+    const lookups = this.ticketLookups();
+    return { todo: todo.map((ticket) => ticketRead(ticket, lookups.workflows, lookups.projects, lookups.milestones)), in_progress: inProgress.map((ticket) => ticketRead(ticket, lookups.workflows, lookups.projects, lookups.milestones)), today: today.map((ticket) => ticketRead(ticket, lookups.workflows, lookups.projects, lookups.milestones)), timeline: this.timeline(undefined, 8), counts, schedule_item_count: scheduleItemCount, project_counts: projectCounts };
   }
 
   timeline(ticketId?: string, limit = 30, projectId?: string, milestoneId?: string): TimelineEvent[] {
@@ -325,7 +341,8 @@ export class WorkflowTicketsService {
 
   listWorkflows(keyword = ""): Workflow[] {
     const normalized = text(keyword).toLocaleLowerCase();
-    return this.data.workflows.filter((workflow) => workflow.status !== "archived" && (!normalized || `${workflow.name} ${workflow.description}`.toLocaleLowerCase().includes(normalized))).map((workflow) => workflowRead(workflow, this.data.tickets));
+    const usage = workflowVersionUsage(this.data.tickets);
+    return this.data.workflows.filter((workflow) => workflow.status !== "archived" && (!normalized || `${workflow.name} ${workflow.description}`.toLocaleLowerCase().includes(normalized))).map((workflow) => workflowRead(workflow, usage));
   }
 
   getWorkflow(workflowId: string): Workflow {
@@ -382,7 +399,7 @@ export class WorkflowTicketsService {
     let items = this.data.tickets.filter((ticket) => (!keyword || `${ticket.number} ${ticket.title} ${ticket.note}`.toLocaleLowerCase().includes(keyword)) && (!status || ticket.status === status) && (!projectId || ticket.project_id === projectId) && (!milestoneId || ticket.milestone_id === milestoneId) && (!priority || ticket.priority === priority) && (!tag || ticket.tags.some((item) => item.toLocaleLowerCase().includes(tag))));
     if (view === "mine") items = items.filter((ticket) => ticket.owner_id === text(query.owner_id) || (!ticket.owner_id && ticket.owner_name === text(query.owner_name)));
     if (view === "today") { const now = new Date(); items = items.filter((ticket) => { const due = safeDate(ticket.due_at); return due && due.toDateString() === now.toDateString(); }); }
-    const page = Math.max(1, Number(query.page) || 1); const pageSize = Math.min(100, Math.max(1, Number(query.page_size) || 100)); const sorted = sortedUpdated(items); return { items: sorted.slice((page - 1) * pageSize, page * pageSize).map((ticket) => ticketRead(ticket, this.data.workflows, this.data.projects, this.data.milestones)), total: sorted.length, page, page_size: pageSize };
+    const page = Math.max(1, Number(query.page) || 1); const pageSize = Math.min(100, Math.max(1, Number(query.page_size) || 100)); const sorted = sortedUpdated(items); const lookups = this.ticketLookups(); return { items: sorted.slice((page - 1) * pageSize, page * pageSize).map((ticket) => ticketRead(ticket, lookups.workflows, lookups.projects, lookups.milestones)), total: sorted.length, page, page_size: pageSize };
   }
 
   getTicket(ticketId: string): Ticket {
@@ -645,7 +662,21 @@ export class WorkflowTicketsService {
   listScheduleRuns(scheduleId: string, limit = 30): ScheduleRun[] { if (!this.data.schedules.some((item) => item.id === scheduleId)) fail(404, "定时任务不存在"); return this.data.schedule_runs.filter((item) => item.schedule_id === scheduleId).sort((a, b) => b.executed_at.localeCompare(a.executed_at)).slice(0, limit).map(clone); }
   async runScheduleNow(scheduleId: string): Promise<{ schedule: Schedule; run: ScheduleRun }> { const schedule = this.data.schedules.find((item) => item.id === scheduleId); if (!schedule) fail(404, "定时任务不存在"); const run = await this.executeSchedule(schedule, new Date()); await this.store.save(); return { schedule: clone(schedule), run: clone(run) }; }
   async runDueSchedules(): Promise<number> { let count = 0; const now = new Date(); for (const schedule of this.data.schedules) while (schedule.enabled && schedule.next_run_at && new Date(schedule.next_run_at) <= now) { await this.executeSchedule(schedule, new Date(schedule.next_run_at)); schedule.next_run_at = this.nextScheduleAt(schedule, new Date(schedule.next_run_at)); if (!schedule.next_run_at) schedule.enabled = false; count++; } if (count) await this.store.save(); return count; }
- async runDueReminders(): Promise<number> { let count = 0; const now = Date.now(); for (const ticket of this.data.tickets) if (["draft", "in_progress", "blocked"].includes(ticket.status) && ticket.reminder_at && !ticket.reminder_sent_at && new Date(ticket.reminder_at).valueOf() <= now) { ticket.reminder_sent_at = nowIso(); this.event("ticket_reminder_sent", "已发送工单提醒", undefined, ticket.id, ticket.project_id, ticket.milestone_id); await this.notify("ticket_reminder", `工单「${ticket.title}」提醒`, ticket); count++; } if (count) await this.store.save(); return count; }
+  async runDueReminders(): Promise<number> { let count = 0; const now = Date.now(); for (const ticket of this.data.tickets) if (["draft", "in_progress", "blocked"].includes(ticket.status) && ticket.reminder_at && !ticket.reminder_sent_at && new Date(ticket.reminder_at).valueOf() <= now) { ticket.reminder_sent_at = nowIso(); this.event("ticket_reminder_sent", "已发送工单提醒", undefined, ticket.id, ticket.project_id, ticket.milestone_id); await this.notify("ticket_reminder", `工单「${ticket.title}」提醒`, ticket); count++; } if (count) await this.store.save(); return count; }
+
+  async cleanupTemporaryResources(): Promise<number> {
+    const before = this.data.temporary_resources.length;
+    const now = Date.now();
+    this.data.temporary_resources = this.data.temporary_resources.filter((resource) => {
+      if (resource.revoked || Date.parse(resource.expires_at) <= now) return false;
+      return resource.max_access_count === null
+        || resource.max_access_count === undefined
+        || resource.access_count < resource.max_access_count;
+    });
+    const removed = before - this.data.temporary_resources.length;
+    if (removed > 0) await this.store.save();
+    return removed;
+  }
   async runDueProjectNotifications(): Promise<number> {
     let count = 0;
     const now = Date.now();
@@ -757,6 +788,13 @@ export class WorkflowTicketsService {
   }
 
   private findWorkflow(workflowId: string): Workflow { const workflow = this.data.workflows.find((item) => item.id === workflowId); if (!workflow) fail(404, "工作流不存在"); return workflow; }
+  private ticketLookups() {
+    return {
+      workflows: new Map(this.data.workflows.map((item) => [item.id, item])),
+      projects: new Map(this.data.projects.map((item) => [item.id, item])),
+      milestones: new Map(this.data.milestones.map((item) => [item.id, item])),
+    };
+  }
   private findTicket(ticketId: string): Ticket { const ticket = this.data.tickets.find((item) => item.id === ticketId); if (!ticket) fail(404, "工单不存在"); return ticket; }
   private findProject(projectId: string): Project { const project = this.data.projects.find((item) => item.id === projectId); if (!project) fail(404, "项目不存在"); return project; }
   private findScheduleItem(itemId: string): ScheduleItem { const item = this.data.schedule_items.find((value) => value.id === itemId); if (!item) fail(404, "日程事项不存在"); return item; }

@@ -1,10 +1,10 @@
 import { RiFileTextLine, RiGitBranchLine, RiLinkM, RiServerLine } from "@remixicon/react"
-import type { ComponentType } from "react"
+import type { RemixiconComponentType } from "@remixicon/react"
 
 import type { RelatedResource } from "../../api"
 
 export type ResourceType = "server" | "repository" | "document" | "custom"
-export type ResourceIcon = ComponentType<{ className?: string }>
+export type ResourceIcon = RemixiconComponentType
 
 export const resourceTypes: Array<{ value: ResourceType; label: string }> = [
   { value: "server", label: "服务器" },

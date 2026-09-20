@@ -3,6 +3,14 @@ import path from "node:path";
 
 import { emptyStore, type WorkflowStore } from "./types.js";
 
+export interface WorkflowStoreRepository {
+  readonly dataDir: string;
+  init(): Promise<WorkflowStore>;
+  get(): WorkflowStore;
+  save(): Promise<void>;
+  close(): Promise<void>;
+}
+
 export class JsonStore {
   readonly filePath: string;
   readonly dataDir: string;
@@ -41,6 +49,8 @@ export class JsonStore {
     });
     return this.writeQueue;
   }
+
+  async close(): Promise<void> {}
 
   private normalize(value: Partial<WorkflowStore>): WorkflowStore {
     const initial = emptyStore();

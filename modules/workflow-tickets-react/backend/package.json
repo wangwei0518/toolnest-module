@@ -1,6 +1,6 @@
 {
   "name": "@toolnest/workflow-tickets-react-react-backend",
-  "version": "0.1.75",
+  "version": "0.1.82",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,13 +8,17 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run test/history-retention.test.ts test/postgres-store.integration.test.ts"
   },
   "dependencies": {
-    "fastify": "^5.11.3"
+    "fastify": "^5.11.3",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
-    "typescript": "7.0.2"
+    "@types/pg": "^8.20.0",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.0"
   }
 }

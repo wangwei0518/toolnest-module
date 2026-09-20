@@ -5,16 +5,16 @@ import { config } from "./config.js";
 import { BangumiProvider } from "./provider.js";
 import { registerRoutes } from "./routes.js";
 import { AnimeCalendarService } from "./service.js";
-import { JsonStore } from "./store.js";
+import { PostgresStore } from "./postgres-store.js";
 
 export async function createApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
   await mkdir(config.dataDir, { recursive: true });
   await mkdir(config.logDir, { recursive: true });
-  const store = new JsonStore(config.dataDir);
+  const store = new PostgresStore(config.dataDir, config.databaseUrl, config.databaseSchema, config.databasePoolMax);
   await store.init();
-  const settings = store.snapshot().settings;
+  const settings = store.read().settings;
   const provider = new BangumiProvider(settings.proxy.enabled ? settings.proxy.url : "");
   const service = new AnimeCalendarService(store, provider, config.moduleId, config.platformApiUrl, config.token);
 
@@ -37,9 +37,14 @@ export async function createApp(): Promise<FastifyInstance> {
   app.get("/hello", async () => ({ message: "新番日历模块已连接。" }));
 
   registerRoutes(app, service);
-  const timer = setInterval(() => { void service.runDueNotifications().catch(() => undefined); }, 60_000);
+  let notificationRun: Promise<void> | undefined;
+  const runNotifications = () => {
+    if (notificationRun) return;
+    notificationRun = service.runDueNotifications().catch(() => undefined).finally(() => { notificationRun = undefined; });
+  };
+  const timer = setInterval(runNotifications, 60_000);
   timer.unref();
-  app.addHook("onClose", async () => { clearInterval(timer); });
+  app.addHook("onClose", async () => { clearInterval(timer); await notificationRun; await store.close(); });
 
   return app;
 }

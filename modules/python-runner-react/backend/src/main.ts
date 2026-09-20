@@ -46,7 +46,7 @@ export interface ModuleAppContext {
 }
 
 export async function createApp(): Promise<ModuleAppContext> {
-  const db = new Database(config.databaseUrl, config.databaseSchema);
+  const db = new Database(config.databaseUrl, config.databaseSchema, config.databasePoolMax);
   await db.migrate();
   const projects = new ProjectService(db);
   const security = new SecurityService(db, projects);

@@ -1,7 +1,11 @@
-import AdmZip from 'adm-zip'
+import archiver from 'archiver'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import * as yauzl from 'yauzl'
 import { Database } from './db.js'
 import { config } from './config.js'
 import { newId } from './ids.js'
@@ -92,14 +96,14 @@ export class ProjectService {
 
   async createFromArchive(input: CreateProjectInput): Promise<ProjectUpload> {
     const projectId = newId('project')
-    const archiveBytes = await readFile(input.archivePath)
-    if (archiveBytes.byteLength === 0) throw new Error('项目压缩包不能为空。')
+    const archiveSize = await stat(input.archivePath).then((value) => value.size)
+    if (archiveSize === 0) throw new Error('项目压缩包不能为空。')
     const releaseId = newId('release')
     const projectRoot = this.projectRoot(projectId)
     const sourceRoot = path.join(projectRoot, 'releases', releaseId, 'source')
     await mkdir(sourceRoot, { recursive: true })
     try {
-      const analyzed = await extractArchive(archiveBytes, sourceRoot)
+      const analyzed = await extractArchive(input.archivePath, sourceRoot)
       const sourceHash = await hashDirectory(sourceRoot)
       const requirementsHash = await requirementsHashFor(sourceRoot, analyzed.dependencyFiles)
       const metadata: ProjectMetadata = {
@@ -119,7 +123,7 @@ export class ProjectService {
       }
       await writeFile(path.join(path.dirname(sourceRoot), 'release.json'), JSON.stringify(metadata, null, 2), 'utf8')
       await writeFile(path.join(projectRoot, 'project.json'), JSON.stringify(metadata, null, 2), 'utf8')
-      await writeFile(path.join(projectRoot, 'archive.zip'), archiveBytes)
+      await copyFile(input.archivePath, path.join(projectRoot, 'archive.zip'))
       await this.db.query(
         `INSERT INTO pr_projects (id, name, status, active_release_id, source_hash, requirements_hash)
          VALUES ($1, $2, 'ready', $3, $4, $5)`,
@@ -196,10 +200,11 @@ export class ProjectService {
     const releaseId = newId('release')
     const updateRoot = path.join(this.projectRoot(projectId), 'updates', releaseId)
     const sourceRoot = path.join(updateRoot, 'source')
-    const archiveBytes = await readFile(input.archivePath)
+    const archiveSize = await stat(input.archivePath).then((value) => value.size)
+    if (archiveSize === 0) throw new Error('项目压缩包不能为空。')
     await mkdir(sourceRoot, { recursive: true })
     try {
-      const analyzed = await extractArchive(archiveBytes, sourceRoot)
+      const analyzed = await extractArchive(input.archivePath, sourceRoot)
       const sourceHash = await hashDirectory(sourceRoot)
       const requirementsHash = await requirementsHashFor(sourceRoot, analyzed.dependencyFiles)
       const oldReleaseId = current.row.active_release_id
@@ -234,7 +239,7 @@ export class ProjectService {
       )
       await this.db.query('UPDATE pr_projects SET name = COALESCE(NULLIF($1, \'\'), name), active_release_id = $2, source_hash = $3, requirements_hash = $4, updated_at = NOW() WHERE id = $5', [input.name?.trim().slice(0, 120) ?? '', releaseId, sourceHash, requirementsHash, projectId])
       await writeFile(path.join(this.projectRoot(projectId), 'project.json'), JSON.stringify(metadata, null, 2), 'utf8')
-      await writeFile(path.join(this.projectRoot(projectId), 'archive.zip'), archiveBytes)
+      await copyFile(input.archivePath, path.join(this.projectRoot(projectId), 'archive.zip'))
       await this.pruneReleases(projectId, releaseId)
       return {
         id: projectId,
@@ -391,33 +396,43 @@ interface ReleaseRow {
   requirements_hash: string | null
 }
 
-async function extractArchive(bytes: Buffer, destination: string): Promise<AnalyzedSource> {
-  let archive: AdmZip
-  try {
-    archive = new AdmZip(bytes)
-  } catch {
-    throw new Error('项目压缩包格式无效。')
-  }
-  const entries = archive.getEntries()
-  if (entries.length === 0) throw new Error('项目压缩包为空。')
-  if (entries.length > MAX_FILES) throw new Error(`项目文件数不能超过 ${MAX_FILES}。`)
+async function extractArchive(filePath: string, destination: string): Promise<AnalyzedSource> {
+  const archive = await openZip(filePath).catch(() => { throw new Error('项目压缩包格式无效。') })
+  let fileCount = 0
   let totalSize = 0
-  for (const entry of entries) {
-    const relative = normalizeArchivePath(entry.entryName)
-    if (entry.isDirectory) {
-      await mkdir(path.join(destination, relative), { recursive: true })
-      continue
+  try {
+    for (;;) {
+      const entry = await nextZipEntry(archive)
+      if (!entry) break
+      const relative = normalizeArchivePath(entry.fileName)
+      if (zipEntryIsSymlink(entry)) throw new Error('项目压缩包不能包含符号链接。')
+      if (/\/$/.test(entry.fileName)) {
+        await mkdir(path.join(destination, relative), { recursive: true })
+        continue
+      }
+      fileCount += 1
+      if (fileCount > MAX_FILES) throw new Error(`项目文件数不能超过 ${MAX_FILES}。`)
+      const declaredSize = Number(entry.uncompressedSize)
+      if (!Number.isSafeInteger(declaredSize) || declaredSize < 0 || declaredSize > MAX_FILE_BYTES) throw new Error(`项目文件过大：${relative}`)
+      totalSize += declaredSize
+      if (totalSize > MAX_UNPACKED_BYTES) throw new Error('项目解压后体积超过 512 MiB。')
+      const target = safePath(destination, relative)
+      await mkdir(path.dirname(target), { recursive: true })
+      const input = await openZipEntryStream(archive, entry)
+      let actualSize = 0
+      const limiter = new Transform({
+        transform: (chunk: Buffer, _encoding, callback) => {
+          actualSize += chunk.byteLength
+          callback(actualSize > declaredSize || actualSize > MAX_FILE_BYTES ? new Error(`项目文件过大：${relative}`) : null, chunk)
+        },
+      })
+      await pipeline(input, limiter, createWriteStream(target, { flags: 'wx' }))
+      if (actualSize !== declaredSize) throw new Error(`项目文件大小校验失败：${relative}`)
     }
-    const declaredSize = Number((entry.header as { size?: number }).size ?? 0)
-    if (declaredSize > MAX_FILE_BYTES) throw new Error(`项目文件过大：${relative}`)
-    const data = entry.getData()
-    if (data.byteLength > MAX_FILE_BYTES) throw new Error(`项目文件过大：${relative}`)
-    totalSize += data.byteLength
-    if (totalSize > MAX_UNPACKED_BYTES) throw new Error('项目解压后体积超过 512 MiB。')
-    const target = safePath(destination, relative)
-    await mkdir(path.dirname(target), { recursive: true })
-    await writeFile(target, data, { flag: 'wx' })
+  } finally {
+    archive.close()
   }
+  if (fileCount === 0) throw new Error('项目压缩包为空。')
   const analyzed = await analyzeSource(destination, totalSize)
   if (analyzed.pythonFiles.length === 0) throw new Error('项目必须至少包含一个 .py 文件。')
   return analyzed
@@ -467,7 +482,7 @@ async function hashDirectory(root: string): Promise<string> {
   for (const relative of files.sort()) {
     digest.update(relative)
     digest.update('\0')
-    digest.update(await readFile(path.join(root, relative)))
+    for await (const chunk of createReadStream(path.join(root, relative))) digest.update(chunk as Buffer)
     digest.update('\0')
   }
   return digest.digest('hex')
@@ -489,7 +504,7 @@ async function requirementsHashFor(root: string, dependencyFiles: string[]): Pro
   const digest = createHash('sha256')
   for (const relative of requirements) {
     digest.update(relative)
-    digest.update(await readFile(safePath(root, relative)))
+    for await (const chunk of createReadStream(safePath(root, relative))) digest.update(chunk as Buffer)
   }
   return digest.digest('hex')
 }
@@ -506,9 +521,56 @@ async function directorySize(root: string): Promise<number> {
 }
 
 async function writeArchive(sourceRoot: string, archivePath: string): Promise<void> {
-  const archive = new AdmZip()
-  archive.addLocalFolder(sourceRoot)
-  await writeFile(archivePath, archive.toBuffer())
+  await new Promise<void>((resolve, reject) => {
+    const output = createWriteStream(archivePath, { flags: 'w' })
+    const archive = archiver('zip', { zlib: { level: 9 } })
+    output.once('close', resolve)
+    output.once('error', reject)
+    archive.once('error', reject)
+    archive.pipe(output)
+    archive.directory(sourceRoot, false)
+    void archive.finalize()
+  })
+}
+
+function openZip(filePath: string): Promise<yauzl.ZipFile> {
+  return new Promise((resolve, reject) => {
+    yauzl.open(filePath, { lazyEntries: true, autoClose: false }, (error, zipFile) => {
+      if (error || !zipFile) reject(error ?? new Error('无法打开项目压缩包。'))
+      else resolve(zipFile)
+    })
+  })
+}
+
+function nextZipEntry(zipFile: yauzl.ZipFile): Promise<yauzl.Entry | null> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      zipFile.off('entry', onEntry)
+      zipFile.off('end', onEnd)
+      zipFile.off('error', onError)
+    }
+    const onEntry = (entry: yauzl.Entry) => { cleanup(); resolve(entry) }
+    const onEnd = () => { cleanup(); resolve(null) }
+    const onError = (error: Error) => { cleanup(); reject(error) }
+    zipFile.once('entry', onEntry)
+    zipFile.once('end', onEnd)
+    zipFile.once('error', onError)
+    zipFile.readEntry()
+  })
+}
+
+function openZipEntryStream(zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
+  return new Promise((resolve, reject) => {
+    zipFile.openReadStream(entry, (error, stream) => {
+      if (error || !stream) reject(error ?? new Error('无法读取项目压缩包条目。'))
+      else resolve(stream)
+    })
+  })
+}
+
+function zipEntryIsSymlink(entry: yauzl.Entry): boolean {
+  const mode = (entry.externalFileAttributes >>> 16) & 0xffff
+  return (mode & 0o170000) === 0o120000
 }
 
 function normalizeArchivePath(input: string): string {
@@ -534,7 +596,7 @@ async function copyDirectory(source: string, destination: string): Promise<void>
     const from = path.join(source, entry.name)
     const to = path.join(destination, entry.name)
     if (entry.isDirectory()) await copyDirectory(from, to)
-    else if (entry.isFile()) await writeFile(to, await readFile(from), { flag: 'wx' })
+    else if (entry.isFile()) await copyFile(from, to, 1)
   }
 }
 

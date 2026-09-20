@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import { courLabel, courRange, currentCour, dateKey, validateCourMonth } from "./cour.js";
 import { BangumiProvider } from "./provider.js";
-import { JsonStore, mergeSettings } from "./store.js";
+import { mergeSettings, type AnimeStoreRepository } from "./store.js";
 import {
   defaultSettings,
   type AnimeCacheStatus,
@@ -25,7 +25,7 @@ export class AnimeCalendarService {
   private refreshPromises = new Map<string, Promise<unknown>>();
 
   constructor(
-    private readonly store: JsonStore,
+    private readonly store: AnimeStoreRepository,
     private readonly provider: BangumiProvider,
     private readonly moduleId: string,
     private readonly platformApiUrl: string,
@@ -39,7 +39,7 @@ export class AnimeCalendarService {
     keyword?: string; mark_type?: AnimeMarkType; include_ignored?: boolean;
   }) {
     const resolved = this.resolveCour(query.year, query.cour_month);
-    const state = this.store.snapshot();
+    const state = this.store.read();
     const items = this.itemsForCour(this.withMarks(state.items, state.marks), resolved.year, resolved.cour_month);
     const keyword = query.keyword?.trim().toLocaleLowerCase() ?? "";
     const filtered = items.filter((item) => {
@@ -68,7 +68,7 @@ export class AnimeCalendarService {
   }
 
   async getItem(itemId: string) {
-    const state = this.store.snapshot();
+    const state = this.store.read();
     const base = this.withMarks(state.items, state.marks).find((item) => item.id === itemId)
       ?? state.weeklyCache?.items.find((item) => item.id === itemId)
       ?? state.longRunningCache?.items.find((item) => item.id === itemId);
@@ -86,13 +86,13 @@ export class AnimeCalendarService {
   }
 
   async weekly(force = false) {
-    const state = this.store.snapshot();
+    const state = this.store.read();
     if (!force && state.weeklyCache && Date.now() - Date.parse(state.weeklyCache.updated_at) < weeklyTtlMs) {
       return this.weeklyResponse(this.withMarks(state.weeklyCache.items, state.marks), state.weeklyCache.updated_at);
     }
     try {
       const items = await this.weeklyItems(force);
-      const next = this.store.snapshot();
+      const next = this.store.read();
       return this.weeklyResponse(this.withMarks(items, next.marks), next.weeklyCache?.updated_at ?? nowIso());
     } catch (error) {
       if (state.weeklyCache) return this.weeklyResponse(this.withMarks(state.weeklyCache.items, state.marks), state.weeklyCache.updated_at);
@@ -102,26 +102,26 @@ export class AnimeCalendarService {
 
   async today() {
     const today = platformDateKey();
-    const state = this.store.snapshot();
+    const state = this.store.read();
     if (state.todayCache?.cache_date === today) return this.todayResponse(this.withMarks(state.todayCache.items, state.marks), state.todayCache.updated_at, today);
     const weekly = await this.weeklyItems(false);
     const weekday = platformWeekday();
     const items = weekly.filter((item) => item.weekday === weekday);
     const cache: DataCache = { cache_date: today, updated_at: nowIso(), items: items.map(clearMark) };
     await this.store.update((next) => { next.todayCache = cache; });
-    const next = this.store.snapshot();
+    const next = this.store.read();
     return this.todayResponse(this.withMarks(items, next.marks), cache.updated_at, today);
   }
 
   async refresh(year?: number, courMonth?: number, force = false) {
     const resolved = this.resolveCour(year, courMonth);
     const key = this.courKey(resolved.year, resolved.cour_month);
-    const existing = this.store.snapshot().courCaches[key];
+    const existing = this.store.read().courCaches[key];
     if (!force && existing?.last_refreshed_at && Date.now() - Date.parse(existing.last_refreshed_at) < courTtlMs) {
       return this.refreshResponse(existing, 0, 0);
     }
     const active = this.refreshPromises.get(key);
-    if (active) { await active; return this.refreshResponse(this.store.snapshot().courCaches[key]!, 0, 0); }
+    if (active) { await active; return this.refreshResponse(this.store.read().courCaches[key]!, 0, 0); }
     const promise = this.performRefresh(resolved.year, resolved.cour_month);
     this.refreshPromises.set(key, promise);
     try { return await promise; } finally { this.refreshPromises.delete(key); }
@@ -136,14 +136,14 @@ export class AnimeCalendarService {
       await this.store.update((state) => { state.longRunningCache = cache; state.weeklyCache = null; state.todayCache = null; });
       return { refresh_status: items.length ? "success" : "empty", source_start: dateKey(new Date(Date.now() - 183 * 86400000)), source_end: platformDateKey(), fetched_count: source.length, retained_count: items.length, last_maintenance_at: cache.updated_at, message: items.length ? "长剧集缓存已更新" : "未发现仍在放送的长剧集" };
     } catch (error) {
-      const cached = this.store.snapshot().longRunningCache;
+      const cached = this.store.read().longRunningCache;
       if (cached) return { refresh_status: "failed", source_start: null, source_end: null, fetched_count: 0, retained_count: cached.items.length, last_maintenance_at: cached.updated_at, message: safeError(error) };
       throw error;
     }
   }
 
   async setMark(itemId: string, markType: AnimeMarkType | null) {
-    const state = this.store.snapshot();
+    const state = this.store.read();
     const exists = [...state.items, ...(state.weeklyCache?.items ?? []), ...(state.longRunningCache?.items ?? [])].some((item) => item.id === itemId);
     if (!exists) throw httpError(404, "未找到该番剧");
     await this.store.update((next) => {
@@ -155,7 +155,7 @@ export class AnimeCalendarService {
 
   stats(year?: number, courMonth?: number) {
     const resolved = this.resolveCour(year, courMonth);
-    const state = this.store.snapshot();
+    const state = this.store.read();
     const items = this.itemsForCour(this.withMarks(state.items, state.marks), resolved.year, resolved.cour_month);
     const todayWeekday = platformWeekday();
     return {
@@ -169,7 +169,7 @@ export class AnimeCalendarService {
     };
   }
 
-  getSettings() { return this.store.snapshot().settings; }
+  getSettings() { return structuredClone(this.store.read().settings); }
 
   async saveSettings(input: unknown) {
     const settings = validateSettings(input);
@@ -212,7 +212,7 @@ export class AnimeCalendarService {
 
   private async sendScheduledCour(year: number, courMonth: number, settings: AnimeSettings) {
     const historyKey = `cour-release:${year}:${courMonth}:default`;
-    if (this.store.snapshot().notificationHistory[historyKey]) return;
+    if (this.store.read().notificationHistory[historyKey]) return;
     const payload = this.buildCourNotification(settings, year, courMonth);
     if (payload.items.length < settings.notifications.courRelease.minimumCount) return;
     const result = await this.sendNotification(payload.title, payload.body, payload.channels, `${year}-${courMonth}`, "");
@@ -230,7 +230,7 @@ export class AnimeCalendarService {
         ? items[0]!.id
         : createHash("sha256").update(items.map((item) => item.id).sort().join(",")).digest("hex").slice(0, 16);
       const historyKey = `watching-update:${date}:${suffix}`;
-      if (this.store.snapshot().notificationHistory[historyKey]) continue;
+      if (this.store.read().notificationHistory[historyKey]) continue;
       const message = this.buildWatchingPayload(settings, payload.date, items);
       const result = await this.sendNotification(message.title, message.body, message.channels, date, "/weekly");
       if (result.ok) await this.store.update((state) => { state.notificationHistory[historyKey] = { sent_at: nowIso(), notification_id: result.notification_id }; });
@@ -246,7 +246,7 @@ export class AnimeCalendarService {
       const normalized = fetched.map((item) => withCourRelation(item, year, courMonth));
       const included = normalized.filter((item) => item.cour_relation !== "unknown");
       const counts = relationCounts(included);
-      const previousIds = new Set(this.store.snapshot().items.map((item) => item.id));
+      const previousIds = new Set(this.store.read().items.map((item) => item.id));
       let inserted = 0; let updated = 0;
       await this.store.update((state) => {
         const map = new Map(state.items.map((item) => [item.id, item]));
@@ -261,7 +261,7 @@ export class AnimeCalendarService {
         };
         state.todayCache = null;
       });
-      const cache = this.store.snapshot().courCaches[key]!;
+      const cache = this.store.read().courCaches[key]!;
       return this.refreshResponse(cache, inserted, updated || [...previousIds].filter((id) => included.some((item) => item.id === id)).length);
     } catch (error) {
       await this.store.update((state) => { state.courCaches[key] = { ...(state.courCaches[key] ?? emptyCourCache(year, courMonth)), refresh_status: "failed", error_message: safeError(error) }; });
@@ -270,12 +270,12 @@ export class AnimeCalendarService {
   }
 
   private async weeklyItems(force: boolean) {
-    const state = this.store.snapshot();
+    const state = this.store.read();
     if (!force && state.weeklyCache && Date.now() - Date.parse(state.weeklyCache.updated_at) < weeklyTtlMs) return state.weeklyCache.items;
     if (this.weeklyPromise) return this.weeklyPromise;
     this.weeklyPromise = (async () => {
       const fetched = await this.provider.fetchWeekly();
-      const latestState = this.store.snapshot();
+      const latestState = this.store.read();
       const longRunning = latestState.longRunningCache?.items ?? [];
       const map = new Map([...fetched, ...longRunning].map((item) => [item.id, item]));
       const items = [...map.values()].map((item) => withCourRelation(item, currentCour(platformNow()).year, currentCour(platformNow()).cour_month));
@@ -310,7 +310,8 @@ export class AnimeCalendarService {
 
   private buildCourNotification(settings: AnimeSettings, year?: number, courMonth?: number) {
     const resolved = year && courMonth ? { year, cour_month: courMonth } : this.currentCour(); const rule = settings.notifications.courRelease;
-    const items = this.itemsForCour(this.withMarks(this.store.snapshot().items, this.store.snapshot().marks), resolved.year, resolved.cour_month).filter((item) => notificationMatches(item, rule) && (rule.minScore === null || (item.score !== null && item.score >= rule.minScore)));
+    const state = this.store.read();
+    const items = this.itemsForCour(this.withMarks(state.items, state.marks), resolved.year, resolved.cour_month).filter((item) => notificationMatches(item, rule) && (rule.minScore === null || (item.score !== null && item.score >= rule.minScore)));
     const values = { year: resolved.year, cour_month: resolved.cour_month, cour_label: courLabel(resolved.year, resolved.cour_month), total_count: items.length, new_count: items.filter((item) => item.cour_relation === "new_this_cour").length, continuing_count: items.filter((item) => item.cour_relation === "continuing").length, region: regionText(rule.regions), anime_list: animeList(items), refresh_time: nowIso(), module_url: `/modules/${this.moduleId}` };
     return { title: renderTemplate(rule.titleTemplate, values), body: renderTemplate(rule.bodyTemplate, values), channels: rule.channels, items };
   }

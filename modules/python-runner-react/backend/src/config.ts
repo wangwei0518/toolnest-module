@@ -27,6 +27,7 @@ export const config = {
   token,
   databaseUrl,
   databaseSchema,
+  databasePoolMax: numberEnv('TOOLNEST_PLUGIN_DATABASE_POOL_MAX', 2, 1, 16),
   dataDir: path.resolve(dataDir),
   logDir: path.resolve(logDir),
   pythonExecutable: process.env.PYTHON_EXECUTABLE ?? (process.platform === 'win32' ? 'python' : 'python3'),

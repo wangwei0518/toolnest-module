@@ -1,7 +1,5 @@
-import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import AdmZip from '../node_modules/adm-zip/adm-zip.js'
@@ -14,10 +12,11 @@ const backendDir = path.join(moduleDir, 'backend')
 const frontendDir = path.join(moduleDir, 'frontend')
 const stagingDir = path.join(moduleDir, '.package-staging')
 const outputDir = path.join(moduleDir, 'dist')
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const binSuffix = process.platform === 'win32' ? '.cmd' : ''
 const frontendViteCommand = path.join(frontendDir, 'node_modules', '.bin', `vite${binSuffix}`)
 const backendTscCommand = path.join(backendDir, 'node_modules', '.bin', `tsc${binSuffix}`)
+const maxPackageFiles = positiveInteger(process.env.TOOLNEST_MODULE_MAX_FILES, 10_000)
+const maxUnpackedBytes = positiveInteger(process.env.TOOLNEST_MODULE_MAX_UNPACKED_BYTES, 64 * 1024 * 1024)
 
 function parseArgs(argv) {
   const result = { id: '', moduleDir: '', versionBump: true }
@@ -116,68 +115,6 @@ function assertModuleVersionSync(currentVersion, versionFiles = moduleVersionFil
   }
 }
 
-function productionDependencyCacheKey(packageJson) {
-  const dependencyInput = {
-    dependencies: packageJson.dependencies ?? {},
-    optionalDependencies: packageJson.optionalDependencies ?? {},
-    peerDependencies: packageJson.peerDependencies ?? {},
-    overrides: packageJson.overrides ?? {},
-    node: process.version,
-    platform: process.platform,
-    arch: process.arch,
-  }
-  return createHash('sha256').update(JSON.stringify(dependencyInput)).digest('hex').slice(0, 20)
-}
-
-function hasProductionDependencies(packageJson) {
-  return Object.keys(packageJson.dependencies ?? {}).length > 0
-    || Object.keys(packageJson.optionalDependencies ?? {}).length > 0
-    || Object.keys(packageJson.peerDependencies ?? {}).length > 0
-}
-
-function ensureBackendProductionDependencies() {
-  const packageJsonPath = path.join(backendDir, 'package.json')
-  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
-  const cacheKey = productionDependencyCacheKey(packageJson)
-  const cacheRoot = path.join(os.tmpdir(), 'toolnest-module-dependency-cache', options.id)
-  const cacheDir = path.join(cacheRoot, cacheKey)
-  const cachedNodeModules = path.join(cacheDir, 'node_modules')
-  const cacheReady = existsSync(cachedNodeModules) && lstatSync(cachedNodeModules).isDirectory()
-  if (cacheReady) {
-    console.log(`[toolnest-module] 后端生产依赖缓存：命中（${cacheKey}）`)
-    return cachedNodeModules
-  }
-
-  if (!hasProductionDependencies(packageJson)) {
-    mkdirSync(cachedNodeModules, { recursive: true })
-    console.log(`[toolnest-module] 后端无生产依赖，使用空依赖目录（${cacheKey}）`)
-    return cachedNodeModules
-  }
-
-  const installDir = path.join(os.tmpdir(), `toolnest-${options.id}-react-backend-deploy-${process.pid}`)
-  const cacheBuildDir = path.join(cacheRoot, `${cacheKey}.tmp-${process.pid}`)
-  rmSync(installDir, { recursive: true, force: true })
-  rmSync(cacheBuildDir, { recursive: true, force: true })
-  mkdirSync(installDir, { recursive: true })
-  cpSync(packageJsonPath, path.join(installDir, 'package.json'))
-  try {
-    runStep('安装后端生产依赖（首次或依赖变更）', npmCommand, ['install', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false'], installDir, { CI: 'true' })
-    mkdirSync(cacheRoot, { recursive: true })
-    mkdirSync(cacheBuildDir, { recursive: true })
-    copyDereferenced(path.join(installDir, 'node_modules'), path.join(cacheBuildDir, 'node_modules'))
-    if (!existsSync(cacheDir)) {
-      renameSync(cacheBuildDir, cacheDir)
-    } else {
-      rmSync(cacheBuildDir, { recursive: true, force: true })
-    }
-    console.log(`[toolnest-module] 后端生产依赖缓存：已写入（${cacheKey}）`)
-    return cachedNodeModules
-  } finally {
-    rmSync(installDir, { recursive: true, force: true })
-    rmSync(cacheBuildDir, { recursive: true, force: true })
-  }
-}
-
 function assertDirectory(directory, label) {
   if (!existsSync(directory) || !lstatSync(directory).isDirectory()) {
     throw new Error(`${label} 不存在：${path.relative(rootDir, directory)}`)
@@ -209,14 +146,21 @@ mkdirSync(outputDir, { recursive: true })
 const stagingStartedAt = Date.now()
 cpSync(manifestPath, path.join(stagingDir, 'manifest.json'))
 cpSync(path.join(frontendDir, 'dist'), path.join(stagingDir, 'frontend', 'dist'), { recursive: true })
-cpSync(path.join(backendDir, 'dist'), path.join(stagingDir, 'backend', 'dist'), { recursive: true })
+mkdirSync(path.join(stagingDir, 'backend', 'dist'), { recursive: true })
+runStep(
+  '打包 Node 后端及生产依赖',
+  process.execPath,
+  [path.join(rootDir, 'scripts', 'bundle-backend.mjs'), path.join(backendDir, 'dist', 'main.js'), path.join(stagingDir, 'backend', 'dist', 'main.js')],
+)
 cpSync(path.join(backendDir, 'package.json'), path.join(stagingDir, 'backend', 'package.json'))
+const backendPrismaDir = path.join(backendDir, 'prisma')
+if (existsSync(backendPrismaDir)) cpSync(backendPrismaDir, path.join(stagingDir, 'backend', 'prisma'), { recursive: true })
 console.log(`[toolnest-module] 准备发布目录：完成（${Date.now() - stagingStartedAt}ms）`)
 
-const cachedNodeModules = ensureBackendProductionDependencies()
-const dependencyCopyStartedAt = Date.now()
-copyDereferenced(cachedNodeModules, path.join(stagingDir, 'backend', 'node_modules'))
-console.log(`[toolnest-module] 复制后端生产依赖：完成（${Date.now() - dependencyCopyStartedAt}ms）`)
+const stagingStats = directoryStats(stagingDir)
+if (stagingStats.files > maxPackageFiles) throw new Error(`发布包文件数 ${stagingStats.files} 超过限制 ${maxPackageFiles}`)
+if (stagingStats.bytes > maxUnpackedBytes) throw new Error(`发布包解压体积 ${stagingStats.bytes} 超过限制 ${maxUnpackedBytes}`)
+console.log(`[toolnest-module] 发布包预算：${stagingStats.files} 个文件，${formatMiB(stagingStats.bytes)} MiB / ${formatMiB(maxUnpackedBytes)} MiB`)
 
 const archive = new AdmZip()
 const archiveStartedAt = Date.now()
@@ -239,17 +183,28 @@ function addDirectory(currentDir, relativeDir = '') {
   }
 }
 
-function copyDereferenced(source, destination) {
-  const info = lstatSync(source)
-  if (info.isSymbolicLink()) return copyDereferenced(realpathSync(source), destination)
-  if (info.isDirectory()) {
-    mkdirSync(destination, { recursive: true })
-    for (const entry of readdirSync(source, { withFileTypes: true })) {
-      if (entry.name === '.bin' || entry.name === '.package-lock.json') continue
-      copyDereferenced(path.join(source, entry.name), path.join(destination, entry.name))
+function directoryStats(directory) {
+  let files = 0
+  let bytes = 0
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const itemPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      const nested = directoryStats(itemPath)
+      files += nested.files
+      bytes += nested.bytes
+    } else if (entry.isFile()) {
+      files += 1
+      bytes += lstatSync(itemPath).size
     }
-    return
   }
-  mkdirSync(path.dirname(destination), { recursive: true })
-  copyFileSync(source, destination)
+  return { files, bytes }
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function formatMiB(bytes) {
+  return (bytes / 1024 / 1024).toFixed(2)
 }

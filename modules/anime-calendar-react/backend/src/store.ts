@@ -5,6 +5,15 @@ import { defaultSettings, type AnimeSettings, type StoreState } from "./types.js
 
 const clone = <T>(value: T): T => structuredClone(value);
 
+export interface AnimeStoreRepository {
+  init(): Promise<void>;
+  read(): Readonly<StoreState>;
+  snapshot(): StoreState;
+  update(mutator: (state: StoreState) => void): Promise<void>;
+  saveSettings(settings: AnimeSettings): Promise<AnimeSettings>;
+  close(): Promise<void>;
+}
+
 export class JsonStore {
   private readonly statePath: string;
   private state: StoreState = this.emptyState();
@@ -28,19 +37,24 @@ export class JsonStore {
     return clone(this.state);
   }
 
+  read(): Readonly<StoreState> {
+    return this.state;
+  }
+
   async update(mutator: (state: StoreState) => void) {
     const next = this.snapshot();
     mutator(next);
     this.state = this.normalize(next);
     this.writeQueue = this.writeQueue.then(() => this.persist());
     await this.writeQueue;
-    return this.snapshot();
   }
 
   async saveSettings(settings: AnimeSettings) {
     await this.update((state) => { state.settings = clone(settings); });
     return clone(settings);
   }
+
+  async close(): Promise<void> {}
 
   private async persist() {
     const temp = `${this.statePath}.${process.pid}.${Date.now()}.tmp`;

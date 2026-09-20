@@ -73,7 +73,7 @@ function toIso(value: string) { return value ? new Date(value).toISOString() : n
 function parseDateOnly(value: string) {
   if (!value) return undefined;
   const [year, month, day] = value.split("-").map(Number);
-  if (![year, month, day].every(Number.isInteger)) return undefined;
+  if (year === undefined || month === undefined || day === undefined || ![year, month, day].every(Number.isInteger)) return undefined;
   const date = new Date(year, month - 1, day);
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : undefined;
 }
@@ -208,7 +208,7 @@ function OverviewMilestoneRow({ projectId, milestone, router }: { projectId: str
   </button>;
 }
 
-function OverviewTab({ project, milestones, tickets, router, setTab, actions, activity, activityLoading, activityError, onRetryActivity }: { project: Project; milestones: Milestone[]; tickets: Ticket[]; router: Router; setTab: (tab: string) => void; actions?: ReactNode; activity?: TimelineActivity; activityLoading: boolean; activityError: string; onRetryActivity: () => void }) {
+function OverviewTab({ project, milestones, tickets, router, setTab, actions, activity, activityLoading, activityError, onRetryActivity }: { project: Project; milestones: Milestone[]; tickets: Ticket[]; router: Router; setTab: (tab: string) => void; actions?: ReactNode; activity?: TimelineActivity | undefined; activityLoading: boolean; activityError: string; onRetryActivity: () => void }) {
   const recent = [...tickets].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 5);
   const activeMilestones = milestones.filter((item) => !["completed", "cancelled"].includes(normalizeMilestoneStatus(item.status))).slice(0, 4);
   return <div className="grid gap-4">
@@ -791,7 +791,7 @@ const emptyResourceCardDraft: ResourceCardDraft = {
   milestone_ids: [],
 };
 
-function ResourceCardFormDialog({ api, projectId, tickets, milestones, editing, open, onOpenChange, onSaved }: { api: WorkflowApi; projectId: string; tickets: Ticket[]; milestones: Milestone[]; editing?: RelatedResource; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => Promise<void> }) {
+function ResourceCardFormDialog({ api, projectId, tickets, milestones, editing, open, onOpenChange, onSaved }: { api: WorkflowApi; projectId: string; tickets: Ticket[]; milestones: Milestone[]; editing?: RelatedResource | undefined; open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => Promise<void> }) {
   const [draft, setDraft] = useState<ResourceCardDraft>(emptyResourceCardDraft);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -884,19 +884,19 @@ function ResourceCardFormDialog({ api, projectId, tickets, milestones, editing, 
   </Dialog>;
 }
 
-function ResourceDetailSheet({ resource, tickets, milestones, open, onOpenChange, onEdit, router }: { resource?: RelatedResource; tickets: Ticket[]; milestones: Milestone[]; open: boolean; onOpenChange: (open: boolean) => void; onEdit: (resource: RelatedResource) => void; router: Router }) {
+function ResourceDetailSheet({ resource, tickets, milestones, open, onOpenChange, onEdit, router }: { resource?: RelatedResource | undefined; tickets: Ticket[]; milestones: Milestone[]; open: boolean; onOpenChange: (open: boolean) => void; onEdit: (resource: RelatedResource) => void; router: Router }) {
   if (!resource) return null;
   const type = normalizeResourceType(resource.resource_type ?? resource.type);
   const Icon = resourceIcon(type);
   const linkedTickets = tickets.filter((ticket) => resource.ticket_ids?.includes(ticket.id));
   const linkedMilestones = milestones.filter((milestone) => resource.milestone_ids?.includes(milestone.id));
   const attributes = resource.attributes ?? {};
-  const detailRows = type === "server"
-    ? [["主机地址", resource.identifier], ["协议", attributes.protocol ? String(attributes.protocol).toUpperCase() : "未设置"], ["端口", attributes.port || "未设置"], ["环境", ({ development: "开发", staging: "预发布", production: "生产", other: "其他" } as Record<string, string>)[String(attributes.environment)] ?? "未设置"]]
+  const detailRows: Array<[string, string]> = type === "server"
+    ? [["主机地址", String(resource.identifier || "未设置")], ["协议", attributes.protocol ? String(attributes.protocol).toUpperCase() : "未设置"], ["端口", String(attributes.port || "未设置")], ["环境", ({ development: "开发", staging: "预发布", production: "生产", other: "其他" } as Record<string, string>)[String(attributes.environment)] ?? "未设置"]]
     : type === "repository"
-      ? [["仓库地址", resource.identifier], ["平台", ({ github: "GitHub", gitlab: "GitLab", self_hosted: "自建平台", other: "其他" } as Record<string, string>)[String(attributes.provider)] ?? "未设置"], ["默认分支", attributes.branch || "未设置"], ["目录路径", attributes.path || "根目录"]]
+      ? [["仓库地址", String(resource.identifier || "未设置")], ["平台", ({ github: "GitHub", gitlab: "GitLab", self_hosted: "自建平台", other: "其他" } as Record<string, string>)[String(attributes.provider)] ?? "未设置"], ["默认分支", String(attributes.branch || "未设置")], ["目录路径", String(attributes.path || "根目录")]]
       : type === "document"
-        ? [["文档标识", resource.identifier], ["文档类型", ({ online: "在线文档", knowledge_base: "知识库", design: "设计文档", spec: "技术规范", runbook: "运行手册", other: "其他" } as Record<string, string>)[String(attributes.document_type)] ?? "未设置"], ["负责人", attributes.owner || "未设置"], ["版本", attributes.version || "未设置"]]
+        ? [["文档标识", String(resource.identifier || "未设置")], ["文档类型", ({ online: "在线文档", knowledge_base: "知识库", design: "设计文档", spec: "技术规范", runbook: "运行手册", other: "其他" } as Record<string, string>)[String(attributes.document_type)] ?? "未设置"], ["负责人", String(attributes.owner || "未设置")], ["版本", String(attributes.version || "未设置")]]
         : [["资源标识", resource.identifier || "未设置"]];
   return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="w-full gap-0 p-0 sm:max-w-lg"><SheetHeader className="border-b"><div className="flex items-start gap-3 pr-8"><span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted"><Icon className="size-5" /></span><div className="min-w-0"><SheetTitle className="truncate text-base">{resource.name}</SheetTitle><SheetDescription className="mt-1"><Badge variant="outline">{resourceTypeLabel(type)}</Badge><span className="ml-2">{resourceSummary(resource)}</span></SheetDescription></div></div></SheetHeader><div className="min-h-0 flex-1 overflow-y-auto px-6 py-5"><div className="grid gap-5"><section className="grid gap-3"><h3 className="text-sm font-medium">资源信息</h3><dl className="grid gap-2 rounded-lg border p-3">{detailRows.map(([label, value]) => <div key={label} className="flex items-start justify-between gap-4 text-sm"><dt className="shrink-0 text-muted-foreground">{label}</dt><dd className="min-w-0 truncate text-right font-medium">{String(value || "未设置")}</dd></div>)}</dl>{resource.description ? <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{resource.description}</p> : <p className="text-sm text-muted-foreground">未填写描述。</p>}{resource.url || resource.external_url ? <a className="flex items-center gap-2 text-sm text-primary hover:underline" href={resource.url ?? resource.external_url ?? "#"} target="_blank" rel="noreferrer"><RiExternalLinkLine />打开外部链接</a> : null}</section><Separator /><section className="grid gap-3"><div className="flex items-center justify-between"><h3 className="text-sm font-medium">关联工单</h3><span className="text-xs text-muted-foreground">{linkedTickets.length} 个</span></div>{linkedTickets.length ? <div className="grid gap-2">{linkedTickets.map((ticket) => <div key={ticket.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"><TicketButton ticket={ticket} router={router} /><StatusBadge value={ticket.status} /></div>)}</div> : <p className="text-sm text-muted-foreground">暂无关联工单。</p>}</section><section className="grid gap-3"><div className="flex items-center justify-between"><h3 className="text-sm font-medium">关联里程碑</h3><span className="text-xs text-muted-foreground">{linkedMilestones.length} 个</span></div>{linkedMilestones.length ? <div className="grid gap-2">{linkedMilestones.map((milestone) => <button type="button" className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm hover:bg-muted" key={milestone.id} onClick={() => void router.push(`/modules/workflow-tickets-react/projects/${milestone.project_id}/milestones/${milestone.id}`)}><span className="min-w-0 truncate">{milestone.name}</span><StatusBadge value={milestone.status} /></button>)}</div> : <p className="text-sm text-muted-foreground">暂无关联里程碑。</p>}</section><p className="text-xs text-muted-foreground">最近更新：{formatDateTime(resource.updated_at)}</p></div></div><SheetFooter className="border-t"><Button type="button" onClick={() => onEdit(resource)}><RiEditLine data-icon="inline-start" />编辑资源</Button></SheetFooter></SheetContent></Sheet>;
 }
@@ -982,7 +982,7 @@ function OptionalAnalyticsDetails({ nodeDurations, paths }: { nodeDurations: Arr
   return <div className="grid min-w-0 gap-4 lg:grid-cols-2">{nodeDurations.length ? <Card size="sm" className="min-w-0"><CardHeader><CardTitle>节点耗时</CardTitle><CardDescription>识别流程中最可能形成瓶颈的节点。</CardDescription></CardHeader><CardContent className="grid gap-3">{nodeDurations.map((item) => <div className="grid gap-1.5" key={String(item.name)}><div className="flex min-w-0 items-center justify-between gap-3 text-sm"><span className="min-w-0 truncate font-medium">{String(item.name)}</span><span className="shrink-0 text-xs text-muted-foreground">{Number(item.hours) || 0} 小时 · {Number(item.count) || 0} 次</span></div><Progress className="h-1.5" value={(Number(item.hours) || 0) / maxNodeDuration * 100} aria-label={`${String(item.name)} 节点耗时`} /></div>)}</CardContent></Card> : null}{paths.length ? <Card size="sm" className="min-w-0"><CardHeader><CardTitle>常见流转路径</CardTitle><CardDescription>按实际完成节点序列聚合。</CardDescription></CardHeader><CardContent className="grid gap-2">{paths.map((item) => <div className="flex min-w-0 items-center justify-between gap-3 border-b border-border/70 py-2 text-sm last:border-b-0" key={String(item.path)}><span className="min-w-0 truncate">{String(item.path)}</span><Badge variant="outline">{Number(item.count) || 0} 次</Badge></div>)}</CardContent></Card> : null}</div>;
 }
 
-function AnalyticsTab({ project, tickets, analytics, activity, activityLoading, activityError, onRetryActivity }: { project: Project; tickets: Ticket[]; analytics: Record<string, unknown>; activity?: TimelineActivity; activityLoading: boolean; activityError: string; onRetryActivity: () => void }) {
+function AnalyticsTab({ project, tickets, analytics, activity, activityLoading, activityError, onRetryActivity }: { project: Project; tickets: Ticket[]; analytics: Record<string, unknown>; activity?: TimelineActivity | undefined; activityLoading: boolean; activityError: string; onRetryActivity: () => void }) {
   const duration = analyticsDuration(analytics);
   const trend = analyticsTrend(analytics);
   const statusEntries = analyticsStatusEntries(analytics);

@@ -6,6 +6,7 @@ import type {
 } from "@toolnest/react-module-sdk";
 
 import { setPythonRunnerApi } from "./api";
+import { setPythonRunnerRuntime } from "./runtime-context";
 import "./styles.css";
 
 const moduleBase = "/modules/python-runner";
@@ -30,9 +31,8 @@ type PythonRunnerPage =
   | "schedule-detail"
   | "persistent"
   | "persistent-detail";
-const appModulePromise = import("./app");
 const LazyPythonRunnerApp = lazy(() =>
-  appModulePromise.then(({ PythonRunnerApp }) => ({
+  import("./app").then(({ PythonRunnerApp }) => ({
     default: PythonRunnerApp,
   })),
 );
@@ -69,13 +69,11 @@ function route(path: string, page: PythonRunnerPage) {
 
 const module: ToolNestReactFrontendModule = {
   id: "python-runner",
-  version: "2.0.0",
+  version: "2.0.4",
   layout: { content: "padded" },
   install(context: ToolNestModuleContext) {
     setPythonRunnerApi(context.apiClient);
-    void appModulePromise.then(({ installPythonRunner }) =>
-      installPythonRunner(context),
-    );
+    setPythonRunnerRuntime(context);
     context.registerMenus([
       {
         key: "python-runner",
@@ -112,9 +110,7 @@ const module: ToolNestReactFrontendModule = {
     ]);
     context.onDispose(() => {
       setPythonRunnerApi(null);
-      void appModulePromise.then(({ disposePythonRunner }) =>
-        disposePythonRunner(),
-      );
+      setPythonRunnerRuntime(undefined);
     });
   },
 };

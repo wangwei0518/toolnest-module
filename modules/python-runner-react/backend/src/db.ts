@@ -1,15 +1,15 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Pool, type QueryResultRow } from 'pg'
+import { Pool, type PoolClient, type QueryResultRow } from 'pg'
 
 export class Database {
   readonly pool: Pool
   private readonly databaseSchema: string
 
-  constructor(databaseUrl: string, databaseSchema = 'public') {
+  constructor(databaseUrl: string, databaseSchema = 'public', poolMax = 2) {
     this.databaseSchema = databaseSchema
-    this.pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${databaseSchema}`, max: 8, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 5_000 })
+    this.pool = new Pool({ connectionString: databaseUrl, options: `-c search_path=${databaseSchema}`, max: poolMax, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 5_000 })
   }
 
   async migrate(): Promise<void> {
@@ -40,6 +40,21 @@ export class Database {
   async query<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []): Promise<{ rows: T[]; rowCount: number }> {
     const result = await this.pool.query<T>(text, values)
     return { rows: result.rows, rowCount: result.rowCount ?? 0 }
+  }
+
+  async transaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const result = await callback(client)
+      await client.query('COMMIT')
+      return result
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined)
+      throw error
+    } finally {
+      client.release()
+    }
   }
 
   async close(): Promise<void> {

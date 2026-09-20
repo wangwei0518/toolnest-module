@@ -43,10 +43,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type {
-  ToolNestModuleContext,
-  ToolNestModuleRouteRenderProps,
-} from "@toolnest/react-module-sdk";
+import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
 
 import {
   cleanupProject,
@@ -90,7 +87,6 @@ import {
   saveProjectConfig,
   scanInline,
   scanSecurity,
-  setPythonRunnerApi,
   startPersistent,
   stopExecution,
   stopPersistent,
@@ -191,8 +187,7 @@ import {
   TooltipTrigger,
 } from "./components/ui";
 import { PythonCodeEditor } from "./components/python-code-editor";
-
-let runtime: ToolNestModuleContext | undefined;
+import { pythonRunnerRuntime as runtime } from "./runtime-context";
 
 const moduleBase = "/modules/python-runner";
 const navigation = [
@@ -1603,12 +1598,14 @@ function OverviewPage() {
   const overview = useQuery({
     queryKey: ["python-runner", "overview"],
     queryFn: getOverview,
-    refetchInterval: 10_000,
+    refetchInterval: (query) => query.state.data?.recent_executions.some((item) => item.status === "running") ? 5_000 : 60_000,
+    refetchIntervalInBackground: false,
   });
   const timeline = useQuery({
     queryKey: ["python-runner", "timeline"],
     queryFn: () => getTimeline(30),
-    refetchInterval: 10_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
   const projects = useQuery({
     queryKey: ["python-runner", "uploads"],
@@ -1792,7 +1789,7 @@ function RunPage({
   const history = useQuery({
     queryKey: ["python-runner", "run-history"],
     queryFn: listExecutions,
-    refetchInterval: 10_000,
+    refetchInterval: (query) => query.state.data?.some((item) => item.status === "running") ? 5_000 : false,
   });
   const inlineScan = useMutation({
     mutationFn: () => scanInline(code),
@@ -2377,7 +2374,7 @@ function ProjectsPage() {
   const query = useQuery({
     queryKey: ["python-runner", "uploads"],
     queryFn: listUploads,
-    refetchInterval: 10_000,
+    staleTime: 60_000,
   });
   const zipInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
@@ -3517,7 +3514,7 @@ function ProjectDetailPage({
     queryKey: ["python-runner", "environment", projectId],
     queryFn: () => getEnvironment(projectId),
     enabled: Boolean(project.data),
-    refetchInterval: 5_000,
+    refetchInterval: (query) => query.state.data?.status === "installing" ? 2_000 : false,
   });
   const storage = useQuery({
     queryKey: ["python-runner", "storage", projectId],
@@ -4807,7 +4804,8 @@ function ExecutionsPage({
   const query = useQuery({
     queryKey: ["python-runner", "executions"],
     queryFn: listExecutions,
-    refetchInterval: 5_000,
+    refetchInterval: (query) => query.state.data?.some((item) => item.status === "running") ? 3_000 : 60_000,
+    refetchIntervalInBackground: false,
   });
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState(initialStatus || "all");
@@ -6240,7 +6238,8 @@ function ScheduleDetailPage({ scheduleId }: { scheduleId: string }) {
   const executions = useQuery({
     queryKey: ["python-runner", "schedule-detail-executions", scheduleId],
     queryFn: listExecutions,
-    refetchInterval: 5_000,
+    refetchInterval: (query) => query.state.data?.some((item) => item.status === "running") ? 5_000 : 60_000,
+    refetchIntervalInBackground: false,
   });
   const projectId = sourceProjectId(
     task.data?.source.type === "archive" ? task.data.source : undefined,
@@ -6617,7 +6616,8 @@ function SchedulesPage({
         page,
         page_size: pageSize,
       }),
-    refetchInterval: 10_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
     placeholderData: (previous) => previous,
   });
   const scheduleDetail = useQuery({
@@ -7618,7 +7618,7 @@ function PersistentDetailPage({ taskId }: { taskId: string }) {
   const task = useQuery({
     queryKey: ["python-runner", "persistent-detail", taskId],
     queryFn: () => getPersistentTask(taskId),
-    refetchInterval: 2_000,
+    refetchInterval: (query) => query.state.data?.status === "running" ? 2_000 : false,
   });
   const projectId = sourceProjectId(
     task.data?.source.type === "archive" ? task.data.source : undefined,
@@ -7631,12 +7631,12 @@ function PersistentDetailPage({ taskId }: { taskId: string }) {
   const logs = useQuery({
     queryKey: ["python-runner", "persistent-detail-logs", taskId],
     queryFn: () => getPersistentLogs(taskId),
-    refetchInterval: 2_000,
+    refetchInterval: task.data?.status === "running" ? 2_000 : false,
   });
   const events = useQuery({
     queryKey: ["python-runner", "persistent-detail-events", taskId],
     queryFn: () => getPersistentEvents(taskId),
-    refetchInterval: 2_000,
+    refetchInterval: task.data?.status === "running" ? 2_000 : false,
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const start = useMutation({
@@ -7922,7 +7922,8 @@ function PersistentPage({
         page,
         page_size: pageSize,
       }),
-    refetchInterval: 5_000,
+    refetchInterval: (value) => value.state.data?.items.some((item) => item.status === "running") ? 5_000 : 60_000,
+    refetchIntervalInBackground: false,
     placeholderData: (previous) => previous,
   });
   const [selected, setSelected] = useState<string | null>(
@@ -7932,7 +7933,7 @@ function PersistentPage({
     queryKey: ["python-runner", "persistent-task", selected],
     queryFn: () => getPersistentTask(selected ?? ""),
     enabled: Boolean(selected),
-    refetchInterval: selected ? 5_000 : false,
+    refetchInterval: (value) => selected && value.state.data?.status === "running" ? 3_000 : false,
   });
   const projects = useQuery({
     queryKey: ["python-runner", "uploads"],
@@ -8059,13 +8060,13 @@ function PersistentPage({
     queryKey: ["python-runner", "persistent-logs", selected],
     queryFn: () => getPersistentLogs(selected ?? ""),
     enabled: Boolean(selected),
-    refetchInterval: selected ? 3_000 : false,
+    refetchInterval: selected && taskDetail.data?.status === "running" ? 3_000 : false,
   });
   const events = useQuery({
     queryKey: ["python-runner", "persistent-events", selected],
     queryFn: () => getPersistentEvents(selected ?? ""),
     enabled: Boolean(selected),
-    refetchInterval: selected ? 3_000 : false,
+    refetchInterval: selected && taskDetail.data?.status === "running" ? 3_000 : false,
   });
   const clearLogs = useMutation({
     mutationFn: () => clearPersistentLogs(selected ?? ""),
@@ -8778,16 +8779,6 @@ export type PythonRunnerPage =
   | "schedule-detail"
   | "persistent"
   | "persistent-detail";
-
-export function installPythonRunner(context: ToolNestModuleContext) {
-  runtime = context;
-  setPythonRunnerApi(context.apiClient);
-}
-
-export function disposePythonRunner() {
-  runtime = undefined;
-  setPythonRunnerApi(null);
-}
 
 export function PythonRunnerApp({
   page,

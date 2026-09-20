@@ -8,9 +8,12 @@
     "create:module": "node scripts/create-module.mjs",
     "package:module": "node scripts/package-module.mjs",
     "package:all": "node scripts/package-all.mjs",
+    "budget:check": "node scripts/check-module-budgets.mjs",
+    "test:watchdog": "node --test test/parent-watchdog.test.mjs",
     "catalog:build": "node scripts/build-catalog.mjs"
   },
   "devDependencies": {
-    "adm-zip": "^0.5.16"
+    "adm-zip": "^0.5.16",
+    "esbuild": "0.28.2"
   }
 }

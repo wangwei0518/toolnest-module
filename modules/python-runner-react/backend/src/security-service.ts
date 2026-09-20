@@ -110,10 +110,29 @@ export class SecurityService {
       scanned_at: new Date().toISOString(),
       message: riskLevel === 'blocked' ? '发现阻断风险，当前项目不可执行。' : riskLevel === 'high' ? '发现高风险项，仅运行可信项目并确认风险。' : riskLevel === 'medium' ? '发现中等风险项，运行前需要确认。' : '未发现明显风险。',
     }
-    await this.db.query('INSERT INTO pr_security_scans (id, project_id, source_hash, risk_level, summary, message, scanned_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)', [scanId, projectId, project.row.source_hash ?? '', riskLevel, JSON.stringify(summary), scan.message, scan.scanned_at])
-    for (const finding of findings) {
-      await this.db.query('INSERT INTO pr_security_findings (id, scan_id, level, category, file, line, message, suggestion, token, content) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [finding.id, scanId, finding.level, finding.category, finding.file, finding.line, finding.message, finding.suggestion, finding.token ?? null, finding.content ?? null])
-    }
+    await this.db.transaction(async (client) => {
+      await client.query('INSERT INTO pr_security_scans (id, project_id, source_hash, risk_level, summary, message, scanned_at) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)', [scanId, projectId, project.row.source_hash ?? '', riskLevel, JSON.stringify(summary), scan.message, scan.scanned_at])
+      if (findings.length > 0) {
+        await client.query(
+          `INSERT INTO pr_security_findings (id, scan_id, level, category, file, line, message, suggestion, token, content)
+           SELECT finding.id, $1, finding.level, finding.category, finding.file, finding.line, finding.message, finding.suggestion, finding.token, finding.content
+           FROM UNNEST($2::text[], $3::text[], $4::text[], $5::text[], $6::integer[], $7::text[], $8::text[], $9::text[], $10::text[])
+             AS finding(id, level, category, file, line, message, suggestion, token, content)`,
+          [
+            scanId,
+            findings.map((finding) => finding.id),
+            findings.map((finding) => finding.level),
+            findings.map((finding) => finding.category),
+            findings.map((finding) => finding.file),
+            findings.map((finding) => finding.line),
+            findings.map((finding) => finding.message),
+            findings.map((finding) => finding.suggestion),
+            findings.map((finding) => finding.token ?? null),
+            findings.map((finding) => finding.content ?? null),
+          ],
+        )
+      }
+    })
     return scan
   }
 

@@ -21,7 +21,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -34,6 +34,9 @@ jobs:
 
       - name: Build and package modules
         run: pnpm package:all
+
+      - name: Validate module bundle budgets
+        run: pnpm budget:check
 
       - name: Resolve release tag
         id: release

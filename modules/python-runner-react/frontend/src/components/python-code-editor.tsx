@@ -1,6 +1,4 @@
-import * as monaco from "monaco-editor/editor/editor.api";
-import EditorWorker from "monaco-editor/editor/editor.worker?worker";
-import "monaco-editor/languages/definitions/python/register";
+import type * as Monaco from "monaco-editor/editor/editor.api";
 import { Copy, Maximize2, Minimize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -20,42 +18,59 @@ export function PythonCodeEditor({
   title?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const syncingValueRef = useRef(false);
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  const readOnlyRef = useRef(readOnly);
   const [fullscreen, setFullscreen] = useState(false);
+
+  valueRef.current = value;
+  onChangeRef.current = onChange;
+  readOnlyRef.current = readOnly;
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    globalThis.MonacoEnvironment ??= {
-      getWorker: (_workerId, _label) => new EditorWorker(),
-    };
-
-    const editor = monaco.editor.create(container, {
-      value,
-      language: "python",
-      theme: "vs-dark",
-      automaticLayout: true,
-      fontSize: 14,
-      lineNumbers: "on",
-      wordWrap: "on",
-      tabSize: 4,
-      insertSpaces: true,
-      folding: true,
-      minimap: { enabled: false },
-      bracketPairColorization: { enabled: true },
-      scrollBeyondLastLine: false,
-      readOnly,
-    });
-    editorRef.current = editor;
-    const subscription = editor.onDidChangeModelContent(() => {
-      if (!syncingValueRef.current) onChange?.(editor.getValue());
+    let disposed = false;
+    let subscription: Monaco.IDisposable | undefined;
+    void Promise.all([
+      import("monaco-editor/editor/editor.api"),
+      import("monaco-editor/editor/editor.worker?worker"),
+      import("monaco-editor/languages/definitions/python/register"),
+    ]).then(([monaco, workerModule]) => {
+      if (disposed) return;
+      const EditorWorker = workerModule.default;
+      globalThis.MonacoEnvironment ??= {
+        getWorker: (_workerId, _label) => new EditorWorker(),
+      };
+      const editor = monaco.editor.create(container, {
+        value: valueRef.current,
+        language: "python",
+        theme: "vs-dark",
+        automaticLayout: true,
+        fontSize: 14,
+        lineNumbers: "on",
+        wordWrap: "on",
+        tabSize: 4,
+        insertSpaces: true,
+        folding: true,
+        minimap: { enabled: false },
+        bracketPairColorization: { enabled: true },
+        scrollBeyondLastLine: false,
+        readOnly: readOnlyRef.current,
+      });
+      editorRef.current = editor;
+      subscription = editor.onDidChangeModelContent(() => {
+        if (!syncingValueRef.current) onChangeRef.current?.(editor.getValue());
+      });
     });
 
     return () => {
-      subscription.dispose();
-      editor.dispose();
+      disposed = true;
+      subscription?.dispose();
+      editorRef.current?.dispose();
       editorRef.current = null;
     };
   }, []);
