@@ -29,7 +29,15 @@ export function useMarkMutation() {
   });
 }
 
-export function useRefreshMutation(year: number, month: number) { const client = useQueryClient(); return useMutation({ mutationFn: () => animeApi.refresh(year, month), onSuccess: (result) => { notify("success", `刷新完成，共收录 ${result.total} 部`); void client.invalidateQueries({ queryKey: ["anime-calendar"] }); }, onError: () => notify("error", "刷新失败，已保留现有数据") }); }
+export function useRefreshMutation(year: number, month: number) {
+  const client = useQueryClient();
+  return useMutation<Awaited<ReturnType<typeof animeApi.refresh>>, Error, void, { toastId: string | number }>({
+    mutationFn: () => animeApi.refresh(year, month),
+    onMutate: () => ({ toastId: notify("loading", "正在刷新当前档期…") }),
+    onSuccess: (result, _variables, context) => { notify("success", `刷新完成，共收录 ${result.total} 部`, context?.toastId); void client.invalidateQueries({ queryKey: ["anime-calendar"] }); },
+    onError: (_error, _variables, context) => notify("error", "刷新失败，已保留现有数据", context?.toastId),
+  });
+}
 export function useSaveSettingsMutation() { const client = useQueryClient(); return useMutation({ mutationFn: (settings: AnimeSettings) => animeApi.saveSettings(settings), onSuccess: (saved) => { client.setQueryData(calendarKeys.settings, saved); notify("success", "设置已保存"); }, onError: (error) => notify("error", error instanceof Error ? error.message : "设置保存失败") }); }
 
 function updateMark(value: unknown, id: string, mark: AnimeMarkType | null): unknown {

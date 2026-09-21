@@ -5,11 +5,32 @@ import { BangumiProvider } from "../src/provider.js";
 
 let server: Server;
 let apiBase = "";
+let multiPage = false;
+let searchOffsets: number[] = [];
 
 beforeEach(async () => {
+  multiPage = false;
+  searchOffsets = [];
   server = createServer((request, response) => {
     response.setHeader("content-type", "application/json");
     if (request.url?.startsWith("/v0/search/subjects")) {
+      const url = new URL(request.url, "http://127.0.0.1");
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      searchOffsets.push(offset);
+      if (multiPage) {
+        const subjects = Array.from({ length: 45 }, (_, index) => ({
+          id: index + 1,
+          name: `Original ${index + 1}`,
+          name_cn: `测试动画 ${index + 1}`,
+          date: "2026-07-03",
+          eps: 12,
+          rating: { score: 8.3 },
+          images: { large: `https://img.example/${index + 1}.jpg` },
+          tags: [{ name: "日本" }],
+        }));
+        response.end(JSON.stringify({ total: subjects.length, data: subjects.slice(offset, offset + 20) }));
+        return;
+      }
       response.end(JSON.stringify({ total: 1, data: [{ id: 42, name: "Original", name_cn: "测试动画", date: "2026-07-03", eps: 12, rating: { score: 8.3 }, images: { large: "https://img.example/42.jpg" }, tags: [{ name: "日本" }] }] }));
       return;
     }
@@ -37,6 +58,18 @@ describe("BangumiProvider", () => {
     const items = await new BangumiProvider("", apiBase).fetchCour(2026, 7);
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ id: "bangumi:42", title_cn: "测试动画", episode_count: 12, score: 8.3, region: "jp" });
+  });
+
+  it("estimates a weekly series end date from its episode count", async () => {
+    const items = await new BangumiProvider("", apiBase).fetchCour(2026, 7);
+    expect(items[0]?.estimated_end_date).toBe("2026-09-18");
+  });
+
+  it("follows the actual response page size when the provider returns fewer than requested", async () => {
+    multiPage = true;
+    const items = await new BangumiProvider("", apiBase).fetchCour(2026, 7);
+    expect(items).toHaveLength(45);
+    expect(searchOffsets).toEqual([0, 20, 40]);
   });
 
   it("does not mistake collection popularity for the current episode", async () => {

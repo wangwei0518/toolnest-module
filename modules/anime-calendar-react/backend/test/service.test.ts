@@ -45,6 +45,50 @@ describe("service cache and marks", () => {
     expect(await service.getItem("bangumi:1")).toMatchObject({ cour_month: 7, cour_label: "2026年7月新番" });
   });
 
+  it("excludes one-episode non-movies but keeps one-episode movies", async () => {
+    const shortOna = item({ id: "bangumi:short", provider_id: "short", title_cn: "单集短片", media_type: "ona", episode_count: 1 });
+    const movie = item({ id: "bangumi:movie", provider_id: "movie", title_cn: "剧场版", media_type: "movie", episode_count: 1 });
+    const titleClassifiedMovie = item({ id: "bangumi:title-movie", provider_id: "title-movie", title_cn: "某作品剧场版", media_type: "ona", episode_count: 1 });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [shortOna, movie, titleClassifiedMovie], fetchWeekly: async () => [], fetchDetail: async () => movie } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    const refreshed = await service.refresh(2026, 7, true);
+
+    expect(refreshed.total).toBe(2);
+    expect(service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items.map((entry) => entry.id)).toEqual(["bangumi:movie", "bangumi:title-movie"]);
+    expect(store.snapshot().courCaches["2026-7"]).toMatchObject({ fetched_count: 3, included_count: 2, skipped_count: 1 });
+  });
+
+  it("does not carry a completed previous-cour series into the current cour", async () => {
+    const completed = item({ id: "bangumi:completed", provider_id: "completed", air_date: "2026-04-03", estimated_end_date: "2026-07-03", episode_count: 12 });
+    const staleHalfYear = item({ id: "bangumi:stale-half-year", provider_id: "stale-half-year", air_date: "2023-02-07", episode_count: 34, status: "finished" });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [completed, staleHalfYear], fetchWeekly: async () => [], fetchDetail: async () => completed } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    const refreshed = await service.refresh(2026, 7, true);
+    const items = service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items;
+
+    expect(refreshed.total).toBe(0);
+    expect(items).toHaveLength(0);
+    expect(items.find((entry) => entry.id === "bangumi:stale-half-year")).toBeUndefined();
+  });
+
+  it("classifies cross-cour shows by 12-episode spans instead of estimated end dates", async () => {
+    const singleCour = item({ id: "bangumi:single-cour", provider_id: "single-cour", air_date: "2026-04-03", estimated_end_date: "2026-04-10", episode_count: 23 });
+    const halfYear = item({ id: "bangumi:half-year", provider_id: "half-year", air_date: "2026-04-03", estimated_end_date: "2026-04-10", episode_count: 24 });
+    const longRunning = item({ id: "bangumi:long-running", provider_id: "long-running", air_date: "2026-04-03", estimated_end_date: "2026-04-10", episode_count: 36 });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [singleCour, halfYear, longRunning], fetchWeekly: async () => [], fetchDetail: async () => halfYear } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    const refreshed = await service.refresh(2026, 7, true);
+    const items = service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items;
+
+    expect(refreshed).toMatchObject({ total: 2, continuing_count: 1, long_running_count: 1 });
+    expect(items.find((entry) => entry.id === "bangumi:single-cour")).toBeUndefined();
+    expect(items.find((entry) => entry.id === "bangumi:half-year")?.cour_relation).toBe("continuing");
+    expect(items.find((entry) => entry.id === "bangumi:long-running")?.cour_relation).toBe("long_running");
+  });
+
   it("coalesces concurrent weekly requests and derives the today cache", async () => {
     let calls = 0;
     const weekday = new Date().getDay() || 7;

@@ -131,7 +131,7 @@ export class AnimeCalendarService {
     const resolved = this.currentCour();
     try {
       const source = await this.provider.fetchCour(resolved.year, resolved.cour_month);
-      const items = source.filter(isLongRunningActive).map((item) => ({ ...item, cour_relation: "long_running" as const, cour_relation_label: "长期" }));
+      const items = source.filter((item) => !isSingleEpisodeNonMovie(item)).filter(isLongRunningActive).map((item) => ({ ...item, cour_relation: "long_running" as const, cour_relation_label: "长期" }));
       const cache: DataCache = { cache_date: platformDateKey(), updated_at: nowIso(), items: items.map(clearMark) };
       await this.store.update((state) => { state.longRunningCache = cache; state.weeklyCache = null; state.todayCache = null; });
       return { refresh_status: items.length ? "success" : "empty", source_start: dateKey(new Date(Date.now() - 183 * 86400000)), source_end: platformDateKey(), fetched_count: source.length, retained_count: items.length, last_maintenance_at: cache.updated_at, message: items.length ? "长剧集缓存已更新" : "未发现仍在放送的长剧集" };
@@ -244,12 +244,13 @@ export class AnimeCalendarService {
     try {
       const fetched = await this.provider.fetchCour(year, courMonth);
       const normalized = fetched.map((item) => withCourRelation(item, year, courMonth));
-      const included = normalized.filter((item) => item.cour_relation !== "unknown");
+      const included = normalized.filter((item) => item.cour_relation !== "unknown" && !isSingleEpisodeNonMovie(item));
       const counts = relationCounts(included);
       const previousIds = new Set(this.store.read().items.map((item) => item.id));
       let inserted = 0; let updated = 0;
       await this.store.update((state) => {
         const map = new Map(state.items.map((item) => [item.id, item]));
+        for (const [id, item] of map) if (isSingleEpisodeNonMovie(item)) map.delete(id);
         for (const item of included) { if (map.has(item.id)) updated += 1; else inserted += 1; map.set(item.id, clearMark(item)); }
         state.items = [...map.values()];
         state.courCaches[key] = {
@@ -301,7 +302,7 @@ export class AnimeCalendarService {
     return { source: "bangumi_calendar", date, updated_at: updatedAt, total: visible.length, items: visible };
   }
 
-  private itemsForCour(items: AnimeItem[], year: number, month: number) { return items.map((item) => withCourRelation(item, year, month)).filter((item) => item.cour_relation !== "unknown"); }
+  private itemsForCour(items: AnimeItem[], year: number, month: number) { return items.map((item) => withCourRelation(item, year, month)).filter((item) => item.cour_relation !== "unknown" && !isSingleEpisodeNonMovie(item)); }
   private withMarks(items: AnimeItem[], marks: Record<string, AnimeMarkType>) { return items.map((item) => ({ ...item, mark_type: marks[item.id] ?? null })); }
   private courKey(year: number, month: number) { return `${year}-${month}`; }
   private resolveCour(year?: number, month?: number) { const fallback = this.currentCour(); const resolved = { year: year ?? fallback.year, cour_month: month ?? fallback.cour_month }; validateCourMonth(resolved.cour_month); return resolved; }
@@ -349,10 +350,36 @@ function mergeDetail(base: AnimeItem, detail: AnimeItem, mark: AnimeMarkType | n
 function displayTitle(item: AnimeItem) { return item.title_cn || item.title_original; }
 function cacheMessage(status: AnimeCacheStatus, error: string) { if (status === "fresh") return "缓存已是最新"; if (status === "stale") return "正在使用可能过期的缓存"; if (status === "refreshing") return "正在刷新档期数据"; if (status === "failed") return error || "刷新失败，已保留现有数据"; return "当前档期暂无缓存"; }
 function emptyCourCache(year: number, month: number): CourCache { return { year, cour_month: month, candidate_start: null, candidate_end: null, last_refreshed_at: null, refresh_status: "empty", fetched_count: 0, unique_count: 0, included_count: 0, new_this_cour_count: 0, continuing_count: 0, long_running_count: 0, unknown_count: 0, skipped_count: 0, error_message: "" }; }
-function withCourRelation(item: AnimeItem, year: number, month: number): AnimeItem { const range = courRange(year, month); const start = item.air_date ? new Date(`${item.air_date}T00:00:00Z`) : null; const end = item.estimated_end_date ? new Date(`${item.estimated_end_date}T00:00:00Z`) : null; let relation: AnimeItem["cour_relation"] = "unknown"; if (start && start >= range.start && start <= range.end) relation = "new_this_cour"; else if (start && start < range.start && (!end || end >= range.start)) relation = differenceDays(range.start, start) >= 183 ? "long_running" : "continuing"; return { ...item, year, cour_month: month, cour_label: courLabel(year, month), cour_relation: relation, cour_relation_label: relation === "new_this_cour" ? "新番" : relation === "continuing" ? "续播" : relation === "long_running" ? "长期" : "未定" }; }
-function isLongRunningActive(item: AnimeItem) { if (!item.air_date) return false; const start = new Date(`${item.air_date}T00:00:00Z`); const end = item.estimated_end_date ? new Date(`${item.estimated_end_date}T00:00:00Z`) : null; return differenceDays(platformNow(), start) >= 150 && (!end || end >= platformNow()); }
+function withCourRelation(item: AnimeItem, year: number, month: number): AnimeItem {
+  const range = courRange(year, month);
+  const start = item.air_date ? new Date(`${item.air_date}T00:00:00Z`) : null;
+  const estimatedEndDate = effectiveEstimatedEndDate(item);
+  const endedBeforeCour = Boolean(estimatedEndDate && estimatedEndDate < range.start_date);
+  let relation: AnimeItem["cour_relation"] = "unknown";
+  if (start && start >= range.start && start <= range.end) relation = "new_this_cour";
+  else if (start && start < range.start && !endedBeforeCour) {
+    const span = episodeSpan(item);
+    if (span === "long_running") relation = "long_running";
+    else if (span === "half_year") relation = "continuing";
+  }
+  return { ...item, estimated_end_date: estimatedEndDate, year, cour_month: month, cour_label: courLabel(year, month), cour_relation: relation, cour_relation_label: relation === "new_this_cour" ? "新番" : relation === "continuing" ? "续播" : relation === "long_running" ? "长期" : "未定" };
+}
+function isSingleEpisodeNonMovie(item: AnimeItem) {
+  if (item.episode_count !== 1 || item.media_type === "movie") return false;
+  const title = `${item.title_cn} ${item.title_original}`;
+  return !/(剧场版|电影|theatrical|movie)/i.test(title);
+}
+function effectiveEstimatedEndDate(item: AnimeItem) {
+  if (!item.air_date) return item.estimated_end_date;
+  const start = new Date(`${item.air_date}T00:00:00Z`);
+  if (Number.isNaN(start.getTime())) return item.estimated_end_date;
+  const episodes = item.episode_count ?? defaultEpisodeCount(item.media_type);
+  return dateKey(new Date(start.getTime() + Math.max(0, episodes - 1) * 7 * 86400000));
+}
+function defaultEpisodeCount(mediaType: AnimeItem["media_type"]) { return mediaType === "movie" || mediaType === "ova" || mediaType === "sp" || mediaType === "unknown" ? 1 : 12; }
+function episodeSpan(item: AnimeItem) { const courCount = Math.floor((item.episode_count ?? defaultEpisodeCount(item.media_type)) / 12); return courCount >= 3 ? "long_running" : courCount >= 2 ? "half_year" : "single_cour"; }
+function isLongRunningActive(item: AnimeItem) { return Boolean(item.air_date) && episodeSpan(item) === "long_running"; }
 function relationCounts(items: AnimeItem[]) { return { new_this_cour: items.filter((item) => item.cour_relation === "new_this_cour").length, continuing: items.filter((item) => item.cour_relation === "continuing").length, long_running: items.filter((item) => item.cour_relation === "long_running").length, unknown: items.filter((item) => item.cour_relation === "unknown").length }; }
-function differenceDays(a: Date, b: Date) { return Math.floor((a.getTime() - b.getTime()) / 86400000); }
 function platformNow() { return new Date(); }
 function platformDateKey() { return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.TOOLNEST_TIMEZONE || "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(platformNow()); }
 function platformWeekday() { const name = new Intl.DateTimeFormat("en-US", { timeZone: process.env.TOOLNEST_TIMEZONE || "Asia/Shanghai", weekday: "short" }).format(platformNow()); return ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 } as Record<string, number>)[name] ?? 0; }

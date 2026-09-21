@@ -16,15 +16,22 @@ export class BangumiProvider {
     const range = courRange(year, courMonth);
     const candidateStart = addMonths(range.start, -6);
     const subjects: JsonObject[] = [];
-    for (let offset = 0; offset < 1000; offset += 100) {
+    const requestedPageSize = 100;
+    let offset = 0;
+    while (offset < 1000) {
       const response = await this.requestJson("POST", `${this.apiBase}/v0/search/subjects`, {
         keyword: "",
         sort: "rank",
         filter: { type: [2], air_date: [`>=${dateKey(candidateStart)}`, `<=${range.end_date}`] },
-      }, { limit: "100", offset: String(offset) }) as JsonObject;
+      }, { limit: String(requestedPageSize), offset: String(offset) }) as JsonObject;
       const page = Array.isArray(response.data) ? response.data.filter(isObject) : [];
+      if (!page.length) break;
       subjects.push(...page);
-      if (page.length < 100) break;
+      // Bangumi may return fewer records than requested (currently 20 vs. limit=100).
+      // Advance by the actual page size so later pages are not skipped.
+      offset += page.length;
+      const remoteTotal = typeof response.total === "number" && Number.isFinite(response.total) ? response.total : null;
+      if (remoteTotal !== null && offset >= remoteTotal) break;
     }
     return dedupe(subjects).map((subject) => this.mapSubject(subject, year, courMonth));
   }
@@ -56,11 +63,11 @@ export class BangumiProvider {
     const providerId = String(subject.id ?? "");
     const airDateValue = parseDate(subject.date ?? subject.air_date);
     const episodeCount = positiveInteger(subject.total_episodes ?? subject.eps);
-    const estimatedEndDate = airDateValue ? dateKey(addMonths(airDateValue, estimatedMonths(episodeCount))) : null;
     const tags = mapTags(subject.tags);
     const infobox = Array.isArray(subject.infobox) ? subject.infobox.filter(isObject) : [];
     const studio = infoboxValue(infobox, ["动画制作", "制作", "制作公司", "studio"]);
     const mediaType = mapMediaType(subject.platform ?? infoboxValue(infobox, ["类型", "播放平台"]));
+    const estimatedEndDate = airDateValue ? estimatedEndDateFor(airDateValue, episodeCount, mediaType) : null;
     const region = inferRegion(subject, tags, studio);
     return {
       id: `bangumi:${providerId}`,
@@ -147,7 +154,11 @@ function positiveInteger(value: unknown) { const number = Math.trunc(numberValue
 function parseDate(value: unknown) { const text = stringValue(value); if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null; const date = new Date(`${text}T00:00:00Z`); return Number.isNaN(date.getTime()) ? null : date; }
 function resolveCourMonth(month: number) { return month >= 10 ? 10 : month >= 7 ? 7 : month >= 4 ? 4 : 1; }
 function currentCourMonth() { return resolveCourMonth(new Date().getMonth() + 1); }
-function estimatedMonths(episodes: number | null) { if (!episodes) return 3; return Math.max(1, Math.ceil(episodes / 4.3)); }
+function estimatedEndDateFor(start: Date, episodeCount: number | null, mediaType: AnimeMediaType) {
+  const episodes = episodeCount ?? defaultEpisodeCount(mediaType);
+  return dateKey(new Date(start.getTime() + Math.max(0, episodes - 1) * 7 * 86400000));
+}
+function defaultEpisodeCount(mediaType: AnimeMediaType) { return mediaType === "movie" || mediaType === "ova" || mediaType === "sp" || mediaType === "unknown" ? 1 : 12; }
 function mapStatus(start: Date | null, end: Date | null): AnimeStatus { const now = new Date(); if (!start) return "unknown"; if (start > now) return "not_started"; if (end && end < now) return "finished"; return "airing"; }
 function weekdayValue(value: unknown, date: Date | null) { const explicit = numberValue(value); if (explicit >= 1 && explicit <= 7) return explicit; if (!date) return 0; return date.getUTCDay() || 7; }
 function inferAirTime(subject: JsonObject) { const text = stringValue(subject.air_time); return /^\d{2}:\d{2}$/.test(text) ? text : ""; }

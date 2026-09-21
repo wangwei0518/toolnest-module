@@ -45,6 +45,14 @@ export function fallbackCover(item: Pick<AnimeListItem, "id" | "title_cn" | "tit
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
+export function coverUrl(url: string, width: 200 | 400 | 800 = 800) {
+  if (!url) return "";
+  if (url.includes("/r/")) {
+    return url.replace(/\/r\/(\d+)\//, `/r/${width}/`);
+  }
+  return url.includes("/pic/cover/") ? url.replace("/pic/cover/", `/r/${width}/pic/cover/`) : url;
+}
+
 export function nextCour(year: number, month: number, direction: -1 | 1) { if (direction === 1) return month === 10 ? { year: year + 1, month: 1 } : { year, month: month + 3 }; return month === 1 ? { year: year - 1, month: 10 } : { year, month: month - 3 }; }
 export function weekState(weekday: number, today: number) { if (weekday === today) return "today" as const; return weekday > today ? "upcoming" as const : "past" as const; }
 export type RegionFilter = AnimeRegion | "all";

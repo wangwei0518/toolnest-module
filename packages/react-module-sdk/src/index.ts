@@ -61,9 +61,10 @@ export interface ToolNestModuleWidget {
 }
 
 export interface ToolNestModuleNotificationOptions {
-  type?: 'success' | 'info' | 'warning' | 'error'
+  type?: 'success' | 'info' | 'warning' | 'error' | 'loading'
   title?: string
   content: string
+  id?: string | number
 }
 
 export interface ToolNestModuleConfirmOptions {
@@ -88,7 +89,7 @@ export interface ToolNestModuleContext {
   getTheme(): ToolNestModuleTheme
   getTimezone(): string
   getSdkVersion(): string
-  notify(options: ToolNestModuleNotificationOptions): void
+  notify(options: ToolNestModuleNotificationOptions): string | number
   confirm(options: ToolNestModuleConfirmOptions): Promise<boolean>
 }
 

@@ -2,23 +2,24 @@ import { RiExternalLinkLine, RiEyeOffLine, RiHeartFill, RiHeartLine } from "@rem
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Attachment, AttachmentAction, AttachmentActions, AttachmentContent, AttachmentMedia, AttachmentTitle, AttachmentTrigger } from "@/components/ui/attachment";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { airInfo, displayTitle, fallbackCover, mediaLabels } from "@/lib/anime";
+import { airInfo, coverUrl, displayTitle, fallbackCover, mediaLabels } from "@/lib/anime";
 import type { AnimeListItem, AnimeMarkType } from "@/types";
 
-export function AnimePosterCard({ item, onOpen, onMark }: { item: AnimeListItem; onOpen: () => void; onMark: (mark: AnimeMarkType) => void }) {
-  return <Card className="tn-anime-card group" data-ignored={item.mark_type === "ignored" || undefined} onClick={onOpen}>
+export function AnimePosterCard({ item, isToday = false, onOpen, onMark }: { item: AnimeListItem; isToday?: boolean; onOpen: () => void; onMark: (mark: AnimeMarkType) => void }) {
+  return <Card className="tn-anime-card group" data-ignored={item.mark_type === "ignored" || undefined} role="button" tabIndex={0} aria-label={displayTitle(item)} onClick={onOpen} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(); } }}>
     <CardContent className="tn-anime-card__media">
-      <img src={cover(item)} alt={displayTitle(item)} loading="lazy" onError={(event) => { event.currentTarget.src = fallbackCover(item); }} />
-      <div className="tn-anime-card__badges"><Badge variant="secondary">{mediaLabels[item.media_type]}</Badge>{item.score ? <Badge variant="outline">★ {item.score}</Badge> : null}</div>
-      {item.cour_relation !== "unknown" ? <Badge className="tn-anime-card__relation">{item.cour_relation_label}</Badge> : null}
-      <div className="tn-anime-card__actions" onClick={(event) => event.stopPropagation()}>
-        <Tooltip><TooltipTrigger render={<Button type="button" size="icon-sm" variant={item.mark_type === "watching" ? "default" : "secondary"} aria-label={item.mark_type === "watching" ? "取消关注" : "关注"} onClick={() => onMark("watching")} />}>{item.mark_type === "watching" ? <RiHeartFill /> : <RiHeartLine />}</TooltipTrigger><TooltipContent>{item.mark_type === "watching" ? "取消关注" : "关注"}</TooltipContent></Tooltip>
-        {item.external_url ? <Tooltip><TooltipTrigger render={<Button size="icon-sm" variant="secondary" aria-label="打开 Bangumi" render={<a href={item.external_url} target="_blank" rel="noreferrer" />} />}><RiExternalLinkLine /></TooltipTrigger><TooltipContent>打开 Bangumi</TooltipContent></Tooltip> : null}
+      <img src={cover(item)} alt={displayTitle(item)} loading="lazy" decoding="async" sizes="(min-width: 1180px) 16vw, (min-width: 900px) 21vw, (min-width: 640px) 25vw, 45vw" onError={(event) => { event.currentTarget.src = fallbackCover(item); }} />
+      <div className="tn-anime-card__badges"><Badge variant="default" className="tn-anime-card__type-badge">{mediaLabels[item.media_type]}</Badge>{item.score ? <Badge variant="outline" className="tn-anime-card__score-badge">★ {item.score}</Badge> : null}</div>
+      {item.cour_relation !== "unknown" ? <Badge variant="default" className="tn-anime-card__relation">{item.cour_relation_label}</Badge> : null}
+      <div className={`tn-anime-card__actions${item.score ? " has-score" : ""}`} onClick={(event) => event.stopPropagation()}>
+        <Tooltip><TooltipTrigger render={<Button type="button" className="tn-anime-card__icon-button tn-anime-card__icon-button--favorite" size="icon-sm" variant="secondary" data-following={item.mark_type === "watching" || undefined} aria-label={item.mark_type === "watching" ? "取消关注" : "关注"} aria-pressed={item.mark_type === "watching"} onClick={() => onMark("watching")} />}>{item.mark_type === "watching" ? <RiHeartFill /> : <RiHeartLine />}</TooltipTrigger><TooltipContent>{item.mark_type === "watching" ? "取消关注" : "关注"}</TooltipContent></Tooltip>
+        {item.external_url ? <Tooltip><TooltipTrigger render={<Button className="tn-anime-card__icon-button tn-anime-card__icon-button--open" size="icon-sm" variant="secondary" nativeButton={false} aria-label="打开 Bangumi" render={<a href={item.external_url} target="_blank" rel="noreferrer" />} />}><RiExternalLinkLine /></TooltipTrigger><TooltipContent>打开 Bangumi</TooltipContent></Tooltip> : null}
       </div>
+      <div className="tn-anime-card__poster-info">{isToday ? <Badge className="tn-anime-card__update-badge">今日更新</Badge> : null}<strong title={displayTitle(item)}>{displayTitle(item)}</strong><span>{item.studio || "制作公司未定"}</span></div>
     </CardContent>
-    <CardFooter className="tn-anime-card__footer"><div className="min-w-0"><strong title={displayTitle(item)}>{displayTitle(item)}</strong><span>{item.studio || "制作公司未定"}</span></div>{item.weekday ? <span>{item.air_time || "时间未定"}</span> : null}</CardFooter>
   </Card>;
 }
 
@@ -31,7 +32,20 @@ export function AnimeListRow({ item, onOpen, onMark }: { item: AnimeListItem; on
 }
 
 export function CompactAnimeRow({ item, onOpen, onMark }: { item: AnimeListItem; onOpen: () => void; onMark: () => void }) {
-  return <div role="button" tabIndex={0} className="tn-anime-compact-row" onClick={onOpen} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(); } }}><img src={cover(item)} alt="" loading="lazy" onError={(event) => { event.currentTarget.src = fallbackCover(item); }} /><span><strong>{displayTitle(item)}</strong><small>{item.current_episode ? `第 ${item.current_episode} 话 · ` : ""}{item.air_time || "今日放送"}</small></span><Button type="button" size="icon-sm" variant={item.mark_type === "watching" ? "default" : "ghost"} aria-label={item.mark_type === "watching" ? "取消关注" : "关注"} onClick={(event) => { event.stopPropagation(); onMark(); }}>{item.mark_type === "watching" ? <RiHeartFill /> : <RiHeartLine />}</Button></div>;
+  const title = displayTitle(item);
+  const following = item.mark_type === "watching";
+  return <Attachment orientation="vertical" className="tn-anime-attachment-flush w-full gap-0 p-0 shadow-sm" aria-label={title}>
+    <AttachmentMedia variant="image" className="aspect-[4/5] rounded-t-[inherit] rounded-b-none p-0">
+      <img className="h-full w-full object-cover" src={cover(item, 400)} alt="" loading="lazy" onError={(event) => { event.currentTarget.src = fallbackCover(item); }} />
+    </AttachmentMedia>
+    <AttachmentContent className="flex min-h-11 w-full items-center px-2 py-1.5">
+      <AttachmentTitle className="line-clamp-2 whitespace-normal" title={title}>{title}</AttachmentTitle>
+    </AttachmentContent>
+    <AttachmentActions>
+      <AttachmentAction type="button" size="icon-sm" variant="ghost" aria-label={following ? "取消关注" : "关注"} aria-pressed={following} onClick={onMark}>{following ? <RiHeartFill /> : <RiHeartLine />}</AttachmentAction>
+    </AttachmentActions>
+    <AttachmentTrigger className="rounded-[inherit] border-0 bg-transparent p-0 text-inherit" onClick={onOpen} render={<button type="button" aria-label={`打开 ${title}`} />} />
+  </Attachment>;
 }
 
-function cover(item: AnimeListItem) { if (!item.cover_url) return fallbackCover(item); return item.cover_url.replace("/r/100/", "/r/400/").replace("/r/200/", "/r/400/"); }
+function cover(item: AnimeListItem, width: 400 | 800 = 800) { return coverUrl(item.cover_url, width) || fallbackCover(item); }
