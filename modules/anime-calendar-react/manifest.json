@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "anime-calendar-react",
   "name": "新番日历",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
   "author": "ToolNest",
   "icon": "calendar",
