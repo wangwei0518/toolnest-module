@@ -71,7 +71,7 @@ export class PostgresStore implements AnimeStoreRepository {
   private writeQueue: Promise<void> = Promise.resolve();
   private readonly persisted = new Map<string, string>();
 
-  constructor(private readonly dataDir: string, databaseUrl: string, databaseSchema: string, poolMax = 2) {
+  constructor(private readonly dataDir: string, databaseUrl: string, private readonly databaseSchema: string, poolMax = 2) {
     this.pool = new Pool({
       connectionString: databaseUrl,
       options: `-c search_path=${databaseSchema}`,
@@ -139,8 +139,11 @@ export class PostgresStore implements AnimeStoreRepository {
     const migrationPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../prisma/migrations/001_anime_store.sql");
     const migration = await readFile(migrationPath, "utf8");
     const client = await this.pool.connect();
+    const schema = quoteIdentifier(this.databaseSchema);
     try {
       await client.query("BEGIN");
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+      await client.query(`SET LOCAL search_path TO ${schema}`);
       await client.query(migration);
       await client.query("COMMIT");
     } catch (error) {
@@ -222,4 +225,8 @@ export class PostgresStore implements AnimeStoreRepository {
       this.persisted.set(`${entry.collection}:${entry.entityId}`, `${entry.ordinal}:${JSON.stringify(entry.payload)}`);
     }
   }
+}
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }

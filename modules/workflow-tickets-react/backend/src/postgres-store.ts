@@ -75,7 +75,7 @@ export class PostgresStore implements WorkflowStoreRepository {
   constructor(
     dataDir: string,
     databaseUrl: string,
-    databaseSchema: string,
+    private readonly databaseSchema: string,
     poolMax = 2,
     private readonly historyLimits: WorkflowHistoryLimits = { timeline: 5_000, actionExecutions: 2_000, scheduleRuns: 2_000 },
   ) {
@@ -138,8 +138,11 @@ export class PostgresStore implements WorkflowStoreRepository {
     const migrationPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../prisma/migrations/001_workflow_store.sql");
     const migration = await readFile(migrationPath, "utf8");
     const client = await this.pool.connect();
+    const schema = quoteIdentifier(this.databaseSchema);
     try {
       await client.query("BEGIN");
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+      await client.query(`SET LOCAL search_path TO ${schema}`);
       await client.query(migration);
       await client.query("COMMIT");
     } catch (error) {
@@ -230,4 +233,8 @@ export class PostgresStore implements WorkflowStoreRepository {
     }
     this.persisted.set("settings", JSON.stringify(state.settings));
   }
+}
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }

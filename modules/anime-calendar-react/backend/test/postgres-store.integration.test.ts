@@ -17,7 +17,7 @@ describeDatabase("PostgresStore", () => {
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), "anime-postgres-store-"));
     const admin = new Pool({ connectionString: databaseUrl });
-    await admin.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+    await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await admin.end();
   });
 
@@ -28,7 +28,7 @@ describeDatabase("PostgresStore", () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  it("imports legacy JSON and restores independently stored entities", async () => {
+  it("creates a missing schema, imports legacy JSON, and restores independently stored entities", async () => {
     const legacy: StoreState = {
       items: [], marks: { "anime-1": "watching" }, courCaches: {}, weeklyCache: null,
       todayCache: null, longRunningCache: null, detailCache: {}, settings: structuredClone(defaultSettings),

@@ -17,7 +17,7 @@ describeDatabase("PostgresStore", () => {
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), "workflow-postgres-store-"));
     const admin = new Pool({ connectionString: databaseUrl });
-    await admin.query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+    await admin.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await admin.end();
   });
 
@@ -28,7 +28,7 @@ describeDatabase("PostgresStore", () => {
     await rm(directory, { recursive: true, force: true });
   });
 
-  it("imports the legacy JSON once and persists entity changes incrementally", async () => {
+  it("creates a missing schema, imports the legacy JSON once, and persists entity changes incrementally", async () => {
     const legacy = emptyStore();
     const createdAt = nowIso();
     legacy.projects.push({
