@@ -1,10 +1,8 @@
 import type { ToolNestModuleRoute, ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
-import { lazy, Suspense } from "react";
-
-const ModuleApp = lazy(() => import("./app").then((module) => ({ default: module.ModuleApp })));
+import { ModuleApp } from "./app";
 
 function renderModule(props: ToolNestModuleRouteRenderProps) {
-  return <Suspense fallback={<div role="status">正在加载新番日历…</div>}><ModuleApp {...props} /></Suspense>;
+  return <ModuleApp {...props} />;
 }
 
 export const routes: ToolNestModuleRoute[] = [

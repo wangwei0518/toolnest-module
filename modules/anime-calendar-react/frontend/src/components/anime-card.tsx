@@ -42,7 +42,7 @@ export function CompactAnimeRow({ item, onOpen, onMark }: { item: AnimeListItem;
       <AttachmentTitle className="line-clamp-2 whitespace-normal" title={title}>{title}</AttachmentTitle>
     </AttachmentContent>
     <AttachmentActions>
-      <AttachmentAction type="button" size="icon-sm" variant="ghost" aria-label={following ? "取消关注" : "关注"} aria-pressed={following} onClick={onMark}>{following ? <RiHeartFill /> : <RiHeartLine />}</AttachmentAction>
+      <AttachmentAction type="button" size="icon-sm" variant="secondary" className="tn-anime-card__icon-button tn-anime-card__icon-button--favorite" data-following={following || undefined} aria-label={following ? "取消关注" : "关注"} aria-pressed={following} onClick={onMark}>{following ? <RiHeartFill /> : <RiHeartLine />}</AttachmentAction>
     </AttachmentActions>
     <AttachmentTrigger className="rounded-[inherit] border-0 bg-transparent p-0 text-inherit" onClick={onOpen} render={<button type="button" aria-label={`打开 ${title}`} />} />
   </Attachment>;

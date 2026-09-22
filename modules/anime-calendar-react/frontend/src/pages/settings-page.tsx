@@ -7,12 +7,14 @@ import { PageError } from "@/components/page-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useSaveSettingsMutation, useSettings } from "@/hooks/use-calendar";
 import { regionOptions } from "@/lib/anime";
 import { notify } from "@/module-context";
@@ -23,6 +25,37 @@ const sections = [{ key: "data", label: "数据与缓存", description: "管理 
 const channels = [["default", "平台默认渠道"], ["web_internal", "站内通知"], ["qqbot", "QQBot"], ["email", "Email"]] as const;
 const courVariables = ["{year}", "{cour_month}", "{cour_label}", "{total_count}", "{new_count}", "{continuing_count}", "{region}", "{anime_list}", "{refresh_time}", "{module_url}"];
 const watchingVariables = ["{date}", "{weekday}", "{count}", "{anime_list}", "{region}", "{module_url}", "{anime_title}", "{anime_title_original}", "{score}", "{media_type}", "{cour_relation}", "{bangumi_url}"];
+const templateVariableDescriptions: Record<string, string> = {
+  "{year}": "季度通知所属年份。",
+  "{cour_month}": "季度通知所属月份，例如 1、4、7 或 10。",
+  "{cour_label}": "档期名称，例如“2026年7月新番”。",
+  "{total_count}": "当前筛选条件匹配的作品总数。",
+  "{new_count}": "当前档期的新番数量。",
+  "{continuing_count}": "当前档期的续播作品数量。",
+  "{region}": "本次通知使用的地区筛选名称。",
+  "{anime_list}": "匹配作品列表，包含作品名称和放送时间。",
+  "{refresh_time}": "档期数据最近一次刷新时间。",
+  "{module_url}": "新番日历对应页面的地址。",
+  "{date}": "关注番放送日期。",
+  "{weekday}": "关注番放送日期对应的星期。",
+  "{count}": "当天关注番的数量。",
+  "{anime_title}": "通知分组中第一部番剧的中文标题；逐部发送时为当前番剧。",
+  "{anime_title_original}": "通知分组中第一部番剧的原始标题；逐部发送时为当前番剧。",
+  "{score}": "通知分组中第一部番剧的 Bangumi 评分；逐部发送时为当前番剧。",
+  "{media_type}": "通知分组中第一部番剧的媒体类型；逐部发送时为当前番剧。",
+  "{cour_relation}": "通知分组中第一部番剧的档期关系；逐部发送时为当前番剧。",
+  "{bangumi_url}": "通知分组中第一部番剧的 Bangumi 详情地址；逐部发送时为当前番剧。",
+};
+const templatePreviewValues: Record<"cour" | "watching", Record<string, string>> = {
+  cour: {
+    year: "2026", cour_month: "7", cour_label: "2026年7月新番", total_count: "32", new_count: "24", continuing_count: "8",
+    region: "全部地区", anime_list: "- 示例番剧 A\n- 示例番剧 B\n- 示例番剧 C", refresh_time: "2026-07-01 09:00", module_url: "/modules/anime-calendar-react",
+  },
+  watching: {
+    date: "2026-09-22", weekday: "周二", count: "3", anime_list: "- 示例番剧 A（20:00）\n- 示例番剧 B（23:30）", region: "全部地区",
+    module_url: "/modules/anime-calendar-react/weekly", anime_title: "示例番剧 A", anime_title_original: "Example Anime A", score: "8.2", media_type: "TV", cour_relation: "新番", bangumi_url: "https://bgm.tv/subject/1",
+  },
+};
 
 export function SettingsPage() {
   const query = useSettings(); const save = useSaveSettingsMutation(); const [section, setSection] = useState<Section>("data"); const [draft, setDraft] = useState<AnimeSettings | null>(null); const [busy, setBusy] = useState<string | null>(null); const [advanced, setAdvanced] = useState<"cour" | "watching" | null>(null);
@@ -41,14 +74,30 @@ export function SettingsPage() {
 }
 
 function SettingsCard({ title, description, icon, children }: { title: string; description: string; icon?: React.ReactNode; children: React.ReactNode }) { return <Card><CardHeader><div><CardTitle>{icon}{title}</CardTitle><CardDescription>{description}</CardDescription></div></CardHeader><CardContent>{children}</CardContent></Card>; }
-function SettingRow({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) { return <Field orientation="responsive"><FieldContent><FieldTitle>{title}</FieldTitle>{description ? <FieldDescription>{description}</FieldDescription> : null}</FieldContent>{children}</Field>; }
+function SettingRow({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) { return <Field orientation="horizontal"><FieldContent className="min-w-0"><FieldTitle>{title}</FieldTitle>{description ? <FieldDescription>{description}</FieldDescription> : null}</FieldContent><div className="tn-anime-setting-row__control">{children}</div></Field>; }
+function templateVariableDescription(variable: string) { return templateVariableDescriptions[variable] ?? "新番日历通知模板变量。"; }
+
+function TemplateVariableButton({ variable, onInsert }: { variable: string; onInsert: (variable: string) => void }) {
+  return <TooltipProvider delay={0}><Tooltip><TooltipTrigger render={<Button type="button" size="sm" variant="outline" onClick={() => onInsert(variable)} />}><code>{variable}</code></TooltipTrigger><TooltipContent side="top" align="start"><p>{templateVariableDescription(variable)}</p></TooltipContent></Tooltip></TooltipProvider>;
+}
+
+function VariableInsertMenu({ variables, onSelect }: { variables: string[]; onSelect: (variable: string) => void }) {
+  return <TooltipProvider delay={0}><DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" />}>插入变量</DropdownMenuTrigger><DropdownMenuContent align="end" className="w-auto min-w-40"><DropdownMenuGroup>{variables.map((variable) => <Tooltip key={variable}><TooltipTrigger render={<DropdownMenuItem onClick={() => onSelect(variable)} />}>{variable}</TooltipTrigger><TooltipContent side="right" align="start"><p>{templateVariableDescription(variable)}</p></TooltipContent></Tooltip>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu></TooltipProvider>;
+}
 
 function NotificationEditor({ title, description, rule, variables, kind, onChange, onAdvanced, onTest, testing, extras }: { title: string; description: string; rule: NotificationRuleBase; variables: string[]; kind: "cour" | "watching"; onChange: (rule: Partial<NotificationRuleBase>) => void; onAdvanced: () => void; onTest: () => void; testing: boolean; extras: React.ReactNode }) {
-  return <Card><CardHeader><div><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></div><Switch checked={rule.enabled} onCheckedChange={(enabled) => onChange({ enabled })} /></CardHeader><CardContent><FieldGroup><Field><FieldLabel htmlFor={`${kind}-time`}>发送时间</FieldLabel><Input id={`${kind}-time`} value={rule.sendTime} onChange={(event) => onChange({ sendTime: event.target.value })} placeholder="09:00" /></Field>{extras}<Field><FieldLabel>地区</FieldLabel><MultiSelectMenu label="地区" values={rule.regions} options={regionOptions} onChange={(regions) => onChange({ regions })} /></Field><Field><FieldLabel>通知渠道</FieldLabel><MultiSelectMenu label="渠道" values={rule.channels} options={channels} exclusiveValue="default" fallbackValue="default" onChange={(channelsValue) => onChange({ channels: channelsValue })} /></Field><SettingRow title="包含续播番"><Switch checked={rule.includeContinuing} onCheckedChange={(includeContinuing) => onChange({ includeContinuing })} /></SettingRow><Separator /><div className="tn-anime-template-toolbar"><strong>消息模板</strong><div><Button type="button" size="sm" variant="outline" onClick={() => onChange({ bodyTemplate: `${rule.bodyTemplate}${variables[0] ?? ""}` })}>插入变量</Button><Button type="button" size="sm" variant="outline" onClick={onAdvanced}>高级编辑</Button></div></div><Field><FieldLabel htmlFor={`${kind}-title`}>标题模板</FieldLabel><Input id={`${kind}-title`} value={rule.titleTemplate} maxLength={4000} onChange={(event) => onChange({ titleTemplate: event.target.value })} /></Field><Field><FieldLabel htmlFor={`${kind}-body`}>正文模板</FieldLabel><Textarea id={`${kind}-body`} value={rule.bodyTemplate} maxLength={4000} rows={5} onChange={(event) => onChange({ bodyTemplate: event.target.value })} /></Field><Button type="button" variant="outline" disabled={testing} onClick={onTest}><RiSendPlaneLine data-icon="inline-start" />{testing ? "发送中" : kind === "cour" ? "发送季度新番测试通知" : "发送关注更新测试通知"}</Button></FieldGroup></CardContent></Card>;
+  return <Card><CardHeader><div><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></div><Switch checked={rule.enabled} onCheckedChange={(enabled) => onChange({ enabled })} /></CardHeader><CardContent><FieldGroup><Field><FieldLabel htmlFor={`${kind}-time`}>发送时间</FieldLabel><Input id={`${kind}-time`} value={rule.sendTime} onChange={(event) => onChange({ sendTime: event.target.value })} placeholder="09:00" /></Field>{extras}<Field><FieldLabel>地区</FieldLabel><MultiSelectMenu label="地区" values={rule.regions} options={regionOptions} onChange={(regions) => onChange({ regions })} /></Field><Field><FieldLabel>通知渠道</FieldLabel><MultiSelectMenu label="渠道" values={rule.channels} options={channels} exclusiveValue="default" fallbackValue="default" onChange={(channelsValue) => onChange({ channels: channelsValue })} /></Field><SettingRow title="包含续播番"><Switch checked={rule.includeContinuing} onCheckedChange={(includeContinuing) => onChange({ includeContinuing })} /></SettingRow><Separator /><div className="tn-anime-template-toolbar"><div><strong>通知内容模板</strong><p>这里只生成新番日历的标题和正文，发送时会继续套用平台的统一消息模板。</p></div><div><VariableInsertMenu variables={variables} onSelect={(variable) => onChange({ bodyTemplate: `${rule.bodyTemplate}${variable}` })} /><Button type="button" size="sm" variant="outline" onClick={onAdvanced}>高级编辑</Button></div></div><Field><FieldLabel htmlFor={`${kind}-title`}>标题模板</FieldLabel><Input id={`${kind}-title`} value={rule.titleTemplate} maxLength={4000} onChange={(event) => onChange({ titleTemplate: event.target.value })} /></Field><Field><FieldLabel htmlFor={`${kind}-body`}>正文模板</FieldLabel><Textarea id={`${kind}-body`} value={rule.bodyTemplate} maxLength={4000} rows={5} onChange={(event) => onChange({ bodyTemplate: event.target.value })} /></Field><Button type="button" variant="outline" disabled={testing} onClick={onTest}><RiSendPlaneLine data-icon="inline-start" />{testing ? "发送中" : kind === "cour" ? "发送季度新番测试通知" : "发送关注更新测试通知"}</Button></FieldGroup></CardContent></Card>;
 }
 
 function TemplateSheet({ kind, draft, setDraft, onClose }: { kind: "cour" | "watching" | null; draft: AnimeSettings; setDraft: (settings: AnimeSettings) => void; onClose: () => void }) {
-  if (!kind) return null; const rule = kind === "cour" ? draft.notifications.courRelease : draft.notifications.watchingUpdate; const variables = kind === "cour" ? courVariables : watchingVariables;
+  if (!kind) return null;
+  const rule = kind === "cour" ? draft.notifications.courRelease : draft.notifications.watchingUpdate;
+  const variables = kind === "cour" ? courVariables : watchingVariables;
   const update = (values: Partial<NotificationRuleBase>) => setDraft(kind === "cour" ? { ...draft, notifications: { ...draft.notifications, courRelease: { ...draft.notifications.courRelease, ...values } } } : { ...draft, notifications: { ...draft.notifications, watchingUpdate: { ...draft.notifications.watchingUpdate, ...values } } });
-  return <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}><SheetContent className="tn-anime-template-sheet"><SheetHeader><SheetTitle>高级编辑模板</SheetTitle><SheetDescription>连续插入变量并检查完整通知文案。</SheetDescription></SheetHeader><div className="tn-anime-template-sheet__body"><FieldGroup><Field><FieldLabel>标题模板</FieldLabel><Input value={rule.titleTemplate} onChange={(event) => update({ titleTemplate: event.target.value })} /></Field><Field><FieldLabel>正文模板</FieldLabel><Textarea value={rule.bodyTemplate} rows={14} onChange={(event) => update({ bodyTemplate: event.target.value })} /></Field></FieldGroup><aside><strong>可用变量</strong><p>点击后追加到正文模板。</p><div>{variables.map((variable) => <Button key={variable} type="button" size="sm" variant="outline" onClick={() => update({ bodyTemplate: `${rule.bodyTemplate}${variable}` })}>{variable}</Button>)}</div></aside></div><SheetFooter><Button variant="outline" onClick={onClose}>完成编辑</Button></SheetFooter></SheetContent></Sheet>;
+  const bodyPreview = renderTemplate(rule.bodyTemplate, templatePreviewValues[kind]);
+  return <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}><SheetContent className="tn-anime-template-sheet"><SheetHeader><SheetTitle>高级编辑通知内容</SheetTitle><SheetDescription>这里只编辑新番日历生成的标题和正文；实际发送格式由平台消息模板统一决定。</SheetDescription></SheetHeader><div className="tn-anime-template-sheet__body"><FieldGroup><Field><FieldLabel>标题模板</FieldLabel><Input value={rule.titleTemplate} onChange={(event) => update({ titleTemplate: event.target.value })} /></Field><Field><FieldLabel>正文模板</FieldLabel><Textarea value={rule.bodyTemplate} rows={14} onChange={(event) => update({ bodyTemplate: event.target.value })} /></Field><Card size="sm" className="tn-anime-template-preview"><CardHeader><CardTitle>模块正文预览</CardTitle><CardDescription>变量会以示例数据替换；平台统一消息模板会在发送时继续套用。</CardDescription></CardHeader><CardContent><p>{bodyPreview || "暂无正文内容"}</p></CardContent></Card></FieldGroup><aside><strong>可用变量</strong><p>点击后追加到正文模板。</p><div>{variables.map((variable) => <TemplateVariableButton key={variable} variable={variable} onInsert={(value) => update({ bodyTemplate: `${rule.bodyTemplate}${value}` })} />)}</div></aside></div><SheetFooter><Button variant="outline" onClick={onClose}>完成编辑</Button></SheetFooter></SheetContent></Sheet>;
+}
+
+function renderTemplate(template: string, values: Record<string, string>) {
+  return template.replace(/\{([^{}]+)\}/g, (match, key: string) => values[key] ?? match);
 }

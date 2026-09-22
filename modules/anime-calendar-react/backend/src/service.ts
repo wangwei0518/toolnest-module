@@ -88,7 +88,8 @@ export class AnimeCalendarService {
   async weekly(force = false) {
     const state = this.store.read();
     if (!force && state.weeklyCache && Date.now() - Date.parse(state.weeklyCache.updated_at) < weeklyTtlMs) {
-      return this.weeklyResponse(this.withMarks(state.weeklyCache.items, state.marks), state.weeklyCache.updated_at);
+      const enriched = this.enrichWeeklyItems(state.weeklyCache.items, state);
+      return this.weeklyResponse(this.withMarks(enriched, state.marks), state.weeklyCache.updated_at);
     }
     try {
       const items = await this.weeklyItems(force);
@@ -272,19 +273,41 @@ export class AnimeCalendarService {
 
   private async weeklyItems(force: boolean) {
     const state = this.store.read();
-    if (!force && state.weeklyCache && Date.now() - Date.parse(state.weeklyCache.updated_at) < weeklyTtlMs) return state.weeklyCache.items;
+    if (!force && state.weeklyCache && Date.now() - Date.parse(state.weeklyCache.updated_at) < weeklyTtlMs) return this.enrichWeeklyItems(state.weeklyCache.items, state);
     if (this.weeklyPromise) return this.weeklyPromise;
     this.weeklyPromise = (async () => {
       const fetched = await this.provider.fetchWeekly();
       const latestState = this.store.read();
       const longRunning = latestState.longRunningCache?.items ?? [];
       const map = new Map([...fetched, ...longRunning].map((item) => [item.id, item]));
-      const items = [...map.values()].map((item) => withCourRelation(item, currentCour(platformNow()).year, currentCour(platformNow()).cour_month));
+      const enriched = this.enrichWeeklyItems([...map.values()], latestState);
+      const cour = currentCour(platformNow());
+      const items = enriched.map((item) => withCourRelation(item, cour.year, cour.cour_month));
       const cache: DataCache = { cache_date: platformDateKey(), updated_at: nowIso(), items: items.map(clearMark) };
       await this.store.update((next) => { next.weeklyCache = cache; next.todayCache = null; });
       return items;
     })();
     try { return await this.weeklyPromise; } finally { this.weeklyPromise = null; }
+  }
+
+  private enrichWeeklyItems(items: AnimeItem[], state: ReturnType<AnimeStoreRepository["read"]>) {
+    // Bangumi's /calendar response is intentionally lightweight and omits tags
+    // and infobox data. Reuse the detailed catalog cache so weekly/today region
+    // filters stay consistent with the cour page without one detail request per
+    // weekly item. This also repairs an already persisted weekly cache.
+    const detailed = new Map<string, AnimeItem>();
+    for (const item of [...state.items, ...(state.longRunningCache?.items ?? []), ...Object.values(state.detailCache).map((entry) => entry.item)]) detailed.set(item.id, item);
+    return items.map((item) => {
+      const cached = detailed.get(item.id);
+      if (!cached) return item;
+      return {
+        ...item,
+        studio: cached.studio || item.studio,
+        tags: cached.tags.length ? cached.tags : item.tags,
+        region: cached.region !== "unknown" ? cached.region : item.region,
+        raw: Object.keys(cached.raw).length ? cached.raw : item.raw,
+      };
+    });
   }
 
   private weeklyResponse(items: AnimeItem[], updatedAt: string) {
@@ -332,7 +355,7 @@ export class AnimeCalendarService {
   private async sendNotification(title: string, content: string, channels: string[], sourceId: string, suffix: string) {
     if (!this.platformApiUrl || !this.platformToken) return { ok: false, notification_id: null, message: "平台通知服务未配置", deliveries: [] };
     try {
-      const requestBody: Record<string, unknown> = { title, summary: title, content, level: "info", event_type: `anime_calendar.${sourceId.startsWith("test") ? "test" : sourceId}`, source_type: "anime_calendar", source_id: sourceId, related_url: `/modules/${this.moduleId}${suffix}` };
+      const requestBody: Record<string, unknown> = { title, summary: "", content, level: "info", event_type: `anime_calendar.${sourceId.startsWith("test") ? "test" : sourceId}`, source_type: "anime_calendar", source_id: sourceId, related_url: `/modules/${this.moduleId}${suffix}` };
       if (!channels.includes("default")) requestBody.channels = channels;
       const response = await fetch(`${this.platformApiUrl}/internal/modules/${encodeURIComponent(this.moduleId)}/notifications`, { method: "POST", headers: { "content-type": "application/json", "x-toolnest-internal-token": this.platformToken }, body: JSON.stringify(requestBody), signal: AbortSignal.timeout(10_000) });
       const payload = await response.json().catch(() => ({})) as Record<string, unknown>;

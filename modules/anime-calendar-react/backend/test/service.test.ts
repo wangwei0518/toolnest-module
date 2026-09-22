@@ -100,7 +100,24 @@ describe("service cache and marks", () => {
     expect(today.items).toHaveLength(1);
     expect(store.snapshot().todayCache).not.toBeNull();
   });
+
+  it("reuses catalog regions for an already cached weekly response", async () => {
+    const weeklyItem = item({ id: "bangumi:weekly", provider_id: "weekly", region: "unknown" });
+    const catalogItem = item({ id: "bangumi:weekly", provider_id: "weekly", region: "jp", tags: ["日本"] });
+    await store.update((state) => {
+      state.items = [catalogItem];
+      state.weeklyCache = { cache_date: "2026-09-22", updated_at: new Date(Date.now() + 60_000).toISOString(), items: [clearMarkForTest(weeklyItem)] };
+    });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => { throw new Error("不应重新请求周历"); }, fetchDetail: async () => catalogItem } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    const response = await service.weekly();
+
+    expect(response.days.flatMap((day) => day.items)).toMatchObject([{ id: "bangumi:weekly", region: "jp" }]);
+  });
 });
+
+function clearMarkForTest(value: AnimeItem): AnimeItem { return { ...value, mark_type: null }; }
 
 describe("settings validation", () => {
   it("rejects unsafe proxy schemes and unknown template variables", () => {
@@ -134,7 +151,7 @@ describe("platform notifications", () => {
       const result = await service.testNotification("cour", defaultSettings);
       expect(result).toMatchObject({ ok: true, notification_id: "notification-1" });
       expect(received.channels).toBeUndefined();
-      expect(received).toMatchObject({ event_type: "anime_calendar.test", source_type: "anime_calendar" });
+      expect(received).toMatchObject({ event_type: "anime_calendar.test", source_type: "anime_calendar", summary: "" });
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
