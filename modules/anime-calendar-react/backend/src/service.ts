@@ -23,6 +23,7 @@ const courTtlMs = 24 * 60 * 60 * 1000;
 export class AnimeCalendarService {
   private weeklyPromise: Promise<AnimeItem[]> | null = null;
   private refreshPromises = new Map<string, Promise<unknown>>();
+  private publicBaseUrlPromise: Promise<string> | null = null;
 
   constructor(
     private readonly store: AnimeStoreRepository,
@@ -188,7 +189,7 @@ export class AnimeCalendarService {
 
   async testNotification(kind: "cour" | "watching", input?: unknown) {
     const settings = input ? validateSettings(input) : this.getSettings();
-    const payload = kind === "cour" ? this.buildCourNotification(settings) : await this.buildWatchingNotification(settings);
+    const payload = kind === "cour" ? await this.buildCourNotification(settings) : await this.buildWatchingNotification(settings);
     return this.sendNotification(payload.title, payload.body, payload.channels, `test-${kind}-${Date.now()}`, kind === "cour" ? "" : "/weekly");
   }
 
@@ -214,7 +215,7 @@ export class AnimeCalendarService {
   private async sendScheduledCour(year: number, courMonth: number, settings: AnimeSettings) {
     const historyKey = `cour-release:${year}:${courMonth}:default`;
     if (this.store.read().notificationHistory[historyKey]) return;
-    const payload = this.buildCourNotification(settings, year, courMonth);
+    const payload = await this.buildCourNotification(settings, year, courMonth);
     if (payload.items.length < settings.notifications.courRelease.minimumCount) return;
     const result = await this.sendNotification(payload.title, payload.body, payload.channels, `${year}-${courMonth}`, "");
     if (!result.ok) return;
@@ -232,7 +233,7 @@ export class AnimeCalendarService {
         : createHash("sha256").update(items.map((item) => item.id).sort().join(",")).digest("hex").slice(0, 16);
       const historyKey = `watching-update:${date}:${suffix}`;
       if (this.store.read().notificationHistory[historyKey]) continue;
-      const message = this.buildWatchingPayload(settings, payload.date, items);
+      const message = await this.buildWatchingPayload(settings, payload.date, items);
       const result = await this.sendNotification(message.title, message.body, message.channels, date, "/weekly");
       if (result.ok) await this.store.update((state) => { state.notificationHistory[historyKey] = { sent_at: nowIso(), notification_id: result.notification_id }; });
     }
@@ -332,24 +333,52 @@ export class AnimeCalendarService {
   private cacheStatus(cache: CourCache | undefined, count: number): AnimeCacheStatus { if (!cache) return count ? "stale" : "empty"; if (cache.refresh_status === "refreshing") return "refreshing"; if (cache.refresh_status === "failed") return "failed"; if (!count) return "empty"; return cache.last_refreshed_at && Date.now() - Date.parse(cache.last_refreshed_at) < courTtlMs ? "fresh" : "stale"; }
   private refreshResponse(cache: CourCache, inserted: number, updated: number) { return { year: cache.year, cour_month: cache.cour_month, cour_label: courLabel(cache.year, cache.cour_month), cache_status: cache.refresh_status === "success" ? "fresh" : cache.refresh_status, candidate_start: cache.candidate_start, candidate_end: cache.candidate_end, fetched_count: cache.fetched_count, unique_count: cache.unique_count, included_count: cache.included_count, new_this_cour_count: cache.new_this_cour_count, continuing_count: cache.continuing_count, long_running_count: cache.long_running_count, unknown_count: cache.unknown_count, skipped_count: cache.skipped_count, last_refreshed_at: cache.last_refreshed_at, inserted, updated, total: cache.included_count }; }
 
-  private buildCourNotification(settings: AnimeSettings, year?: number, courMonth?: number) {
+  private async buildCourNotification(settings: AnimeSettings, year?: number, courMonth?: number) {
     const resolved = year && courMonth ? { year, cour_month: courMonth } : this.currentCour(); const rule = settings.notifications.courRelease;
     const state = this.store.read();
     const items = this.itemsForCour(this.withMarks(state.items, state.marks), resolved.year, resolved.cour_month).filter((item) => notificationMatches(item, rule) && (rule.minScore === null || (item.score !== null && item.score >= rule.minScore)));
-    const values = { year: resolved.year, cour_month: resolved.cour_month, cour_label: courLabel(resolved.year, resolved.cour_month), total_count: items.length, new_count: items.filter((item) => item.cour_relation === "new_this_cour").length, continuing_count: items.filter((item) => item.cour_relation === "continuing").length, region: regionText(rule.regions), anime_list: animeList(items), refresh_time: nowIso(), module_url: `/modules/${this.moduleId}` };
+    const values = { year: resolved.year, cour_month: resolved.cour_month, cour_label: courLabel(resolved.year, resolved.cour_month), total_count: items.length, new_count: items.filter((item) => item.cour_relation === "new_this_cour").length, continuing_count: items.filter((item) => item.cour_relation === "continuing").length, region: regionText(rule.regions), anime_list: animeList(items), refresh_time: nowIso(), module_url: await this.publicModuleUrl(`/modules/${this.moduleId}`) };
     return { title: renderTemplate(rule.titleTemplate, values), body: renderTemplate(rule.bodyTemplate, values), channels: rule.channels, items };
   }
 
   private async buildWatchingNotification(settings: AnimeSettings) {
     const rule = settings.notifications.watchingUpdate; const response = await this.today();
     const items = response.items.filter((item) => item.mark_type === "watching" && notificationMatches(item as AnimeItem, rule));
-    return { ...this.buildWatchingPayload(settings, response.date, items as AnimeItem[]), items: items as AnimeItem[], date: response.date };
+    return { ...(await this.buildWatchingPayload(settings, response.date, items as AnimeItem[])), items: items as AnimeItem[], date: response.date };
   }
 
-  private buildWatchingPayload(settings: AnimeSettings, date: string, items: AnimeItem[]) {
+  private async buildWatchingPayload(settings: AnimeSettings, date: string, items: AnimeItem[]) {
     const rule = settings.notifications.watchingUpdate; const first = items[0];
-    const values = { date, weekday: weekdayLabels[platformWeekday()], count: items.length, anime_list: animeList(items), region: regionText(rule.regions), module_url: `/modules/${this.moduleId}/weekly`, anime_title: first ? displayTitle(first) : "", anime_title_original: first?.title_original ?? "", score: first?.score ?? "", media_type: first?.media_type ?? "", cour_relation: first?.cour_relation_label ?? "", bangumi_url: first?.external_url ?? "" };
+    const values = { date, weekday: weekdayLabels[platformWeekday()], count: items.length, anime_list: animeList(items), region: regionText(rule.regions), module_url: await this.publicModuleUrl(`/modules/${this.moduleId}/weekly`), anime_title: first ? displayTitle(first) : "", anime_title_original: first?.title_original ?? "", score: first?.score ?? "", media_type: first?.media_type ?? "", cour_relation: first?.cour_relation_label ?? "", bangumi_url: first?.external_url ?? "" };
     return { title: renderTemplate(rule.titleTemplate, values), body: renderTemplate(rule.bodyTemplate, values), channels: rule.channels };
+  }
+
+  private async publicModuleUrl(path: string) {
+    const base = await this.getPublicBaseUrl();
+    if (!base) return path;
+    return `${base}/${path.replace(/^\/+/, "")}`;
+  }
+
+  private async getPublicBaseUrl() {
+    if (this.publicBaseUrlPromise) return this.publicBaseUrlPromise;
+    if (!this.platformApiUrl || !this.platformToken) return "";
+    this.publicBaseUrlPromise = (async () => {
+      try {
+        const response = await fetch(`${this.platformApiUrl}/internal/modules/${encodeURIComponent(this.moduleId)}/public-url`, { headers: { "x-toolnest-internal-token": this.platformToken }, signal: AbortSignal.timeout(3000) });
+        if (!response.ok) return "";
+        const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+        const data = payload.data && typeof payload.data === "object" ? payload.data as Record<string, unknown> : payload;
+        const value = typeof data.public_base_url === "string" ? data.public_base_url.trim().replace(/\/+$/, "") : "";
+        return /^https?:\/\//i.test(value) ? value : "";
+      } catch {
+        return "";
+      }
+    })();
+    try {
+      return await this.publicBaseUrlPromise;
+    } finally {
+      this.publicBaseUrlPromise = null;
+    }
   }
 
   private async sendNotification(title: string, content: string, channels: string[], sourceId: string, suffix: string) {

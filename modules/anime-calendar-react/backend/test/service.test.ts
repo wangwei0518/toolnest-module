@@ -133,6 +133,11 @@ describe("platform notifications", () => {
   it("omits channels when the platform default channel is selected", async () => {
     let received: Record<string, unknown> = {};
     const server = createServer((request, response) => {
+      if (request.method === "GET" && request.url?.endsWith("/public-url")) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ data: { public_base_url: "https://toolnest.example.com/" } }));
+        return;
+      }
       let body = "";
       request.setEncoding("utf8");
       request.on("data", (chunk) => { body += chunk; });
@@ -152,6 +157,7 @@ describe("platform notifications", () => {
       expect(result).toMatchObject({ ok: true, notification_id: "notification-1" });
       expect(received.channels).toBeUndefined();
       expect(received).toMatchObject({ event_type: "anime_calendar.test", source_type: "anime_calendar", summary: "" });
+      expect(received.content).toContain("https://toolnest.example.com/modules/anime-calendar-react");
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
