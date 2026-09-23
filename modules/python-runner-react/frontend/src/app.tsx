@@ -1414,60 +1414,6 @@ function RecentExecutions({ items }: { items: PythonExecution[] }) {
   );
 }
 
-function RunningExecutionsCard({ items }: { items: PythonExecution[] }) {
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>运行中的任务</CardTitle>
-          <CardDescription>当前仍在执行的 Python 任务。</CardDescription>
-        </div>
-        <CardAction>
-          <ActionLinkButton href={`${moduleBase}/executions`}>查看全部</ActionLinkButton>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {items.length ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead style={{ width: "42%" }}>任务</TableHead>
-                <TableHead style={{ width: "22%" }}>触发方式</TableHead>
-                <TableHead style={{ width: "18%" }}>状态</TableHead>
-                <TableHead style={{ width: "18%" }}>开始时间</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>
-                    <InternalLink
-                      href={`${moduleBase}/executions/${item.id}`}
-                      className="tn-python-module__table-primary"
-                    >
-                      {item.name}
-                    </InternalLink>
-                  </TableCell>
-                  <TableCell>{triggerText(item.trigger_type)}</TableCell>
-                  <TableCell>
-                    <StatusBadge value={item.status} />
-                  </TableCell>
-                  <TableCell>{formatShortTime(item.started_at)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (
-          <EmptyState
-            className="tn-python-module__empty--overview"
-            text="当前没有运行中的任务。"
-          />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 type UpcomingSchedule = PythonOverview["upcoming_schedules"][number];
 
 function UpcomingSchedulesCard({ items }: { items: UpcomingSchedule[] }) {
@@ -1636,7 +1582,6 @@ function OverviewPage() {
   const {
     stats,
     recent_executions: recent,
-    running_executions: running,
     upcoming_schedules: upcoming,
     recent_logs: recentLogs,
     error_logs: errorLogs,
@@ -1699,7 +1644,6 @@ function OverviewPage() {
             loading={timeline.isFetching}
             onRefresh={() => void timeline.refetch()}
           />
-          <RunningExecutionsCard items={running} />
         </div>
         <div className="tn-python-module__overview-column">
           <OverviewProjects projects={projects.data ?? []} />
