@@ -112,6 +112,20 @@ describe("service cache and marks", () => {
     expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "bangumi:one-piece", title_cn: "航海王", cour_relation: "long_running" })]));
   });
 
+  it("refreshes an expired weekly cache before building the current cour catalog", async () => {
+    const weeklyOnly = item({ id: "bangumi:one-piece", provider_id: "one-piece", title_cn: "航海王", title_original: "ONE PIECE", air_date: "1999-10-20", estimated_end_date: null, episode_count: null, status: "airing" });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => [weeklyOnly], fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
+    await store.update((state) => {
+      state.weeklyCache = { cache_date: "2026-09-19", updated_at: "2026-09-19T00:00:00.000Z", items: [] };
+    });
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+    const current = service.currentCour();
+
+    const result = await service.listItems({ year: current.year, cour_month: current.cour_month, include_ignored: true });
+
+    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "bangumi:one-piece", cour_relation: "long_running" })]));
+  });
+
   it("reuses catalog regions for an already cached weekly response", async () => {
     const weeklyItem = item({ id: "bangumi:weekly", provider_id: "weekly", region: "unknown" });
     const catalogItem = item({ id: "bangumi:weekly", provider_id: "weekly", region: "jp", tags: ["日本"] });

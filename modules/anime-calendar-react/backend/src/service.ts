@@ -41,7 +41,9 @@ export class AnimeCalendarService {
   }) {
     const resolved = this.resolveCour(query.year, query.cour_month);
     const current = this.currentCour();
-    if (resolved.year === current.year && resolved.cour_month === current.cour_month && !this.store.read().weeklyCache) {
+    const weeklyCache = this.store.read().weeklyCache;
+    const weeklyCacheExpired = !weeklyCache || Date.now() - Date.parse(weeklyCache.updated_at) >= weeklyTtlMs;
+    if (resolved.year === current.year && resolved.cour_month === current.cour_month && weeklyCacheExpired) {
       try { await this.weeklyItems(false); } catch { /* keep serving the catalog cache when Bangumi is unavailable */ }
     }
     const state = this.store.read();
