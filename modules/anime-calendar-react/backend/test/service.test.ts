@@ -35,9 +35,9 @@ describe("service cache and marks", () => {
     const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
     const refreshed = await service.refresh(2026, 7, true);
     expect(refreshed.total).toBe(1);
-    expect(service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items).toHaveLength(1);
+    expect((await service.listItems({ year: 2026, cour_month: 7, include_ignored: true })).items).toHaveLength(1);
     await service.setMark("bangumi:1", "watching");
-    expect(service.listItems({ year: 2026, cour_month: 7 }).items[0]?.mark_type).toBe("watching");
+    expect((await service.listItems({ year: 2026, cour_month: 7 })).items[0]?.mark_type).toBe("watching");
     expect(store.snapshot().items[0]?.mark_type).toBeNull();
     const detail = await service.getItem("bangumi:1");
     expect(detail).toMatchObject({ summary: "完整简介", year: 2026, cour_month: 7, cour_label: "2026年7月新番", weekday: 5, air_time: "23:00" });
@@ -55,7 +55,7 @@ describe("service cache and marks", () => {
     const refreshed = await service.refresh(2026, 7, true);
 
     expect(refreshed.total).toBe(2);
-    expect(service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items.map((entry) => entry.id)).toEqual(["bangumi:movie", "bangumi:title-movie"]);
+    expect((await service.listItems({ year: 2026, cour_month: 7, include_ignored: true })).items.map((entry) => entry.id)).toEqual(["bangumi:movie", "bangumi:title-movie"]);
     expect(store.snapshot().courCaches["2026-7"]).toMatchObject({ fetched_count: 3, included_count: 2, skipped_count: 1 });
   });
 
@@ -66,7 +66,7 @@ describe("service cache and marks", () => {
     const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
 
     const refreshed = await service.refresh(2026, 7, true);
-    const items = service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items;
+    const items = (await service.listItems({ year: 2026, cour_month: 7, include_ignored: true })).items;
 
     expect(refreshed.total).toBe(0);
     expect(items).toHaveLength(0);
@@ -81,7 +81,7 @@ describe("service cache and marks", () => {
     const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
 
     const refreshed = await service.refresh(2026, 7, true);
-    const items = service.listItems({ year: 2026, cour_month: 7, include_ignored: true }).items;
+    const items = (await service.listItems({ year: 2026, cour_month: 7, include_ignored: true })).items;
 
     expect(refreshed).toMatchObject({ total: 2, continuing_count: 1, long_running_count: 1 });
     expect(items.find((entry) => entry.id === "bangumi:single-cour")).toBeUndefined();
@@ -99,6 +99,17 @@ describe("service cache and marks", () => {
     const today = await service.today();
     expect(today.items).toHaveLength(1);
     expect(store.snapshot().todayCache).not.toBeNull();
+  });
+
+  it("includes weekly-only long-running titles in the cour catalog", async () => {
+    const weeklyOnly = item({ id: "bangumi:one-piece", provider_id: "one-piece", title_cn: "航海王", title_original: "ONE PIECE", air_date: "1999-10-20", estimated_end_date: null, episode_count: null, status: "airing" });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => [weeklyOnly], fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+    const current = service.currentCour();
+
+    const result = await service.listItems({ year: current.year, cour_month: current.cour_month, include_ignored: true });
+
+    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "bangumi:one-piece", title_cn: "航海王", cour_relation: "long_running" })]));
   });
 
   it("reuses catalog regions for an already cached weekly response", async () => {

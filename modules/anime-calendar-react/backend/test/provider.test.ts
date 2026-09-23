@@ -74,7 +74,7 @@ describe("BangumiProvider", () => {
 
   it("does not mistake collection popularity for the current episode", async () => {
     const items = await new BangumiProvider("", apiBase).fetchWeekly();
-    expect(items[0]).toMatchObject({ weekday: 5, current_episode: null });
+    expect(items[0]).toMatchObject({ weekday: 5, current_episode: null, status: "airing", estimated_end_date: null });
   });
 
   it("loads full details on demand", async () => {

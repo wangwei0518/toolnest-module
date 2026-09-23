@@ -109,7 +109,8 @@ export class BangumiProvider {
     const year = airDate?.getUTCFullYear() ?? new Date().getFullYear();
     const month = resolveCourMonth(airDate ? airDate.getUTCMonth() + 1 : new Date().getMonth() + 1);
     const item = this.mapSubject(subject, year, month);
-    return { ...item, weekday, media_type: mapCalendarMediaType(subject) };
+    const active = airDate !== null && airDate.getTime() <= Date.now();
+    return { ...item, weekday, media_type: mapCalendarMediaType(subject), status: active ? "airing" as const : item.status, estimated_end_date: item.episode_count === null ? null : item.estimated_end_date };
   }
 
   private requestJson(method: "GET" | "POST", rawUrl: string, body?: unknown, query?: Record<string, string>) {

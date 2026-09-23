@@ -13,5 +13,11 @@ describe("anime view helpers", () => {
     expect(filterItems([base, watched, ignored], options).map((item) => item.id)).toEqual(["2", "1"]);
     expect(filterItems([base, watched], { ...options, keyword: "关注" })).toEqual([watched]);
   });
+
+  it("preserves the current card order until the next refresh", () => {
+    const watched = { ...base, id: "2", title_cn: "关注作品", mark_type: "watching" as const, score: 6 };
+    const preservedOrder = new Map([[base.id, 0], [watched.id, 1]]);
+    expect(filterItems([base, watched], { ...options, preservedOrder }).map((item) => item.id)).toEqual(["1", "2"]);
+  });
   it("labels weekday states", () => { expect(weekState(3, 3)).toBe("today"); expect(weekState(2, 3)).toBe("past"); expect(weekState(4, 3)).toBe("upcoming"); });
 });

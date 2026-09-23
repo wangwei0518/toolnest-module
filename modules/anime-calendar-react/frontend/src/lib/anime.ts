@@ -11,7 +11,7 @@ export const weekdayLabel = (weekday: number) => weekdayOptions.find(([value]) =
 export const regionLabel = (region: string) => regionOptions.find(([value]) => value === region)?.[1] ?? "未知";
 export const airInfo = (item: AnimeListItem) => item.air_date ? `${weekdayLabel(item.weekday)} · ${item.air_date}${item.air_time ? ` ${item.air_time}` : ""}` : "播出时间未定";
 
-export function filterItems(items: AnimeListItem[], options: { keyword: string; weekday: number | null; status: AnimeStatus | null; mediaType: AnimeMediaType | null; markType: "watching" | "ignored" | null; region: string; showContinuing: boolean; showUnknown: boolean; sort: "default" | "score"; }) {
+export function filterItems(items: AnimeListItem[], options: { keyword: string; weekday: number | null; status: AnimeStatus | null; mediaType: AnimeMediaType | null; markType: "watching" | "ignored" | null; region: string; showContinuing: boolean; showUnknown: boolean; sort: "default" | "score"; preservedOrder?: ReadonlyMap<string, number>; }) {
   const keyword = options.keyword.trim().toLocaleLowerCase();
   const result = items.filter((item) => {
     if (!options.markType && item.mark_type === "ignored") return false;
@@ -25,6 +25,13 @@ export function filterItems(items: AnimeListItem[], options: { keyword: string; 
     return !keyword || [displayTitle(item), item.title_original, item.studio].some((value) => value.toLocaleLowerCase().includes(keyword));
   });
   return [...result].sort((a, b) => {
+    const preservedA = options.preservedOrder?.get(a.id);
+    const preservedB = options.preservedOrder?.get(b.id);
+    if (preservedA !== undefined || preservedB !== undefined) {
+      if (preservedA === undefined) return 1;
+      if (preservedB === undefined) return -1;
+      return preservedA - preservedB;
+    }
     const watching = Number(b.mark_type === "watching") - Number(a.mark_type === "watching");
     if (watching) return watching;
     if (options.sort === "score") return (b.score ?? -1) - (a.score ?? -1) || (a.air_date ?? "9999").localeCompare(b.air_date ?? "9999");
