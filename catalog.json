@@ -10,15 +10,15 @@
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-8-1-f05b2a5 发布。",
+      "release_notes": "由 module-release-9-1-e11b467 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-23T10:13:37.902Z",
+      "published_at": "2026-09-23T10:18:21.049Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-8-1-f05b2a5/anime-calendar-react-0.1.33.tnmod",
-        "sha256": "b65a90e5d74c3ddee3ec088d343389b7351e3224e5cfc6100d3678e210d5f565",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-9-1-e11b467/anime-calendar-react-0.1.33.tnmod",
+        "sha256": "616b3c1d7bf2525b3e69b73fd4096a0d8bc6056461c2b970a40053af573fd95f",
         "size_bytes": 777186
       }
     },
@@ -30,15 +30,15 @@
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-8-1-f05b2a5 发布。",
+      "release_notes": "由 module-release-9-1-e11b467 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-23T10:13:37.904Z",
+      "published_at": "2026-09-23T10:18:21.051Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-8-1-f05b2a5/python-runner-2.0.8.tnmod",
-        "sha256": "18a9df0ea27ea57e0312047fd1636334ec83d7ddf01f5532d8b538a3c6cc7894",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-9-1-e11b467/python-runner-2.0.8.tnmod",
+        "sha256": "9d8fd144dfd4e58f190779fbd799b79742b9b4c9b81d5904fb91916b4de2e036",
         "size_bytes": 1417428
       }
     },
@@ -50,15 +50,15 @@
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-8-1-f05b2a5 发布。",
+      "release_notes": "由 module-release-9-1-e11b467 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-23T10:13:37.906Z",
+      "published_at": "2026-09-23T10:18:21.053Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-8-1-f05b2a5/workflow-tickets-react-0.1.85.tnmod",
-        "sha256": "4759cf8332d1fe4e1be34c14de4ca2b5a70a0c09bf7740337efa1ac9140c0973",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-9-1-e11b467/workflow-tickets-react-0.1.85.tnmod",
+        "sha256": "50e3b9afd4e385292c19560ce71e410e5305af5b30dc7115aec9bc5fcb6bdfe7",
         "size_bytes": 764555
       }
     }
