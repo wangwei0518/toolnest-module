@@ -2,9 +2,6 @@ name: Validate ToolNest modules
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
