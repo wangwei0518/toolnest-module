@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { takeUtf8Prefix, Utf8StreamDecoder } from './utf8-stream.js'
 import { config } from './config.js'
 import { Database } from './db.js'
 import { newId } from './ids.js'
@@ -104,8 +105,12 @@ export class ExecutionManager {
       const child = spawn(command, [entryPath, ...args], { cwd, env: executionEnvironment(id, workspacePath), detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], shell: false, windowsHide: true })
       const active: ActiveExecution = { child, workspacePath, stdoutPath, stderrPath, stdout: '', stderr: '', truncated: false, stopped: false }
       this.active.set(id, active)
-      child.stdout?.on('data', (chunk: Buffer) => this.capture(active, chunk.toString('utf8'), false))
-      child.stderr?.on('data', (chunk: Buffer) => this.capture(active, chunk.toString('utf8'), true))
+      const stdoutDecoder = new Utf8StreamDecoder()
+      const stderrDecoder = new Utf8StreamDecoder()
+      child.stdout?.on('data', (chunk: Buffer) => this.capture(active, stdoutDecoder.write(chunk), false))
+      child.stderr?.on('data', (chunk: Buffer) => this.capture(active, stderrDecoder.write(chunk), true))
+      child.stdout?.once('end', () => this.capture(active, stdoutDecoder.end(), false))
+      child.stderr?.once('end', () => this.capture(active, stderrDecoder.end(), true))
       const result = await this.waitForExit(id, child, timeoutSeconds)
       this.active.delete(id)
       await writeFile(stdoutPath, active.stdout, 'utf8')
@@ -200,19 +205,19 @@ export class ExecutionManager {
         resolve({ exitCode, signal, timedOut })
       }
       child.once('error', () => finish(-1, null))
-      child.once('exit', (exitCode, signal) => finish(exitCode, signal))
+      child.once('close', (exitCode, signal) => finish(exitCode, signal))
     })
   }
 
   private capture(active: ActiveExecution, chunk: string, error: boolean): void {
+    if (!chunk) return
     const current = error ? active.stderr : active.stdout
     const remaining = config.maxOutputBytes - Buffer.byteLength(current, 'utf8')
     if (remaining <= 0) {
       active.truncated = true
       return
     }
-    const bytes = Buffer.from(chunk, 'utf8')
-    const next = bytes.byteLength <= remaining ? chunk : bytes.subarray(0, remaining).toString('utf8')
+    const next = takeUtf8Prefix(chunk, remaining)
     if (error) active.stderr += next
     else active.stdout += next
     if (next.length < chunk.length) active.truncated = true
@@ -289,7 +294,7 @@ function validateArgs(args: string[]): string[] {
 }
 
 function executionEnvironment(id: string, workspace: string): NodeJS.ProcessEnv {
-  return { PATH: process.env.PATH, PATHEXT: process.env.PATHEXT, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, PYTHONUNBUFFERED: '1', TOOLNEST_EXECUTION_ID: id, TOOLNEST_EXECUTION_WORKSPACE: workspace }
+  return { PATH: process.env.PATH, PATHEXT: process.env.PATHEXT, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', TOOLNEST_EXECUTION_ID: id, TOOLNEST_EXECUTION_WORKSPACE: workspace }
 }
 
 function safeRelative(relative: string | null | undefined): string {

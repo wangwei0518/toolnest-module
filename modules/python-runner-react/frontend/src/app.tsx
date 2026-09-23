@@ -151,8 +151,8 @@ import {
   Field as ShadcnField,
   FieldDescription as ShadcnFieldDescription,
   FieldGroup,
-  FieldLabel as ShadcnFieldLabel,
   FieldLegend,
+  FieldLabel as ShadcnFieldLabel,
   FieldSet,
   Input,
   Pagination,
@@ -187,7 +187,12 @@ import {
   TooltipTrigger,
 } from "./components/ui";
 import { PythonCodeEditor } from "./components/python-code-editor";
+import {
+  groupExecutionOutputStreams,
+  groupOverviewExecutionOutputs,
+} from "./lib/execution-logs";
 import { pythonRunnerRuntime as runtime } from "./runtime-context";
+import { Separator } from "./components/ui/separator";
 
 const moduleBase = "/modules/python-runner";
 const navigation = [
@@ -856,54 +861,11 @@ function SelectField({
   return (
     <Field label={label} help={help}>
       <Select
+        items={options}
         value={value}
         onValueChange={(next) => {
           if (next !== null) onValueChange(next);
         }}
-        disabled={disabled}
-      >
-        <SelectTrigger className="w-full" aria-label={label}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectLabel>{label}</SelectLabel>
-            {options.map((option) => (
-              <SelectItem value={option.value} key={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </Field>
-  );
-}
-
-function MultiSelectField({
-  label,
-  value,
-  onValueChange,
-  options,
-  placeholder = "请选择",
-  disabled = false,
-  help,
-}: {
-  label: string;
-  value: string[];
-  onValueChange: (value: string[]) => void;
-  options: Array<{ label: string; value: string }>;
-  placeholder?: string;
-  disabled?: boolean;
-  help?: string;
-}) {
-  return (
-    <Field label={label} tooltip={help}>
-      <Select
-        multiple
-        items={options}
-        value={value}
-        onValueChange={(next) => onValueChange(next)}
         disabled={disabled}
       >
         <SelectTrigger className="w-full" aria-label={label}>
@@ -1477,7 +1439,9 @@ function RecentLogsCard({
   errors: OverviewLog[];
 }) {
   const [tab, setTab] = useState<"recent" | "errors">("recent");
-  const items = tab === "errors" ? errors : recent;
+  const items = groupOverviewExecutionOutputs(
+    tab === "errors" ? errors : recent,
+  );
   return (
     <Card>
       <CardHeader>
@@ -1502,10 +1466,10 @@ function RecentLogsCard({
       <CardContent>
         {items.length ? (
           <div className="tn-python-module__log-list">
-            {items.slice(0, 10).map((item, index) => (
+            {items.slice(0, 10).map((item) => (
               <div
                 className="tn-python-module__log-item"
-                key={`${item.execution_id}-${item.type}-${item.timestamp}-${index}`}
+                key={`${item.execution_id}-${item.type}-${item.timestamp}`}
               >
                 <div className="tn-python-module__log-item-head">
                   <Badge
@@ -1660,10 +1624,12 @@ function SecurityConfirmation({
   scan,
   checked,
   onChange,
+  showRiskWarning = true,
 }: {
   scan: SecurityScan | null;
   checked: boolean;
   onChange: (value: boolean) => void;
+  showRiskWarning?: boolean;
 }) {
   if (!scan) return null;
   if (scan.risk_level === "blocked") {
@@ -1679,7 +1645,8 @@ function SecurityConfirmation({
       </Alert>
     );
   }
-  if (!["medium", "high"].includes(scan.risk_level)) return null;
+  if (!showRiskWarning || !["medium", "high"].includes(scan.risk_level))
+    return null;
   return (
     <Alert variant="warning" className="tn-python-module__security">
       <AlertTriangle aria-hidden="true" />
@@ -1722,6 +1689,7 @@ function RunPage({
   );
   const [scan, setScan] = useState<SecurityScan | null>(null);
   const [riskConfirmed, setRiskConfirmed] = useState(false);
+  const [securityConfirmOpen, setSecurityConfirmOpen] = useState(false);
   const [logTab, setLogTab] = useState<"merged" | "stdout" | "stderr">(
     "merged",
   );
@@ -1747,27 +1715,33 @@ function RunPage({
     queryFn: () => getSecurity(projectId),
     enabled: mode === "project" && Boolean(projectId),
   });
+  const activeScan = mode === "project" ? (projectSecurity.data ?? null) : scan;
   const run = useMutation({
-    mutationFn: () => {
+    mutationFn: (override?: {
+      riskConfirmed?: boolean;
+      securityScanId?: string;
+    }) => {
       const payload = {
         name: name.trim() || "未命名脚本",
         args: argsFromText(args),
         timeout_seconds: timeout,
         runtime_environment: environment,
       };
+      const confirmed = override?.riskConfirmed ?? riskConfirmed;
+      const scanId = override?.securityScanId ?? activeScan?.scan_id;
+      const security =
+        confirmed && scanId
+          ? { security: { risk_confirmed: true, scan_id: scanId } }
+          : {};
       return mode === "inline"
         ? createExecution({
             ...payload,
             source: { type: "inline", code },
-            ...(riskConfirmed && scan
-              ? { security: { risk_confirmed: true, scan_id: scan.scan_id } }
-              : {}),
+            ...security,
           })
         : runProject(projectId, entryFile, environment, {
             ...payload,
-            ...(riskConfirmed && scan
-              ? { security: { risk_confirmed: true, scan_id: scan.scan_id } }
-              : {}),
+            ...security,
           });
     },
     onSuccess: (result) => {
@@ -1783,6 +1757,9 @@ function RunPage({
       if (next) {
         setScan(next);
         setRiskConfirmed(false);
+        if (["medium", "high"].includes(next.risk_level)) {
+          setSecurityConfirmOpen(true);
+        }
       }
     },
   });
@@ -1826,7 +1803,6 @@ function RunPage({
     },
   });
   const project = projects.data?.find((item) => item.id === projectId);
-  const activeScan = mode === "project" ? (projectSecurity.data ?? null) : scan;
   const currentExecution =
     execution.data ??
     (activeExecutionId && activeExecutionId === run.data?.id
@@ -1858,9 +1834,16 @@ function RunPage({
     : (logs.data ?? []).filter(
         (item) => item.type === "stdout" || item.type === "stderr",
       );
-  const visibleLogs = allLogs.filter(
-    (item) => logTab === "merged" || item.type === logTab,
+  const visibleLogs = groupExecutionOutputStreams(
+    allLogs.filter((item) => logTab === "merged" || item.type === logTab),
   );
+  const handleRun = () => {
+    if (["medium", "high"].includes(activeScan?.risk_level ?? "")) {
+      setSecurityConfirmOpen(true);
+      return;
+    }
+    run.mutate();
+  };
   const fallbackLogs = currentExecution
     ? [
         ...(currentExecution.stdout
@@ -1871,7 +1854,9 @@ function RunPage({
           : []),
       ]
     : [];
-  const renderedLogs = visibleLogs.length ? visibleLogs : fallbackLogs;
+  const renderedLogs = groupExecutionOutputStreams(
+    visibleLogs.length ? visibleLogs : fallbackLogs,
+  );
   useEffect(() => {
     if (!autoScroll || !logConsoleRef.current) return;
     logConsoleRef.current.scrollTop = logConsoleRef.current.scrollHeight;
@@ -1984,7 +1969,7 @@ function RunPage({
                     (mode === "inline" ? !code.trim() : !projectId) ||
                     activeScan?.risk_level === "blocked"
                   }
-                  onClick={() => run.mutate()}
+                  onClick={handleRun}
                 >
                   <Play aria-hidden="true" />
                   运行脚本
@@ -2037,6 +2022,7 @@ function RunPage({
                 <SecurityConfirmation
                   scan={activeScan}
                   checked={riskConfirmed}
+                  showRiskWarning={false}
                   onChange={setRiskConfirmed}
                 />
               ) : null}
@@ -2044,6 +2030,29 @@ function RunPage({
           </div>
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={securityConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !run.isPending) setSecurityConfirmOpen(false);
+        }}
+        title="确认创建一次性执行"
+        description={
+          activeScan
+            ? `安全扫描发现 ${securityIssueCount(activeScan)} 项${statusText(activeScan.risk_level)}问题。确认当前扫描结果和代码来源可信，并继续创建一次性执行吗？`
+            : "当前安全扫描结果需要确认。确认代码来源可信并继续创建一次性执行吗？"
+        }
+        confirmLabel="确认运行"
+        pending={run.isPending}
+        onConfirm={() => {
+          const scanId = activeScan?.scan_id ?? scan?.scan_id;
+          setSecurityConfirmOpen(false);
+          setRiskConfirmed(true);
+          run.mutate({
+            riskConfirmed: true,
+            ...(scanId ? { securityScanId: scanId } : {}),
+          });
+        }}
+      />
       {currentExecution ? (
         <Card>
           <CardHeader>
@@ -3478,11 +3487,10 @@ function ProjectDetailPage({
   const [configMode, setConfigMode] = useState<"basic" | "advanced">("basic");
   const [configDraft, setConfigDraft] = useState<Record<string, unknown>>({});
   const [configJsonError, setConfigJsonError] = useState("");
-  const [riskConfirmed, setRiskConfirmed] = useState(false);
   const [securityDetailOpen, setSecurityDetailOpen] = useState(false);
-  const [quickScheduleOpen, setQuickScheduleOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [installLogOpen, setInstallLogOpen] = useState(false);
+  const [installConfirmOpen, setInstallConfirmOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<
     "environment" | "data" | "rollback" | null
   >(null);
@@ -3503,7 +3511,6 @@ function ProjectDetailPage({
   const scan = useMutation({
     mutationFn: () => scanSecurity(projectId),
     onSuccess: () => {
-      setRiskConfirmed(false);
       void security.refetch();
       runtime?.notify({ type: "success", content: "项目安全扫描完成。" });
     },
@@ -3513,12 +3520,15 @@ function ProjectDetailPage({
     onSuccess: () => void environment.refetch(),
   });
   const install = useMutation({
-    mutationFn: () =>
+    mutationFn: (confirmRisk: boolean) =>
       installRequirements(projectId, {
-        confirm_risk: riskConfirmed,
+        confirm_risk: confirmRisk,
         scan_id: security.data?.scan_id,
       }),
-    onSuccess: () => void environment.refetch(),
+    onSuccess: () => {
+      void environment.refetch();
+      runtime?.notify({ type: "success", content: "依赖安装成功。" });
+    },
   });
   const rebuild = useMutation({
     mutationFn: () => rebuildEnvironment(projectId),
@@ -3671,6 +3681,13 @@ function ProjectDetailPage({
     if (confirmAction === "rollback") rollback.mutate(false);
     setConfirmAction(null);
   };
+  const handleInstall = () => {
+    if (risky) {
+      setInstallConfirmOpen(true);
+      return;
+    }
+    install.mutate(false);
+  };
   return (
     <ModuleShell
       title={item.name}
@@ -3702,14 +3719,10 @@ function ProjectDetailPage({
             </Button>
           </ButtonGroup>
           <ButtonGroup aria-label="项目任务">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setQuickScheduleOpen(true)}
-            >
+            <ActionLinkButton href={scheduleHref} size="sm">
               <CalendarClock aria-hidden="true" />
               创建定时任务
-            </Button>
+            </ActionLinkButton>
             <ActionLinkButton href={persistentHref} size="sm">
               <Server aria-hidden="true" />
               创建常驻任务
@@ -3818,15 +3831,6 @@ function ProjectDetailPage({
               )}
             </div>
           </div>
-          {item.dependency_files.length ? (
-            <Alert variant="warning">
-              <AlertTriangle aria-hidden="true" />
-              <AlertTitle>检测到依赖文件</AlertTitle>
-              <AlertDescription>
-                当前版本不会自动安装依赖，请确保运行环境已具备相关依赖。
-              </AlertDescription>
-            </Alert>
-          ) : null}
         </CardContent>
       </Card>
       <div className="tn-python-module__workspace">
@@ -4009,14 +4013,6 @@ function ProjectDetailPage({
             ) : (
               <EmptyState text="尚未完成安全扫描。" />
             )}
-            {risky ? (
-              <CheckboxField
-                checked={riskConfirmed}
-                onCheckedChange={setRiskConfirmed}
-              >
-                确认当前扫描结果后允许安装依赖
-              </CheckboxField>
-            ) : null}
             {install.isError ? (
               <ErrorState error={install.error} title="依赖安装失败" />
             ) : null}
@@ -4211,17 +4207,6 @@ function ProjectDetailPage({
         onOpenChange={setSecurityDetailOpen}
         security={security.data}
       />
-      <QuickScheduleDialog
-        open={quickScheduleOpen}
-        onOpenChange={setQuickScheduleOpen}
-        project={item}
-        entryFile={entryQuery}
-        environment={environment.data}
-        environmentLoading={environment.isPending}
-        security={security.data}
-        securityLoading={security.isPending}
-        fullCreateHref={scheduleHref}
-      />
       <ProjectUpdateDialog
         project={item}
         open={updateOpen}
@@ -4299,6 +4284,17 @@ function ProjectDetailPage({
           ) : (
             <EmptyState text="尚未创建项目环境。" />
           )}
+          {item.dependency_files.length ? (
+            <Alert variant="warning">
+              <AlertTriangle aria-hidden="true" />
+              <div>
+                <AlertTitle>检测到依赖文件</AlertTitle>
+                <AlertDescription>
+                  当前版本不会自动安装依赖，请确保运行环境已具备相关依赖。
+                </AlertDescription>
+              </div>
+            </Alert>
+          ) : null}
           {environment.data?.status === "installing" ? (
             <Alert>
               <Spinner aria-hidden="true" />
@@ -4340,7 +4336,6 @@ function ProjectDetailPage({
               disabled={
                 !environment.data?.has_requirements ||
                 !environment.data?.python_executable ||
-                (risky && !riskConfirmed) ||
                 securityBlocked ||
                 createEnv.isPending ||
                 rebuild.isPending ||
@@ -4348,7 +4343,7 @@ function ProjectDetailPage({
                 environment.data?.status === "creating" ||
                 environment.data?.status === "installing"
               }
-              onClick={() => install.mutate()}
+              onClick={handleInstall}
             >
               <ArrowRight data-icon="inline-start" aria-hidden="true" />
               {environment.data?.requirements_changed ||
@@ -4388,7 +4383,7 @@ function ProjectDetailPage({
             </Button>
             <Button
               variant="outline"
-              disabled={installLog.isPending || environment.isPending}
+              disabled={installLog.isFetching || environment.isPending}
               onClick={() => setInstallLogOpen(true)}
             >
               查看安装日志
@@ -4550,6 +4545,24 @@ function ProjectDetailPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmDialog
+        open={installConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && !install.isPending) setInstallConfirmOpen(false);
+        }}
+        title="确认安装 requirements"
+        description={
+          securityData
+            ? `安全扫描发现 ${securityIssueCount(securityData)} 项${statusText(securityData.risk_level)}问题。确认当前扫描结果和代码来源可信，并继续安装 requirements.txt 吗？`
+            : "当前安全扫描结果需要确认。确认代码来源可信并继续安装 requirements.txt 吗？"
+        }
+        confirmLabel="确认并安装"
+        pending={install.isPending}
+        onConfirm={() => {
+          setInstallConfirmOpen(false);
+          install.mutate(true);
+        }}
+      />
       <ConfirmDialog
         open={Boolean(confirmAction)}
         onOpenChange={(open) => {
@@ -4971,7 +4984,9 @@ function ExecutionDetailPage({ executionId }: { executionId: string }) {
   const logEvents = logs.data?.length ? logs.data : fallbackLogs;
   const outputEvents = logsCleared
     ? []
-    : logEvents.filter((log) => logTab === "merged" || log.type === logTab);
+    : groupExecutionOutputStreams(
+        logEvents.filter((log) => logTab === "merged" || log.type === logTab),
+      );
   const output = outputEvents.length
     ? outputEvents.map((log) => `[${log.type}] ${log.content}`).join("\n")
     : "暂无输出";
@@ -5194,6 +5209,21 @@ function defaultNotificationConfig(): NotificationConfig {
     email_recipients: [],
   };
 }
+
+const notificationOutputLabels: Record<NotificationConfig["output_mode"], string> = {
+  summary: "摘要",
+  stdout: "标准输出",
+  stderr: "错误输出",
+  both: "标准输出和错误输出",
+};
+
+const notificationChannelOptions = [
+  { value: "web_internal", label: "站内通知" },
+  { value: "qqbot", label: "QQBot" },
+  { value: "email", label: "Email" },
+  { value: "webhook", label: "Webhook" },
+] as const;
+
 function NotificationFields({
   value,
   onChange,
@@ -5205,146 +5235,362 @@ function NotificationFields({
 }) {
   const patch = (next: Partial<NotificationConfig>) =>
     onChange({ ...value, ...next });
-  const failureThresholdId = useId();
+  const setNotificationChannelMode = (
+    channels: NotificationConfig["channels"],
+  ) =>
+    patch({
+      channels,
+      ...(channels === "default" ? { custom_channels: [] } : {}),
+    });
+  const [expandedSections, setExpandedSections] = useState({
+    failure: true,
+    success: true,
+    channels: true,
+  });
+  const customEmailSelected =
+    value.channels === "custom" && value.custom_channels.includes("email");
+  const failureSummary = [
+    `失败通知${value.notify_on_failure ? "开" : "关"}`,
+    `恢复通知${value.notify_on_recovered ? "开" : "关"}`,
+    value.failure_threshold_enabled
+      ? `阈值 ${value.failure_threshold} 次`
+      : "阈值关",
+  ].join(" · ");
+  const successSummary = [
+    `成功通知${value.notify_on_success ? "开" : "关"}`,
+    value.notify_on_success
+      ? `空输出通知${value.notify_when_empty_output ? "开" : "关"}`
+      : null,
+    value.forward_output_on_success
+      ? `转发${notificationOutputLabels[value.output_mode]}`
+      : "输出转发关",
+  ]
+    .filter((item): item is string => item !== null)
+    .join(" · ");
+  const selectedChannelLabels = notificationChannelOptions
+    .filter((option) => value.custom_channels.includes(option.value))
+    .map((option) => option.label);
+  const channelsSummary =
+    value.channels === "default"
+      ? "平台默认"
+      : selectedChannelLabels.length > 0
+        ? `自定义：${selectedChannelLabels.join("、")}`
+        : "自定义通道未选";
   return (
-    <div className="tn-python-module__notification">
-      <div>
-        <h3 className="tn-python-module__panel-title">通知策略</h3>
-        <p className="tn-python-module__panel-subtitle">
-          失败默认通知，成功通知和输出转发需要显式开启。
-        </p>
-      </div>
-      <FieldSet>
-        <FieldLegend variant="label">通知事件</FieldLegend>
-        <FieldGroup className="tn-python-module__form-grid">
-          <CheckboxField
-            checked={value.notify_on_failure}
-            onCheckedChange={(checked) => patch({ notify_on_failure: checked })}
-          >
-            失败时通知
-          </CheckboxField>
-          <CheckboxField
-            checked={value.notify_on_success}
-            onCheckedChange={(checked) => patch({ notify_on_success: checked })}
-          >
-            成功时通知
-          </CheckboxField>
-          <CheckboxField
-            checked={value.notify_on_recovered}
-            onCheckedChange={(checked) =>
-              patch({ notify_on_recovered: checked })
-            }
-          >
-            恢复成功时通知
-          </CheckboxField>
-          <CheckboxField
-            checked={value.forward_output_on_success}
-            onCheckedChange={(checked) =>
-              patch({ forward_output_on_success: checked })
-            }
-          >
-            {persistent ? "运行输出转发" : "成功输出转发"}
-          </CheckboxField>
-        </FieldGroup>
-      </FieldSet>
-      <FieldGroup className="tn-python-module__form-grid">
-        <Field label="失败阈值">
-          <div className="tn-python-module__threshold-control">
-            <ShadcnField
-              orientation="horizontal"
-              className="tn-python-module__threshold-toggle"
-            >
-              <Checkbox
-                id={failureThresholdId}
-                checked={value.failure_threshold_enabled}
-                onCheckedChange={(checked) =>
-                  patch({ failure_threshold_enabled: Boolean(checked) })
-                }
-              />
-              <ShadcnFieldLabel htmlFor={failureThresholdId}>
-                启用
-              </ShadcnFieldLabel>
-            </ShadcnField>
-            <Input
-              aria-label="连续失败次数"
-              className="tn-python-module__threshold-input"
-              type="number"
-              min={1}
-              max={100}
-              disabled={!value.failure_threshold_enabled}
-              value={value.failure_threshold}
-              onChange={(event) =>
-                patch({
-                  failure_threshold: Math.min(
-                    100,
-                    Math.max(1, Number(event.target.value) || 1),
-                  ),
-                })
-              }
-            />
-          </div>
-        </Field>
-        <SelectField
-          label="输出内容"
-          value={value.output_mode}
-          onValueChange={(next) =>
-            patch({ output_mode: next as NotificationConfig["output_mode"] })
+    <Card size="sm" className="tn-python-module__notification">
+      <CardHeader>
+        <div>
+          <CardTitle>通知策略</CardTitle>
+          <CardDescription>失败通知默认开启，其余选项可按需配置。</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="tn-python-module__notification-content">
+        <Collapsible
+          open={expandedSections.failure}
+          onOpenChange={(open) =>
+            setExpandedSections((current) => ({ ...current, failure: open }))
           }
-          disabled={!value.forward_output_on_success}
-          options={[
-            { value: "summary", label: "摘要" },
-            { value: "stdout", label: "标准输出" },
-            { value: "stderr", label: "错误输出" },
-            { value: "both", label: "标准输出和错误输出" },
-          ]}
-        />
-        <SelectField
-          label="通知通道"
-          value={value.channels}
-          onValueChange={(next) =>
-            patch({ channels: next as NotificationConfig["channels"] })
-          }
-          options={[
-            { value: "default", label: "平台默认" },
-            { value: "custom", label: "自定义" },
-          ]}
-        />
-        <MultiSelectField
-          label="自定义通道"
-          value={value.custom_channels}
-          onValueChange={(custom_channels) => patch({ custom_channels })}
-          disabled={value.channels !== "custom"}
-          help="可多选平台支持的通知通道。"
-          options={[
-            { value: "web_internal", label: "站内通知" },
-            { value: "qqbot", label: "QQBot" },
-            { value: "email", label: "Email" },
-            { value: "webhook", label: "Webhook" },
-          ]}
-        />
-        <Field label="Email 收件人" help="逗号分隔，平台默认通道可不填">
-          <Input
-            value={value.email_recipients.join(", ")}
-            onChange={(event) =>
-              patch({
-                email_recipients: event.target.value
-                  .split(",")
-                  .map((item) => item.trim())
-                  .filter(Boolean),
-              })
+        >
+          <CollapsibleTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="lg"
+                className="tn-python-module__notification-trigger"
+              >
+                <span>失败与恢复</span>
+                <span className="tn-python-module__notification-trigger-meta">
+                  {!expandedSections.failure ? (
+                    <span className="tn-python-module__notification-summary">
+                      {failureSummary}
+                    </span>
+                  ) : null}
+                  <ChevronDown
+                    aria-hidden="true"
+                    data-icon="inline-end"
+                    className="tn-python-module__notification-chevron"
+                  />
+                </span>
+              </Button>
             }
           />
-        </Field>
-      </FieldGroup>
-      <CheckboxField
-        checked={value.notify_when_empty_output}
-        onCheckedChange={(checked) =>
-          patch({ notify_when_empty_output: checked })
-        }
-      >
-        输出为空时也发送成功通知
-      </CheckboxField>
-    </div>
+          <CollapsibleContent className="tn-python-module__notification-panel">
+            <FieldSet className="tn-python-module__notification-section">
+              <FieldLegend className="sr-only" variant="label">
+                失败与恢复通知
+              </FieldLegend>
+              <FieldGroup
+                className="tn-python-module__notification-options"
+                role="group"
+                aria-label="失败与恢复通知"
+              >
+                <CheckboxField
+                  checked={value.notify_on_failure}
+                  onCheckedChange={(checked) =>
+                    patch({ notify_on_failure: checked })
+                  }
+                >
+                  失败时通知
+                </CheckboxField>
+                <CheckboxField
+                  checked={value.notify_on_recovered}
+                  onCheckedChange={(checked) =>
+                    patch({ notify_on_recovered: checked })
+                  }
+                >
+                  恢复成功时通知
+                </CheckboxField>
+                <CheckboxField
+                  checked={value.failure_threshold_enabled}
+                  onCheckedChange={(checked) =>
+                    patch({ failure_threshold_enabled: checked })
+                  }
+                >
+                  启用失败阈值
+                </CheckboxField>
+                <div className="tn-python-module__notification-threshold">
+                  <span className="tn-python-module__notification-note">
+                    连续失败
+                  </span>
+                  <Input
+                    aria-label="连续失败次数"
+                    className="tn-python-module__threshold-input"
+                    type="number"
+                    min={1}
+                    max={100}
+                    disabled={!value.failure_threshold_enabled}
+                    value={value.failure_threshold}
+                    onChange={(event) =>
+                      patch({
+                        failure_threshold: Math.min(
+                          100,
+                          Math.max(1, Number(event.target.value) || 1),
+                        ),
+                      })
+                    }
+                  />
+                  <span className="tn-python-module__notification-note">
+                    次后通知
+                  </span>
+                </div>
+              </FieldGroup>
+            </FieldSet>
+          </CollapsibleContent>
+        </Collapsible>
+        <Separator className="tn-python-module__notification-divider" />
+        <Collapsible
+          open={expandedSections.success}
+          onOpenChange={(open) =>
+            setExpandedSections((current) => ({ ...current, success: open }))
+          }
+        >
+          <CollapsibleTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="lg"
+                className="tn-python-module__notification-trigger"
+              >
+                <span>成功通知与输出</span>
+                <span className="tn-python-module__notification-trigger-meta">
+                  {!expandedSections.success ? (
+                    <span className="tn-python-module__notification-summary">
+                      {successSummary}
+                    </span>
+                  ) : null}
+                  <ChevronDown
+                    aria-hidden="true"
+                    data-icon="inline-end"
+                    className="tn-python-module__notification-chevron"
+                  />
+                </span>
+              </Button>
+            }
+          />
+          <CollapsibleContent className="tn-python-module__notification-panel">
+            <FieldSet className="tn-python-module__notification-section">
+              <FieldLegend className="sr-only" variant="label">
+                成功通知与输出
+              </FieldLegend>
+              <FieldGroup
+                className="tn-python-module__notification-options"
+                role="group"
+                aria-label="成功通知与输出"
+              >
+                <CheckboxField
+                  checked={value.notify_on_success}
+                  onCheckedChange={(checked) =>
+                    patch({ notify_on_success: checked })
+                  }
+                >
+                  成功时通知
+                </CheckboxField>
+                {value.notify_on_success ? (
+                  <CheckboxField
+                    checked={value.notify_when_empty_output}
+                    onCheckedChange={(checked) =>
+                      patch({ notify_when_empty_output: checked })
+                    }
+                  >
+                    空输出时也通知
+                  </CheckboxField>
+                ) : null}
+                <CheckboxField
+                  checked={value.forward_output_on_success}
+                  onCheckedChange={(checked) =>
+                    patch({ forward_output_on_success: checked })
+                  }
+                >
+                  {persistent ? "运行输出转发" : "输出转发"}
+                </CheckboxField>
+                {value.forward_output_on_success ? (
+                  <div className="tn-python-module__notification-output-select">
+                    <span className="tn-python-module__notification-note">
+                      输出内容
+                    </span>
+                    <Select
+                      value={value.output_mode}
+                      onValueChange={(next) => {
+                        if (next !== null) {
+                          patch({
+                            output_mode: next as NotificationConfig["output_mode"],
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        className="tn-python-module__notification-output-trigger"
+                        aria-label="输出内容"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectLabel>输出内容</SelectLabel>
+                          <SelectItem value="summary">摘要</SelectItem>
+                          <SelectItem value="stdout">标准输出</SelectItem>
+                          <SelectItem value="stderr">错误输出</SelectItem>
+                          <SelectItem value="both">
+                            标准输出和错误输出
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
+              </FieldGroup>
+            </FieldSet>
+          </CollapsibleContent>
+        </Collapsible>
+        <Separator className="tn-python-module__notification-divider" />
+        <Collapsible
+          open={expandedSections.channels}
+          onOpenChange={(open) =>
+            setExpandedSections((current) => ({ ...current, channels: open }))
+          }
+        >
+          <CollapsibleTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="lg"
+                className="tn-python-module__notification-trigger"
+              >
+                <span>通知通道</span>
+                <span className="tn-python-module__notification-trigger-meta">
+                  {!expandedSections.channels ? (
+                    <span className="tn-python-module__notification-summary">
+                      {channelsSummary}
+                    </span>
+                  ) : null}
+                  <ChevronDown
+                    aria-hidden="true"
+                    data-icon="inline-end"
+                    className="tn-python-module__notification-chevron"
+                  />
+                </span>
+              </Button>
+            }
+          />
+          <CollapsibleContent className="tn-python-module__notification-panel">
+            <FieldSet className="tn-python-module__notification-section">
+              <FieldLegend className="sr-only" variant="label">
+                通知通道
+              </FieldLegend>
+              <FieldGroup
+                className="tn-python-module__notification-options"
+                role="group"
+                aria-label="通知通道"
+              >
+                <CheckboxField
+                  checked={value.channels === "default"}
+                  onCheckedChange={(checked) =>
+                    setNotificationChannelMode(
+                      checked ? "default" : "custom",
+                    )
+                  }
+                >
+                  平台默认
+                </CheckboxField>
+                <CheckboxField
+                  checked={value.channels === "custom"}
+                  onCheckedChange={(checked) =>
+                    setNotificationChannelMode(
+                      checked ? "custom" : "default",
+                    )
+                  }
+                >
+                  自定义通道
+                </CheckboxField>
+                {value.channels === "custom"
+                  ? notificationChannelOptions.map((option) => (
+                      <CheckboxField
+                        key={option.value}
+                        checked={value.custom_channels.includes(option.value)}
+                        onCheckedChange={(checked) =>
+                          patch({
+                            custom_channels: checked
+                              ? Array.from(
+                                  new Set([
+                                    ...value.custom_channels,
+                                    option.value,
+                                  ]),
+                                )
+                              : value.custom_channels.filter(
+                                  (item) => item !== option.value,
+                                ),
+                          })
+                        }
+                      >
+                        {option.label}
+                      </CheckboxField>
+                    ))
+                  : null}
+                {customEmailSelected ? (
+                  <div className="tn-python-module__notification-email">
+                    <Field label="Email 收件人">
+                      <Input
+                        aria-label="Email 收件人"
+                        placeholder="多个邮箱用逗号分隔"
+                        value={value.email_recipients.join(", ")}
+                        onChange={(event) =>
+                          patch({
+                            email_recipients: event.target.value
+                              .split(",")
+                              .map((item) => item.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                      />
+                    </Field>
+                  </div>
+                ) : null}
+              </FieldGroup>
+            </FieldSet>
+          </CollapsibleContent>
+        </Collapsible>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -5399,7 +5645,6 @@ function QuickScheduleDialog({
   const [error, setError] = useState("");
   const [riskConfirmed, setRiskConfirmed] = useState(false);
   const [created, setCreated] = useState<ScheduledTask | null>(null);
-  const [notificationOptionsOpen, setNotificationOptionsOpen] = useState(false);
   const create = useMutation({
     mutationFn: () => {
       const requiresConfirmation = ["medium", "high"].includes(
@@ -5448,7 +5693,6 @@ function QuickScheduleDialog({
     setError("");
     setRiskConfirmed(false);
     setCreated(null);
-    setNotificationOptionsOpen(false);
   }, [entryFile, open, project]);
   const requiresConfirmation = ["medium", "high"].includes(
     security?.risk_level ?? "",
@@ -5667,34 +5911,12 @@ function QuickScheduleDialog({
                 onChange={setRiskConfirmed}
               />
             ) : null}
-            <Collapsible
-              open={notificationOptionsOpen}
-              onOpenChange={setNotificationOptionsOpen}
-            >
-              <div className="tn-python-module__collapsible-summary">
-                <div className="tn-python-module__collapsible-summary-copy">
-                  <strong>通知策略</strong>
-                  <span className="tn-python-module__muted">
-                    默认仅在任务失败时通知；成功通知和输出转发可展开配置。
-                  </span>
-                </div>
-                <CollapsibleTrigger
-                  render={
-                    <Button variant="outline" size="sm">
-                      {notificationOptionsOpen ? "收起配置" : "展开配置"}
-                    </Button>
-                  }
-                />
-              </div>
-              <CollapsibleContent>
-                <NotificationFields
-                  value={form.notificationConfig}
-                  onChange={(notificationConfig) =>
-                    setForm((current) => ({ ...current, notificationConfig }))
-                  }
-                />
-              </CollapsibleContent>
-            </Collapsible>
+            <NotificationFields
+              value={form.notificationConfig}
+              onChange={(notificationConfig) =>
+                setForm((current) => ({ ...current, notificationConfig }))
+              }
+            />
             {error ? (
               <Alert variant="destructive">
                 <AlertTriangle aria-hidden="true" />
@@ -6195,6 +6417,7 @@ function ScheduleDetailPage({ scheduleId }: { scheduleId: string }) {
   });
   const [recentPage, setRecentPage] = useState(1);
   const recentPageSize = 8;
+  const [sourceCodeOpen, setSourceCodeOpen] = useState(false);
   const recentExecutions = (executions.data ?? []).filter(
     (execution) => execution.trigger_id === scheduleId,
   );
@@ -6239,301 +6462,280 @@ function ScheduleDetailPage({ scheduleId }: { scheduleId: string }) {
   const item = task.data;
   const source = item.source;
   const notification = item.notification_config ?? defaultNotificationConfig();
+  const isCron = item.schedule_type === "cron";
+  const sourceCode = source.type === "inline" ? source.code : "";
+  const hasInlineCode = Boolean(sourceCode.trim());
+  const outputSummary = notificationOutputText(notification);
+  const notificationSummary = [
+    notificationTriggersText(notification),
+    notificationChannelsText(notification),
+    notification.failure_threshold_enabled
+      ? `连续失败 ${notification.failure_threshold} 次通知`
+      : "连续失败阈值未启用",
+    outputSummary !== "未转发" ? `成功输出：${outputSummary}` : undefined,
+    notification.notify_when_empty_output ? "空输出时通知" : undefined,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+  const projectName =
+    source.type !== "archive"
+      ? ""
+      : project.isPending
+        ? "正在读取项目…"
+        : project.isError
+          ? "项目来源读取失败"
+          : (project.data?.name ?? "关联项目");
   return (
     <ModuleShell
       title={item.name}
       description={item.description || "查看任务配置和运行记录。"}
     >
-      <div className="tn-python-module__page-toolbar">
-        <ButtonGroup>
-          <ActionLinkButton href={`${moduleBase}/schedules`}>
-            <ArrowLeft aria-hidden="true" />
-            返回定时任务
-          </ActionLinkButton>
-          <ActionLinkButton href={`${moduleBase}/schedules/${item.id}/edit`}>
-            <Settings2 aria-hidden="true" />
-            编辑
-          </ActionLinkButton>
-          <BusyButton
-            variant="outline"
-            pending={toggle.isPending}
-            onClick={() => toggle.mutate()}
-          >
-            {item.enabled ? "停用" : "启用"}
-          </BusyButton>
-          <BusyButton pending={run.isPending} onClick={() => run.mutate()}>
-            <Play aria-hidden="true" />
-            立即运行
-          </BusyButton>
-        </ButtonGroup>
-      </div>
-      <div className="tn-python-module__detail-grid">
-        <Card>
-          <CardHeader>
-            <CardTitle>基本信息</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailRows
-              rows={[
-                ["状态", <StatusBadge value={item.status} key="status" />],
-                [
-                  "执行来源",
-                  source.type === "archive" ? "已上传项目" : "内联代码",
-                ],
-                ["创建时间", formatTime(item.created_at)],
-                ["更新时间", formatTime(item.updated_at)],
-              ]}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>调度配置</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailRows
-              rows={[
-                [
-                  "调度类型",
-                  item.schedule_type === "cron" ? "Cron 调度" : "一次性执行",
-                ],
-                ["Cron 表达式", item.cron_expression ?? "—"],
-                ["执行时间", formatTime(item.run_at)],
-                ["时区", item.timezone],
-                ["下次运行", formatTime(item.next_run_at)],
-              ]}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>执行统计</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailRows
-              rows={[
-                ["总执行次数", item.total_runs],
-                ["成功次数", item.success_runs],
-                ["失败次数", item.failed_runs],
-                [
-                  "成功率",
-                  `${item.total_runs ? Math.round((item.success_runs / item.total_runs) * 100) : 0}%`,
-                ],
-                [
-                  "最近结果",
-                  item.last_status ? statusText(item.last_status) : "尚未执行",
-                ],
-              ]}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>运行配置</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailRows
-              rows={[
-                [
-                  "入口文件",
-                  source.type === "archive"
-                    ? source.entry_file || "自动选择"
-                    : "内联代码",
-                ],
-                ["命令行参数", item.args.length ? item.args.join(" ") : "无"],
-                ["超时时间", `${item.timeout_seconds} 秒`],
-                ["上次执行", formatTime(item.last_run_at)],
-              ]}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>通知配置</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <DetailRows
-              rows={[
-                ["触发通知", notificationTriggersText(notification)],
-                ["通知通道", notificationChannelsText(notification)],
-                ["成功输出", notificationOutputText(notification)],
-                [
-                  "连续失败阈值",
-                  notification.failure_threshold_enabled
-                    ? `${notification.failure_threshold} 次`
-                    : "未启用",
-                ],
-                [
-                  "空输出通知",
-                  notification.notify_when_empty_output ? "已开启" : "未开启",
-                ],
-              ]}
-            />
-          </CardContent>
-        </Card>
-      </div>
-      {source.type === "inline" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Python 代码</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PythonCodeEditor value={source.code || "暂无代码。"} readOnly />
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardHeader>
-            <div>
-              <CardTitle>项目来源</CardTitle>
-              <CardDescription>
-                {project.data?.name ?? "项目包"} ·{" "}
-                {source.entry_file || "自动选择"}
-              </CardDescription>
+      <div className="tn-python-module__schedule-detail">
+        <div className="tn-python-module__schedule-detail-header">
+          <div className="tn-python-module__schedule-detail-heading">
+            <div className="tn-python-module__schedule-detail-title-row">
+              <h1 className="tn-python-module__page-title">{item.name}</h1>
+              <StatusBadge value={item.status} />
             </div>
-            <CardAction>
-              {projectId ? (
-                <ActionLinkButton
-                  href={`${moduleBase}/projects/${encodeURIComponent(projectId)}`}
-                >
-                  查看项目
-                  <ArrowRight aria-hidden="true" />
-                </ActionLinkButton>
-              ) : null}
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            {project.isPending ? (
-              <LoadingState text="正在读取项目来源…" />
-            ) : project.isError ? (
-              <ErrorState error={project.error} title="项目来源读取失败" />
-            ) : project.data ? (
-              <>
-                <DetailRows
-                  rows={[
-                    ["原始文件名", project.data.filename],
-                    ["上传来源", uploadSourceText(project.data.upload_source)],
-                    ["入口文件", source.entry_file || "自动选择"],
-                    ["文件数量", project.data.file_count],
-                    ["项目大小", formatBytes(project.data.total_size)],
-                    [
-                      "依赖文件",
-                      project.data.dependency_files.length
-                        ? project.data.dependency_files.map((file) => (
-                            <Badge variant="outline" key={file}>
-                              {file}
-                            </Badge>
-                          ))
-                        : "无",
-                    ],
-                  ]}
-                />
-                <FileTree
-                  nodes={project.data.file_tree}
-                  selected={source.entry_file ?? ""}
-                  onSelect={() => undefined}
-                />
-              </>
-            ) : (
-              <EmptyState text="关联项目不存在。" />
-            )}
-          </CardContent>
-        </Card>
-      )}
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>最近执行记录</CardTitle>
-            <CardDescription>
-              展示该定时任务最近触发的执行结果。
-            </CardDescription>
+            {item.description ? (
+              <p className="tn-python-module__page-description">
+                {item.description}
+              </p>
+            ) : null}
           </div>
-          <CardAction>
-            <Button
-              variant="outline"
+          <div className="tn-python-module__schedule-detail-actions">
+            <ActionLinkButton href={`${moduleBase}/schedules`}>
+              <ArrowLeft aria-hidden="true" data-icon="inline-start" />
+              返回定时任务
+            </ActionLinkButton>
+            <ActionLinkButton href={`${moduleBase}/schedules/${item.id}/edit`}>
+              <Settings2 aria-hidden="true" data-icon="inline-start" />
+              编辑
+            </ActionLinkButton>
+            <BusyButton
               size="sm"
-              onClick={() => void executions.refetch()}
+              variant="outline"
+              pending={toggle.isPending}
+              onClick={() => toggle.mutate()}
             >
-              <RefreshCw aria-hidden="true" />
-              刷新
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          {recentExecutions.length ? (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead style={{ width: "28%" }}>执行</TableHead>
-                    <TableHead
-                      className="tn-python-module__center"
-                      style={{ width: "20%" }}
-                    >
-                      结果
-                    </TableHead>
-                    <TableHead
-                      className="tn-python-module__center"
-                      style={{ width: "26%" }}
-                    >
-                      开始时间
-                    </TableHead>
-                    <TableHead
-                      className="tn-python-module__center"
-                      style={{ width: "14%" }}
-                    >
-                      耗时
-                    </TableHead>
-                    <TableHead
-                      className="tn-python-module__right"
-                      style={{ width: "12%" }}
-                    >
-                      操作
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleRecentExecutions.map((execution) => (
-                    <TableRow key={execution.id}>
-                      <TableCell>{execution.name}</TableCell>
-                      <TableCell className="tn-python-module__center">
-                        <StatusBadge value={execution.status} />
-                      </TableCell>
-                      <TableCell className="tn-python-module__center tn-python-module__nowrap">
-                        {formatTime(
-                          execution.started_at ?? execution.created_at,
-                        )}
-                      </TableCell>
-                      <TableCell className="tn-python-module__center">
-                        {formatDuration(execution.duration_ms)}
-                      </TableCell>
-                      <TableCell className="tn-python-module__right">
-                        <ActionLinkButton
-                          href={`${moduleBase}/executions/${execution.id}`}
+              {item.enabled ? "停用" : "启用"}
+            </BusyButton>
+            <BusyButton
+              size="sm"
+              pending={run.isPending}
+              onClick={() => run.mutate()}
+            >
+              <Play aria-hidden="true" data-icon="inline-start" />
+              立即运行
+            </BusyButton>
+          </div>
+        </div>
+
+        <div className="tn-python-module__schedule-detail-stack">
+          <Card>
+            <CardHeader>
+              <CardTitle>调度概览</CardTitle>
+            </CardHeader>
+            <CardContent className="tn-python-module__schedule-overview">
+              <dl className="tn-python-module__schedule-overview-fields">
+                <div className="tn-python-module__schedule-overview-field">
+                  <dt>{isCron ? "下次运行" : "执行时间"}</dt>
+                  <dd>{formatTime(isCron ? item.next_run_at : item.run_at)}</dd>
+                </div>
+                <div className="tn-python-module__schedule-overview-field">
+                  <dt>{isCron ? "Cron 表达式" : "调度类型"}</dt>
+                  <dd>{isCron ? item.cron_expression || "—" : "一次性执行"}</dd>
+                </div>
+                <div className="tn-python-module__schedule-overview-field">
+                  <dt>时区</dt>
+                  <dd>{item.timezone || "—"}</dd>
+                </div>
+              </dl>
+              <Separator className="tn-python-module__schedule-overview-divider" />
+              <dl
+                className="tn-python-module__schedule-overview-stats"
+                aria-label="执行统计"
+              >
+                {[
+                  ["总运行", item.total_runs],
+                  ["成功", item.success_runs],
+                  ["失败", item.failed_runs],
+                ].map(([label, value]) => (
+                  <div
+                    className="tn-python-module__schedule-overview-stat"
+                    key={label}
+                  >
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>最近执行</CardTitle>
+              <CardAction>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void executions.refetch()}
+                >
+                  <RefreshCw aria-hidden="true" data-icon="inline-start" />
+                  刷新
+                </Button>
+              </CardAction>
+            </CardHeader>
+            <CardContent>
+              {recentExecutions.length ? (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead style={{ width: "28%" }}>执行</TableHead>
+                        <TableHead
+                          className="tn-python-module__center"
+                          style={{ width: "20%" }}
                         >
-                          查看
-                        </ActionLinkButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <PaginationControls
-                page={recentPage}
-                pageCount={recentPageCount}
-                summary={
-                  <>
-                    共 {recentExecutions.length} 条 · 第 {recentPage} 页
-                  </>
-                }
-                onPageChange={setRecentPage}
-              />
-            </>
-          ) : (
-            <EmptyState text="暂无执行记录。" />
-          )}
-        </CardContent>
-      </Card>
+                          结果
+                        </TableHead>
+                        <TableHead
+                          className="tn-python-module__center"
+                          style={{ width: "26%" }}
+                        >
+                          开始时间
+                        </TableHead>
+                        <TableHead
+                          className="tn-python-module__center"
+                          style={{ width: "14%" }}
+                        >
+                          耗时
+                        </TableHead>
+                        <TableHead
+                          className="tn-python-module__right"
+                          style={{ width: "12%" }}
+                        >
+                          操作
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {visibleRecentExecutions.map((execution) => (
+                        <TableRow key={execution.id}>
+                          <TableCell>{execution.name}</TableCell>
+                          <TableCell className="tn-python-module__center">
+                            <StatusBadge value={execution.status} />
+                          </TableCell>
+                          <TableCell className="tn-python-module__center tn-python-module__nowrap">
+                            {formatTime(
+                              execution.started_at ?? execution.created_at,
+                            )}
+                          </TableCell>
+                          <TableCell className="tn-python-module__center">
+                            {formatDuration(execution.duration_ms)}
+                          </TableCell>
+                          <TableCell className="tn-python-module__right">
+                            <ActionLinkButton
+                              href={`${moduleBase}/executions/${execution.id}`}
+                            >
+                              查看
+                            </ActionLinkButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <PaginationControls
+                    page={recentPage}
+                    pageCount={recentPageCount}
+                    summary={
+                      <>
+                        共 {recentExecutions.length} 条 · 第 {recentPage} 页
+                      </>
+                    }
+                    onPageChange={setRecentPage}
+                  />
+                </>
+              ) : (
+                <EmptyState
+                  text="暂无执行记录。"
+                  className="tn-python-module__schedule-empty"
+                />
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>运行配置</CardTitle>
+            </CardHeader>
+            <CardContent className="tn-python-module__schedule-detail-config">
+              <div className="tn-python-module__detail-list">
+                <div className="tn-python-module__detail-row">
+                  <span>{source.type === "archive" ? "项目" : "代码来源"}</span>
+                  <div className="tn-python-module__schedule-project-value">
+                    <strong>
+                      {source.type === "archive"
+                        ? `${projectName} · ${source.entry_file || "自动选择"}`
+                        : "内联代码"}
+                    </strong>
+                    {source.type === "archive" && projectId ? (
+                      <ActionLinkButton
+                        href={`${moduleBase}/projects/${encodeURIComponent(projectId)}`}
+                      >
+                        查看项目
+                        <ArrowRight aria-hidden="true" data-icon="inline-end" />
+                      </ActionLinkButton>
+                    ) : null}
+                  </div>
+                </div>
+                {[
+                  ["运行参数", item.args.length ? item.args.join(" ") : "无"],
+                  ["超时时间", `${item.timeout_seconds} 秒`],
+                  ["通知策略", notificationSummary],
+                ].map(([label, value]) => (
+                  <div className="tn-python-module__detail-row" key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+              {hasInlineCode ? (
+                <>
+                  <Separator className="tn-python-module__schedule-code-divider" />
+                  <Collapsible
+                    open={sourceCodeOpen}
+                    onOpenChange={setSourceCodeOpen}
+                  >
+                    <CollapsibleTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="tn-python-module__schedule-code-trigger"
+                        />
+                      }
+                    >
+                      <span>内联代码</span>
+                      <ChevronDown
+                        aria-hidden="true"
+                        data-icon="inline-end"
+                        className="tn-python-module__schedule-code-chevron"
+                      />
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="tn-python-module__schedule-code-content">
+                      {sourceCodeOpen ? (
+                        <PythonCodeEditor value={sourceCode} readOnly />
+                      ) : null}
+                    </CollapsibleContent>
+                  </Collapsible>
+                </>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </ModuleShell>
   );
 }
@@ -6588,6 +6790,7 @@ function SchedulesPage({
   const [deleteTarget, setDeleteTarget] = useState<ScheduledTask | null>(null);
   const [pending, setPending] = useState<string>();
   const [validationError, setValidationError] = useState("");
+  const [securityConfirmOpen, setSecurityConfirmOpen] = useState(false);
   const changeSourceType = (sourceType: "inline" | "archive") => {
     setSecurity(null);
     setValidationError("");
@@ -6620,10 +6823,14 @@ function SchedulesPage({
     setPage(1);
   }, [keyword, status]);
   const save = useMutation({
-    mutationFn: () =>
-      form.id
-        ? updateSchedule(form.id, schedulePayload(form))
-        : createSchedule(schedulePayload(form)),
+    mutationFn: (
+      override?: Pick<ScheduleFormState, "riskConfirmed" | "securityScanId">,
+    ) => {
+      const payloadForm = override ? { ...form, ...override } : form;
+      return form.id
+        ? updateSchedule(form.id, schedulePayload(payloadForm))
+        : createSchedule(schedulePayload(payloadForm));
+    },
     onSuccess: (saved) => {
       setForm(emptyScheduleForm());
       setSecurity(null);
@@ -6641,9 +6848,29 @@ function SchedulesPage({
           riskConfirmed: false,
           securityScanId: next.scan_id,
         }));
+        if (!form.id && ["medium", "high"].includes(next.risk_level)) {
+          setSecurityConfirmOpen(true);
+        }
       }
     },
   });
+  const handleSave = () => {
+    const error = validateScheduleForm(form);
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    if (!archiveEnvironmentReady) {
+      setValidationError("项目虚拟环境尚未就绪，请先创建项目虚拟环境。");
+      return;
+    }
+    setValidationError("");
+    if (!form.id && ["medium", "high"].includes(activeSecurity?.risk_level ?? "")) {
+      setSecurityConfirmOpen(true);
+      return;
+    }
+    save.mutate();
+  };
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       toggleSchedule(id, enabled),
@@ -6786,7 +7013,8 @@ function SchedulesPage({
       description="按 Cron 或一次性时间运行 Python。"
     >
       {isEditor ? (
-        <Card>
+        <>
+          <Card>
           <CardHeader>
             <div>
               <CardTitle>{form.id ? "编辑定时任务" : "创建定时任务"}</CardTitle>
@@ -7187,6 +7415,7 @@ function SchedulesPage({
               <SecurityConfirmation
                 scan={activeSecurity}
                 checked={form.riskConfirmed}
+                showRiskWarning={Boolean(form.id)}
                 onChange={(riskConfirmed) =>
                   setForm((current) => ({ ...current, riskConfirmed }))
                 }
@@ -7208,21 +7437,7 @@ function SchedulesPage({
               <BusyButton
                 pending={save.isPending}
                 disabled={securityBlocked || !archiveEnvironmentReady}
-                onClick={() => {
-                  const error = validateScheduleForm(form);
-                  if (error) {
-                    setValidationError(error);
-                    return;
-                  }
-                  if (!archiveEnvironmentReady) {
-                    setValidationError(
-                      "项目虚拟环境尚未就绪，请先创建项目虚拟环境。",
-                    );
-                    return;
-                  }
-                  setValidationError("");
-                  save.mutate();
-                }}
+                onClick={handleSave}
               >
                 <CheckCircle2 aria-hidden="true" />
                 {form.id ? "保存任务" : "创建任务"}
@@ -7244,7 +7459,37 @@ function SchedulesPage({
               <ErrorState error={save.error} title="定时任务保存失败" />
             ) : null}
           </CardContent>
-        </Card>
+          </Card>
+          <ConfirmDialog
+          open={securityConfirmOpen}
+          onOpenChange={(open) => {
+            if (!open && !save.isPending) setSecurityConfirmOpen(false);
+          }}
+          title="确认创建定时任务"
+          description={
+            activeSecurity
+              ? `安全扫描发现 ${securityIssueCount(activeSecurity)} 项${statusText(activeSecurity.risk_level)}问题。确认当前扫描结果和代码来源可信，并继续创建定时任务吗？`
+              : "当前安全扫描结果需要确认。确认代码来源可信并继续创建定时任务吗？"
+          }
+          confirmLabel="确认创建"
+          pending={save.isPending}
+          onConfirm={() => {
+            const scanId = activeSecurity?.scan_id ?? form.securityScanId;
+            if (!scanId) {
+              setSecurityConfirmOpen(false);
+              setValidationError("安全扫描结果已失效，请重新扫描后再确认。");
+              return;
+            }
+            setSecurityConfirmOpen(false);
+            setForm((current) => ({
+              ...current,
+              riskConfirmed: true,
+              securityScanId: scanId,
+            }));
+            save.mutate({ riskConfirmed: true, securityScanId: scanId });
+          }}
+          />
+        </>
       ) : (
         <Card>
           <CardHeader>

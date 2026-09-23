@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { Utf8StreamDecoder } from './utf8-stream.js'
 import { config } from './config.js'
 import { Database } from './db.js'
 import { newId } from './ids.js'
@@ -28,7 +29,7 @@ export interface PersistentTask {
   id: string; name: string; description: string; code: string; source_type: string; source_config: Record<string, unknown>; source: ExecutionSource; args: string[]; runtime_environment: string; working_directory: string | null; status: string; auto_start: boolean; restart_policy: string; restart_delay_seconds: number; max_restart_count: number; notification_config: NotificationConfig; current_execution_id: string | null; pid: number | null; started_at: string | null; stopped_at: string | null; last_heartbeat_at: string | null; restart_count: number; last_exit_code: number | null; last_error: string | null; created_at: string; updated_at: string
 }
 
-interface ActiveProcess { child: ChildProcess; taskId: string; workspace: string; logPath: string; stopping: boolean }
+interface ActiveProcess { child: ChildProcess; taskId: string; workspace: string; logPath: string; stopping: boolean; outputQueue: Promise<void> }
 
 export class PersistentManager {
   private readonly active = new Map<string, ActiveProcess>()
@@ -107,14 +108,19 @@ export class PersistentManager {
     const logPath = path.join(config.logDir, 'persistent', `${id}.log`)
     await mkdir(path.dirname(logPath), { recursive: true })
     const child = spawn(executable, [path.join(workspace, safeRelative(entryFile)), ...task.args], { cwd, env: executionEnvironment(id, workspace), detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], shell: false, windowsHide: true })
-    const active: ActiveProcess = { child, taskId: id, workspace, logPath, stopping: false }
+    const active: ActiveProcess = { child, taskId: id, workspace, logPath, stopping: false, outputQueue: Promise.resolve() }
     this.active.set(id, active)
     await this.db.query('UPDATE pr_persistent_tasks SET status = \'running\', pid = $1, started_at = NOW(), stopped_at = NULL, last_heartbeat_at = NOW(), last_error = NULL, updated_at = NOW() WHERE id = $2', [child.pid ?? null, id])
     await this.event(id, 'started', 'stopped', 'running', '常驻任务已启动')
-    child.stdout?.on('data', (chunk: Buffer) => void appendOutput(active, chunk.toString('utf8')))
-    child.stderr?.on('data', (chunk: Buffer) => void appendOutput(active, chunk.toString('utf8')))
-    child.once('exit', (code) => void this.onExit(active, code))
-    child.once('error', (error) => void this.onExit(active, -1, error.message))
+    const stdoutDecoder = new Utf8StreamDecoder()
+    const stderrDecoder = new Utf8StreamDecoder()
+    child.stdout?.on('data', (chunk: Buffer) => queueOutput(active, stdoutDecoder.write(chunk)))
+    child.stderr?.on('data', (chunk: Buffer) => queueOutput(active, stderrDecoder.write(chunk)))
+    child.stdout?.once('end', () => queueOutput(active, stdoutDecoder.end()))
+    child.stderr?.once('end', () => queueOutput(active, stderrDecoder.end()))
+    let processError: string | undefined
+    child.once('error', (error) => { processError = error.message })
+    child.once('close', (code) => void this.onExit(active, code, processError))
     return this.get(id)
   }
 
@@ -157,6 +163,7 @@ export class PersistentManager {
   private async onExit(active: ActiveProcess, code: number | null, error?: string): Promise<void> {
     if (this.active.get(active.taskId)?.child !== active.child) return
     this.active.delete(active.taskId)
+    await active.outputQueue
     const task = await this.get(active.taskId).catch(() => null)
     if (!task) return
     const nextStatus = active.stopping ? 'stopped' : code === 0 ? 'stopped' : 'failed'
@@ -180,7 +187,8 @@ function validateInput(input: PersistentInput): void { if (!input.name?.trim()) 
 function safeRelative(value: string): string { const normalized = value.replaceAll('\\', '/').trim(); if (!normalized || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').some((part) => !part || part === '.' || part === '..')) throw new Error('任务路径必须位于项目目录内。'); return normalized }
 async function copyDirectory(source: string, destination: string): Promise<void> { await mkdir(destination, { recursive: true }); const { readdir, readFile, writeFile } = await import('node:fs/promises'); for (const entry of await readdir(source, { withFileTypes: true })) { const from = path.join(source, entry.name); const to = path.join(destination, entry.name); if (entry.isDirectory()) await copyDirectory(from, to); else if (entry.isFile()) await writeFile(to, await readFile(from), { flag: 'wx' }) } }
 async function appendOutput(active: ActiveProcess, content: string): Promise<void> { await appendFile(active.logPath, content, 'utf8').catch(() => undefined); const size = await stat(active.logPath).then((value) => value.size).catch(() => 0); if (size > 5 * 1024 * 1024) { const data = await readFile(active.logPath, 'utf8').catch(() => ''); await writeFile(active.logPath, data.slice(-5 * 1024 * 1024), 'utf8') } }
-function executionEnvironment(id: string, workspace: string): NodeJS.ProcessEnv { return { PATH: process.env.PATH, PATHEXT: process.env.PATHEXT, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, PYTHONUNBUFFERED: '1', TOOLNEST_EXECUTION_ID: id, TOOLNEST_EXECUTION_WORKSPACE: workspace } }
+function queueOutput(active: ActiveProcess, content: string): void { if (content) active.outputQueue = active.outputQueue.then(() => appendOutput(active, content)).catch(() => undefined) }
+function executionEnvironment(id: string, workspace: string): NodeJS.ProcessEnv { return { PATH: process.env.PATH, PATHEXT: process.env.PATHEXT, SystemRoot: process.env.SystemRoot, TEMP: process.env.TEMP, TMP: process.env.TMP, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', TOOLNEST_EXECUTION_ID: id, TOOLNEST_EXECUTION_WORKSPACE: workspace } }
 async function isFile(filePath: string): Promise<boolean> { return stat(filePath).then((value) => value.isFile()).catch(() => false) }
 async function isDirectory(filePath: string): Promise<boolean> { return stat(filePath).then((value) => value.isDirectory()).catch(() => false) }
 async function killProcess(child: ChildProcess): Promise<void> { if (!child.pid) return; if (process.platform === 'win32') { await new Promise<void>((resolve) => { const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); killer.once('exit', () => resolve()); killer.once('error', () => resolve()) }); return } try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill('SIGTERM') } }
