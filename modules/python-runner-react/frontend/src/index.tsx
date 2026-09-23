@@ -69,7 +69,7 @@ function route(path: string, page: PythonRunnerPage) {
 
 const module: ToolNestReactFrontendModule = {
   id: "python-runner",
-  version: "2.0.7",
+  version: "2.0.8",
   layout: { content: "padded" },
   install(context: ToolNestModuleContext) {
     setPythonRunnerApi(context.apiClient);
