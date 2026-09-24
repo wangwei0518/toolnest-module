@@ -10,36 +10,36 @@
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-10-1-45bacf7 发布。",
+      "release_notes": "由 module-release-11-1-525e3e0 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-23T10:55:42.472Z",
+      "published_at": "2026-09-24T02:26:35.300Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-10-1-45bacf7/anime-calendar-react-0.1.34.tnmod",
-        "sha256": "91eee1f1c768a1e41302cdb584271c023b2c66315fb98366c50315e7d72c325a",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-11-1-525e3e0/anime-calendar-react-0.1.34.tnmod",
+        "sha256": "53bfa6acaace98f1f3a19758985a4c3b6e99bf0abb79898ea963a1ec5cb3b995",
         "size_bytes": 777176
       }
     },
     {
       "id": "python-runner",
       "name": "Python 工具",
-      "version": "2.0.8",
+      "version": "2.0.9",
       "description": "本地 Python 项目运行、调度和环境管理。",
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-10-1-45bacf7 发布。",
+      "release_notes": "由 module-release-11-1-525e3e0 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-23T10:55:42.474Z",
+      "published_at": "2026-09-24T02:26:35.302Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-10-1-45bacf7/python-runner-2.0.8.tnmod",
-        "sha256": "17d81f82659c1990db8ec8b125b70a317eae8bb9ac54cecb60108e4f56e69a05",
-        "size_bytes": 1417428
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-11-1-525e3e0/python-runner-2.0.9.tnmod",
+        "sha256": "2c2d0d5a4d43bbfccea3ed4da443d4e50fcc5d07b0aa94a4cbcad1e9246cc2bd",
+        "size_bytes": 1417430
       }
     },
     {
@@ -50,15 +50,15 @@
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-10-1-45bacf7 发布。",
+      "release_notes": "由 module-release-11-1-525e3e0 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-23T10:55:42.476Z",
+      "published_at": "2026-09-24T02:26:35.304Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-10-1-45bacf7/workflow-tickets-react-0.1.85.tnmod",
-        "sha256": "6ea830cfe0095ac84668be6284b8a1bfc18988c38d3078ca193a2172f7d97451",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-11-1-525e3e0/workflow-tickets-react-0.1.85.tnmod",
+        "sha256": "113cdc208491ad51c7031d3542e923fd56ab1c00fc0f558c6a7544d7dac616b3",
         "size_bytes": 764555
       }
     }
