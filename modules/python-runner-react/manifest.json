@@ -12,7 +12,7 @@
     "kind": "node",
     "entry": "backend/dist/main.js",
     "transport": "http",
-    "startup": "lazy",
+    "startup": "eager",
     "startup_timeout_ms": 15000,
     "shutdown_timeout_ms": 20000,
     "request_timeout_ms": 120000,
