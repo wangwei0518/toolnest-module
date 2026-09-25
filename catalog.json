@@ -5,61 +5,61 @@
     {
       "id": "anime-calendar-react",
       "name": "新番日历",
-      "version": "0.1.34",
+      "version": "0.1.35",
       "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-11-1-525e3e0 发布。",
+      "release_notes": "由 module-release-12-1-515a35d 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-24T02:26:35.300Z",
+      "published_at": "2026-09-25T13:55:49.696Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-11-1-525e3e0/anime-calendar-react-0.1.34.tnmod",
-        "sha256": "53bfa6acaace98f1f3a19758985a4c3b6e99bf0abb79898ea963a1ec5cb3b995",
-        "size_bytes": 777176
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-12-1-515a35d/anime-calendar-react-0.1.35.tnmod",
+        "sha256": "8d40695e6a4bda59a4e933ec057b5571d395b45533281020becbc6558dc80b89",
+        "size_bytes": 777177
       }
     },
     {
       "id": "python-runner",
       "name": "Python 工具",
-      "version": "2.0.9",
+      "version": "2.0.10",
       "description": "本地 Python 项目运行、调度和环境管理。",
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-11-1-525e3e0 发布。",
+      "release_notes": "由 module-release-12-1-515a35d 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-24T02:26:35.302Z",
+      "published_at": "2026-09-25T13:55:49.698Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-11-1-525e3e0/python-runner-2.0.9.tnmod",
-        "sha256": "2c2d0d5a4d43bbfccea3ed4da443d4e50fcc5d07b0aa94a4cbcad1e9246cc2bd",
-        "size_bytes": 1417430
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-12-1-515a35d/python-runner-2.0.10.tnmod",
+        "sha256": "b509f40c287d6b57173ae828bad9e25cdfc4c070fb2e05a81a74f8a3edb3ec09",
+        "size_bytes": 1417432
       }
     },
     {
       "id": "workflow-tickets-react",
       "name": "工单模板",
-      "version": "0.1.85",
+      "version": "0.1.86",
       "description": "工作流工单与项目协作",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-11-1-525e3e0 发布。",
+      "release_notes": "由 module-release-12-1-515a35d 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-24T02:26:35.304Z",
+      "published_at": "2026-09-25T13:55:49.700Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-11-1-525e3e0/workflow-tickets-react-0.1.85.tnmod",
-        "sha256": "113cdc208491ad51c7031d3542e923fd56ab1c00fc0f558c6a7544d7dac616b3",
-        "size_bytes": 764555
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-12-1-515a35d/workflow-tickets-react-0.1.86.tnmod",
+        "sha256": "58901c013eb497a7ca84b6ef9d925b0f3b8ae3c3eba856a42726b448532e39d7",
+        "size_bytes": 764556
       }
     }
   ]

@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "python-runner",
   "name": "Python 工具",
-  "version": "2.0.9",
+  "version": "2.0.10",
   "description": "本地 Python 项目运行、调度和环境管理。",
   "author": "ToolNest",
   "icon": "code",
