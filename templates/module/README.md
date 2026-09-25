@@ -36,7 +36,7 @@
 
 ## 开发边界
 
-- 模块源码位于 `module-react/{{MODULE_ID}}/`，不要放入旧 Vue 的 `modules/` 目录。
+- 模块源码位于 `modules/{{MODULE_ID}}/`。
 - React 模块只能注册一个主菜单入口；更多页面使用模块内部路由和导航。
 - 前端通过 `@toolnest/react-module-sdk` 使用宿主能力，不能导入 `frontend-react/src` 的私有路径。
 - 后端以独立 Node 进程运行；只通过平台网关提供业务 API。
@@ -49,10 +49,10 @@
 
 ```bash
 pnpm install
-pnpm --dir module-react/{{MODULE_ID}}/frontend typecheck
-pnpm --dir module-react/{{MODULE_ID}}/frontend build
-pnpm --dir module-react/{{MODULE_ID}}/backend typecheck
-pnpm --dir module-react/{{MODULE_ID}}/backend build
+pnpm --dir modules/{{MODULE_ID}}/frontend typecheck
+pnpm --dir modules/{{MODULE_ID}}/frontend build
+pnpm --dir modules/{{MODULE_ID}}/backend typecheck
+pnpm --dir modules/{{MODULE_ID}}/backend build
 pnpm ui:check
 ```
 

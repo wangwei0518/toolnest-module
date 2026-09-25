@@ -1,6 +1,6 @@
 # Python Runner React 模块
 
-这是面向 ToolNest React 平台的新 Python Runner 实现，与旧 Vue 模块 `modules/python-runner` 分开维护。
+这是面向 ToolNest React 平台的 Python Runner 运行时模块。
 
 当前版本已包含：
 

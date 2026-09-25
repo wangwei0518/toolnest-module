@@ -2,7 +2,7 @@
 
 工作流工单与项目协作
 
-这是旧版 `modules/workflow-tickets` 内置/Vue 模块的 React runtime 迁移实现，保留工单、流程模板、节点运行、日程、项目/里程碑、定时任务、通知规则、自动化和数据迁移能力。模块使用独立 Node 进程和 `TOOLNEST_PLUGIN_DATA_DIR` 下的 JSON 数据存储，业务请求统一经过平台 Gateway。
+这是 ToolNest React 运行时的工单与项目协作模块，提供工单、流程模板、节点运行、日程、项目/里程碑、定时任务、通知规则、自动化和数据迁移能力。模块使用独立 Node 进程和 `TOOLNEST_PLUGIN_DATA_DIR` 下的 JSON 数据存储，业务请求统一经过平台 Gateway。
 
 ## 目录结构
 
@@ -35,7 +35,7 @@ workflow-tickets-react/
 
 ## 开发边界
 
-- 模块源码位于 `module-react/workflow-tickets-react/`，不要放入旧 Vue 的 `modules/` 目录。
+- 模块源码位于 `modules/workflow-tickets-react/`。
 - React 模块只能注册一个主菜单入口；更多页面使用模块内部路由和导航。
 - 前端通过 `@toolnest/react-module-sdk` 使用宿主能力，不能导入 `frontend-react/src` 的私有路径。
 - 后端以独立 Node 进程运行；只通过平台网关提供业务 API。
@@ -48,12 +48,12 @@ workflow-tickets-react/
 
 ```bash
 pnpm install
-pnpm --dir module-react/workflow-tickets-react/frontend typecheck
-pnpm --dir module-react/workflow-tickets-react/frontend build
-pnpm --dir module-react/workflow-tickets-react/backend typecheck
-pnpm --dir module-react/workflow-tickets-react/backend build
+pnpm --dir modules/workflow-tickets-react/frontend typecheck
+pnpm --dir modules/workflow-tickets-react/frontend build
+pnpm --dir modules/workflow-tickets-react/backend typecheck
+pnpm --dir modules/workflow-tickets-react/backend build
 pnpm ui:check
-pnpm --dir module-react/workflow-tickets-react/backend exec tsx --test test/service.test.ts
+pnpm --dir modules/workflow-tickets-react/backend exec tsx --test test/service.test.ts
 ```
 
 打包和应用：

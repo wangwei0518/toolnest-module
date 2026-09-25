@@ -2,9 +2,9 @@
 
 ToolNest React 模块的运行时契约。模块入口默认导出 `ToolNestReactFrontendModule`，在 `install` 中通过上下文注册路由、菜单、权限和 Dashboard widget。
 
-路由使用模块相对路径（`''`、`'settings'`），平台会统一挂载到 `/modules/<moduleId>/...`；菜单使用绝对路径。模块入口不依赖旧 Vue SDK，也不要直接修改平台路由。React 运行时和平台批准的公共依赖由 Host 以共享 Runtime ESM 提供，模块只需要把业务依赖打进自己的入口或相对 chunk。
+路由使用模块相对路径（`''`、`'settings'`），平台会统一挂载到 `/modules/<moduleId>/...`；菜单使用绝对路径。模块入口只依赖 React Module SDK，不要直接修改平台路由。React 运行时和平台批准的公共依赖由 Host 以共享 Runtime ESM 提供，模块只需要把业务依赖打进自己的入口或相对 chunk。
 
-对应 `manifest.json` 的 `frontend` 必须显式声明 `"framework": "react"`。未声明的既有模块按 Vue 处理，不会被 React 平台错误地当作 React bundle 执行。
+对应 `manifest.json` 的 `frontend` 必须显式声明 `"framework": "react"`；未声明或使用其他前端框架的模块会被平台拒绝加载。
 
 模块实例由 `(moduleId, releaseId)` 标识。`install(context)` 收到的上下文包含 `releaseId` 和 `AbortSignal`；模块发起的请求应使用 `context.apiClient`，定时器、事件监听器、WebSocket、轮询和自建 Store 应通过 `context.onDispose()` 注册清理。
 

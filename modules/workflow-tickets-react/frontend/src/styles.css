@@ -1326,7 +1326,7 @@
   display: none;
 }
 
-/* Workflow designer: keep the legacy Vue workspace geometry while using the React token set. */
+/* Workflow designer: keep the existing workspace geometry while using the React token set. */
 .tn-workflow-tickets-react:has(.tn-workflow-tickets-workflow-designer-page) {
   height: 100%;
   min-height: 0;

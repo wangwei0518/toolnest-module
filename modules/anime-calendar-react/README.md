@@ -10,7 +10,7 @@ ToolNest React 运行时模块。按档期与星期浏览 Bangumi 新番数据�
 - Dashboard 小组件：今日放送摘要与模块快捷入口。
 - 缓存与标记：模块数据目录内原子写入 JSON；关注标记独立于上游缓存，刷新不会覆盖。
 
-完整迁移拆解、旧模块行为矩阵和优化决策见 [`MIGRATION_ANALYSIS.md`](./MIGRATION_ANALYSIS.md)。
+模块行为和优化决策以当前实现、测试和平台运行时契约为准。
 
 ## 数据与运行边界
 
