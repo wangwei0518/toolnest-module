@@ -67,6 +67,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   const [advancedDraft, setAdvancedDraft] = useState("");
   const [advancedQuery, setAdvancedQuery] = useState("");
   const advancedTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const advancedSelectionRef = useRef<{ start: number; end: number; scrollTop: number } | null>(null);
   const [draggingId, setDraggingId] = useState("");
   const [dropId, setDropId] = useState("");
   const [error, setError] = useState("");
@@ -100,6 +101,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
     if (!active) return;
     setAdvancedKind(kind); setAdvancedFieldId(active.id); setAdvancedQuery("");
     setAdvancedDraft(kind === "execution" ? String(active.config?.execution_template ?? "") : active.default_template ?? "");
+    advancedSelectionRef.current = null;
     setAdvancedOpen(true);
   };
   const applyAdvancedEditor = () => {
@@ -109,14 +111,29 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
     else setField(field.id, { default_template: advancedDraft });
     setAdvancedOpen(false);
   };
+  const rememberAdvancedSelection = () => {
+    const textarea = advancedTextareaRef.current;
+    if (!textarea) return;
+    advancedSelectionRef.current = { start: textarea.selectionStart, end: textarea.selectionEnd, scrollTop: textarea.scrollTop };
+  };
   const insertVariable = (variable: FormVariable) => {
     const textarea = advancedTextareaRef.current;
-    const start = textarea?.selectionStart ?? advancedDraft.length;
-    const end = textarea?.selectionEnd ?? start;
+    const selection = advancedSelectionRef.current;
+    const start = selection?.start ?? textarea?.selectionStart ?? advancedDraft.length;
+    const end = selection?.end ?? textarea?.selectionEnd ?? start;
+    const scrollTop = selection?.scrollTop ?? textarea?.scrollTop ?? 0;
     const token = `{{ ${variable.value} }}`;
     const next = `${advancedDraft.slice(0, start)}${token}${advancedDraft.slice(end)}`;
+    advancedSelectionRef.current = null;
     setAdvancedDraft(next);
-    window.requestAnimationFrame(() => { textarea?.focus(); textarea?.setSelectionRange(start + token.length, start + token.length); });
+    window.requestAnimationFrame(() => {
+      const current = advancedTextareaRef.current;
+      if (!current) return;
+      const caret = start + token.length;
+      current.focus();
+      current.setSelectionRange(caret, caret);
+      current.scrollTop = Math.min(scrollTop, Math.max(0, current.scrollHeight - current.clientHeight));
+    });
   };
   const addField = () => {
     let number = fields.length + 1;
@@ -252,7 +269,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
       <DialogHeader className="shrink-0"><DialogTitle>{advancedKind === "execution" ? "执行脚本模板" : "动态默认值"} · {fields.find((field) => field.id === advancedFieldId)?.label ?? "字段模板"}</DialogTitle><DialogDescription>支持 <code>{"{{ 字段路径 }}"}</code>，也可以从右侧插入工单或前序节点变量。</DialogDescription></DialogHeader>
       <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_auto] content-start gap-4 overflow-y-auto md:grid-rows-1 md:content-normal md:grid-cols-[minmax(0,1fr)_minmax(14rem,0.45fr)] md:overflow-hidden">
         <Field className="min-w-0 md:min-h-0 md:flex-1"><FieldLabel>{advancedKind === "execution" ? "脚本内容" : "模板内容"}</FieldLabel><Textarea ref={advancedTextareaRef} className="tn-workflow-tickets-template-editor-textarea min-w-0 overflow-y-auto font-mono" rows={14} value={advancedDraft} onChange={(event) => setAdvancedDraft(event.target.value)} placeholder="输入模板内容，或从右侧插入动态字段" />{advancedKind === "execution" ? <FieldDescription className="grid gap-1.5 leading-5"><span>Ubuntu 执行：保存节点后，在工单详情中复制临时脚本链接。请先下载并检查脚本，再执行：</span><code className="block break-all rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-[0.7rem]">curl -fL '脚本链接' -o run.sh && sed -i 's/\r$//' run.sh && chmod 700 run.sh && bash ./run.sh</code><span>Python 脚本使用 <code>python3 run.py</code>；链接有效期和访问次数受下方配置限制。</span></FieldDescription> : null}</Field>
-        <div className="grid min-h-0 min-w-0 content-start gap-2 overflow-y-auto"><Input value={advancedQuery} onChange={(event) => setAdvancedQuery(event.target.value)} placeholder="搜索可用变量" aria-label="搜索可用变量" /><div className="max-h-72 space-y-3 overflow-y-auto">{[...new Set(templateVariables.map((item) => item.group))].map((group) => { const items = templateVariables.filter((item) => item.group === group && `${item.label} ${item.value} ${item.group}`.toLowerCase().includes(advancedQuery.trim().toLowerCase())); return items.length ? <section key={group}><h3 className="mb-1 text-xs font-semibold text-muted-foreground">{group}</h3><div className="grid gap-1">{items.map((item) => <Button key={item.value} className="h-auto justify-start whitespace-normal px-2 py-1.5 text-left" size="sm" variant="ghost" onClick={() => insertVariable(item)}><span><strong className="block text-xs">{item.label}</strong><code className="text-[0.65rem] text-muted-foreground">{item.value}</code></span></Button>)}</div></section> : null; })}</div></div>
+        <div className="grid min-h-0 min-w-0 content-start gap-2 overflow-y-auto"><Input value={advancedQuery} onChange={(event) => setAdvancedQuery(event.target.value)} placeholder="搜索可用变量" aria-label="搜索可用变量" /><div className="max-h-72 space-y-3 overflow-y-auto">{[...new Set(templateVariables.map((item) => item.group))].map((group) => { const items = templateVariables.filter((item) => item.group === group && `${item.label} ${item.value} ${item.group}`.toLowerCase().includes(advancedQuery.trim().toLowerCase())); return items.length ? <section key={group}><h3 className="mb-1 text-xs font-semibold text-muted-foreground">{group}</h3><div className="grid gap-1">{items.map((item) => <Button key={item.value} className="h-auto justify-start whitespace-normal px-2 py-1.5 text-left" size="sm" variant="ghost" onMouseDown={rememberAdvancedSelection} onClick={() => insertVariable(item)}><span><strong className="block text-xs">{item.label}</strong><code className="text-[0.65rem] text-muted-foreground">{item.value}</code></span></Button>)}</div></section> : null; })}</div></div>
       </div>
       <DialogFooter className="shrink-0"><Button variant="outline" onClick={() => setAdvancedOpen(false)}>取消</Button><Button onClick={applyAdvancedEditor}>应用修改</Button></DialogFooter>
     </DialogContent>
