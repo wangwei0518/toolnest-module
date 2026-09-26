@@ -228,6 +228,52 @@ function rewriteFieldPaths<T>(value: T, idChanges: Record<string, string>): T {
   return value;
 }
 
+function layoutWorkflowNodes(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowNode[] {
+  const nodeIndexes = new Map(nodes.map((node, index) => [node.id, index]));
+  const outgoing = new Map<string, string[]>();
+  const indegree = new Map(nodes.map((node) => [node.id, 0]));
+  for (const edge of edges) {
+    if (!nodeIndexes.has(edge.source_node_id) || !nodeIndexes.has(edge.target_node_id) || edge.source_node_id === edge.target_node_id) continue;
+    const targets = outgoing.get(edge.source_node_id) ?? [];
+    if (targets.includes(edge.target_node_id)) continue;
+    targets.push(edge.target_node_id);
+    outgoing.set(edge.source_node_id, targets);
+    indegree.set(edge.target_node_id, (indegree.get(edge.target_node_id) ?? 0) + 1);
+  }
+
+  const layers = new Map<string, number>();
+  const queue = nodes.filter((node) => indegree.get(node.id) === 0).map((node) => node.id);
+  queue.forEach((nodeId) => layers.set(nodeId, 0));
+  while (queue.length) {
+    const nodeId = queue.shift() as string;
+    const layer = layers.get(nodeId) ?? 0;
+    for (const targetId of outgoing.get(nodeId) ?? []) {
+      layers.set(targetId, Math.max(layers.get(targetId) ?? 0, layer + 1));
+      const nextIndegree = (indegree.get(targetId) ?? 0) - 1;
+      indegree.set(targetId, nextIndegree);
+      if (nextIndegree === 0) queue.push(targetId);
+    }
+  }
+
+  const lastLayer = Math.max(0, ...layers.values());
+  nodes.forEach((node, index) => {
+    if (!layers.has(node.id)) layers.set(node.id, lastLayer + 1 + index);
+  });
+  const rowsByLayer = new Map<number, WorkflowNode[]>();
+  nodes.forEach((node) => {
+    const layer = layers.get(node.id) ?? 0;
+    rowsByLayer.set(layer, [...(rowsByLayer.get(layer) ?? []), node]);
+  });
+  const positions = new Map<string, Point>();
+  for (const [layer, rowNodes] of rowsByLayer) {
+    rowNodes.sort((left, right) => (nodeIndexes.get(left.id) ?? 0) - (nodeIndexes.get(right.id) ?? 0));
+    rowNodes.forEach((node, row) => {
+      positions.set(node.id, { x: 80 + layer * 260, y: 120 + row * (nodeHeight + 48) });
+    });
+  }
+  return nodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position }));
+}
+
 function formatDate(value?: string | null): string {
   return value ? new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "未设置";
 }
@@ -422,13 +468,13 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   ], [formAncestors]);
   const sectionMeta = sectionItems.find((item) => item.key === activeSection);
 
-  const fitCanvas = () => {
+  const fitCanvas = (layoutNodes = nodes) => {
     const canvas = canvasRef.current;
-    if (!canvas || !nodes.length) return;
-    const minX = Math.min(...nodes.map((node) => node.position.x));
-    const minY = Math.min(...nodes.map((node) => node.position.y));
-    const maxX = Math.max(...nodes.map((node) => node.position.x + nodeWidth));
-    const maxY = Math.max(...nodes.map((node) => node.position.y + nodeHeight));
+    if (!canvas || !layoutNodes.length) return;
+    const minX = Math.min(...layoutNodes.map((node) => node.position.x));
+    const minY = Math.min(...layoutNodes.map((node) => node.position.y));
+    const maxX = Math.max(...layoutNodes.map((node) => node.position.x + nodeWidth));
+    const maxY = Math.max(...layoutNodes.map((node) => node.position.y + nodeHeight));
     const availableWidth = Math.max(260, canvas.clientWidth - 520);
     const availableHeight = Math.max(260, canvas.clientHeight - 150);
     const nextZoom = Math.min(1, Math.max(0.35, Math.min(availableWidth / Math.max(1, maxX - minX), availableHeight / Math.max(1, maxY - minY))));
@@ -465,7 +511,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     return () => { active = false; };
   }, [api]);
   useEffect(() => {
-    if (!loading) window.requestAnimationFrame(fitCanvas);
+    if (!loading) window.requestAnimationFrame(() => fitCanvas());
   }, [loading, versionId, nodes.length]);
 
   const updateWorkflow = async (nextNodes: WorkflowNode[], nextEdges = edges, extra: Record<string, unknown> = {}) => {
@@ -600,9 +646,9 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const autoLayout = async () => {
     if (readOnly) return;
-    const nextNodes = nodes.map((node, index) => ({ ...node, position: { x: 80 + index * 260, y: 120 } }));
+    const nextNodes = layoutWorkflowNodes(nodes, edges);
     await updateWorkflow(nextNodes, edges);
-    window.requestAnimationFrame(fitCanvas);
+    window.requestAnimationFrame(() => fitCanvas(nextNodes));
   };
 
   const publish = async () => {
@@ -855,7 +901,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const resetZoom = () => {
     hideNodePreview();
     setZoom(1);
-    window.requestAnimationFrame(fitCanvas);
+    window.requestAnimationFrame(() => fitCanvas());
   };
 
   const handleCanvasWheel = (event: React.WheelEvent<HTMLElement>) => {
