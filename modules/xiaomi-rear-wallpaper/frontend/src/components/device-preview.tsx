@@ -5,8 +5,8 @@ import type { CropRect } from "../types";
 
 const referenceAssetName = "xiaomi-rear-display-reference.png";
 const phoneReference = import.meta.env.DEV
-  ? `/${referenceAssetName}`
-  : new URL(`./${referenceAssetName}`, import.meta.url).href;
+  ? `${new URL(import.meta.url).origin}/${referenceAssetName}`
+  : new URL(referenceAssetName, import.meta.url).href;
 
 const { width: frameWidth, height: frameHeight, display: displayRegion } = deviceProfile.reference;
 const display = {
