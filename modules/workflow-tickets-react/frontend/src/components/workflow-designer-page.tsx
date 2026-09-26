@@ -712,8 +712,10 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
       startConnectionDrag(event as React.PointerEvent<HTMLSpanElement>, node, connectionSide);
       return;
     }
-    if (readOnly || event.button !== 0 || target !== event.currentTarget) return;
+    const interactiveTarget = target.closest("button, input, textarea, select, a, [contenteditable='true']");
+    if (readOnly || event.button !== 0 || (interactiveTarget && interactiveTarget !== event.currentTarget)) return;
     hideNodePreview();
+    event.preventDefault();
     event.stopPropagation();
     setSelectedId(node.id);
     setSelectedEdgeId("");
