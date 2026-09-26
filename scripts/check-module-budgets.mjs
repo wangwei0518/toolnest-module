@@ -21,6 +21,7 @@ const moduleBudgets = {
   'anime-calendar-react': { totalJsGzip: 160 * kib, largestAsyncJsGzip: 120 * kib, packageBytes: 3 * mib, unpackedBytes: 6 * mib },
   'python-runner': { totalJsGzip: 1_050 * kib, largestAsyncJsGzip: 800 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
   'workflow-tickets-react': { totalJsGzip: 600 * kib, largestAsyncJsGzip: 200 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
+  'xiaomi-rear-wallpaper': { packageBytes: 12 * mib, unpackedBytes: 24 * mib },
 }
 
 let failed = false

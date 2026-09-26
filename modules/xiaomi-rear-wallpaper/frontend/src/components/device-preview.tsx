@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-import phoneReference from "@/assets/xiaomi-rear-display-reference.png";
 import { deviceProfile } from "@/lib/device-profile";
 import type { CropRect } from "../types";
+
+const referenceAssetName = "xiaomi-rear-display-reference.png";
+const phoneReference = import.meta.env.DEV
+  ? `/${referenceAssetName}`
+  : new URL(`./${referenceAssetName}`, import.meta.url).href;
 
 const { width: frameWidth, height: frameHeight, display: displayRegion } = deviceProfile.reference;
 const display = {
