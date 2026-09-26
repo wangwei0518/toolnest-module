@@ -71,7 +71,8 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   const [draggingId, setDraggingId] = useState("");
   const [dropId, setDropId] = useState("");
   const [error, setError] = useState("");
-  const active = fields.find((field) => field.id === activeId);
+  const activeField = fields.find((field) => field.id === activeId);
+  const active = activeField?.reference?.path ? activeField : activeField ? (() => { const next = { ...activeField }; delete next.reference; return next; })() : undefined;
   useEffect(() => {
     if (open) return;
     setFields(initialFields);
