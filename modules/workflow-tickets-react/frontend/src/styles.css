@@ -1680,6 +1680,22 @@
   -webkit-line-clamp: 2;
 }
 
+.tn-workflow-tickets-template-editor-textarea {
+  flex: 0 0 auto;
+  height: calc(var(--spacing) * 72);
+  min-height: calc(var(--spacing) * 72);
+  max-height: calc(var(--spacing) * 72);
+  field-sizing: fixed;
+}
+
+@media (min-width: 48rem) {
+  .tn-workflow-tickets-template-editor-textarea {
+    flex: 1 1 0%;
+    height: 0;
+    max-height: none;
+  }
+}
+
 .tn-workflow-tickets-node-preview-header,
 .tn-workflow-tickets-node-preview-field,
 .tn-workflow-tickets-node-preview-empty {
