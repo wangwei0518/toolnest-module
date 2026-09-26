@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "xiaomi-rear-wallpaper",
   "name": "背屏壁纸",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "为小米手机背屏裁切、预览和管理壁纸。",
   "author": "ToolNest",
   "icon": "box",
