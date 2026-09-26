@@ -9,7 +9,7 @@ import "./styles.css";
 
 const module: ToolNestReactFrontendModule = {
   id: "workflow-tickets-react",
-  version: "0.1.95",
+  version: "0.1.96",
   layout: { content: "padded" },
   install(context) {
     setModuleApiClient(context.apiClient);
