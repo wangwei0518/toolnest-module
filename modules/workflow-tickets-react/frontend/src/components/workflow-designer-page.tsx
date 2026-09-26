@@ -371,6 +371,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const [formInitialFieldId, setFormInitialFieldId] = useState("");
   const [nodeDeleteOpen, setNodeDeleteOpen] = useState(false);
   const [completionOpen, setCompletionOpen] = useState(false);
+  const [completionDraft, setCompletionDraft] = useState<RuleRecord>();
   const [flowOpen, setFlowOpen] = useState(false);
   const [actionProviders, setActionProviders] = useState<ActionProvider[]>([]);
   const [hoveredNodeId, setHoveredNodeId] = useState("");
@@ -564,7 +565,6 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     void updateWorkflow(rewrittenNodes, rewrittenEdges);
   };
 
-  const updateCompletionRule = (rule: RuleRecord) => saveNodePatch({ completion_rule: rule });
   const updatePredecessorRule = (rule: Record<string, unknown>) => saveNodePatch({ predecessor_rule: rule });
   const updateActions = (actions: Array<Record<string, unknown>>) => saveNodePatch({ actions });
 
@@ -954,6 +954,15 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
 
   const completionRule = (selected.completion_rule ?? { type: "group", operator: "AND", children: [] }) as RuleRecord;
   const configuredCompletionRuleCount = countCompletionRules(completionRule);
+  const openCompletionEditor = () => {
+    setCompletionDraft(clone(completionRule));
+    setCompletionOpen(true);
+  };
+  const closeCompletionEditor = () => {
+    if (completionDraft) saveNodePatch({ completion_rule: completionDraft });
+    setCompletionDraft(undefined);
+    setCompletionOpen(false);
+  };
 
   return (
     <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page">
@@ -1049,7 +1058,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
               {activeSection === "conditions" ? <section className="tn-workflow-tickets-inspector-section">
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   <span className="tn-workflow-tickets-muted">{configuredCompletionRuleCount ? `已配置 ${configuredCompletionRuleCount} 条规则` : "未配置完成规则"}</span>
-                  <Button size="sm" variant="secondary" disabled={readOnly} onClick={() => setCompletionOpen(true)}><RiEditLine data-icon="inline-start" />弹窗编辑</Button>
+                  <Button size="sm" variant="secondary" disabled={readOnly} onClick={openCompletionEditor}><RiEditLine data-icon="inline-start" />弹窗编辑</Button>
                 </div>
                 {configuredCompletionRuleCount ? <CompletionRuleSummary rule={completionRule} fields={selected.form_schema.fields} nodes={nodes} /> : <p className="m-0 text-xs leading-relaxed text-muted-foreground">未配置规则时，节点可直接完成。</p>}
               </section> : null}
@@ -1071,7 +1080,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
       </div>
 
       <WorkflowFormDesignerDialog key={`${selected.id}-${formInitialFieldId}`} open={formOpen} onOpenChange={setFormOpen} node={selected} initialFieldId={formInitialFieldId} variables={formVariables} onApply={applyFormFields} />
-      <Dialog open={completionOpen} onOpenChange={setCompletionOpen}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={completionRule} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={updateCompletionRule} /><DialogFooter><Button variant="outline" onClick={() => setCompletionOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={completionOpen} onOpenChange={(next) => { if (next) openCompletionEditor(); else closeCompletionEditor(); }}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={completionDraft ?? completionRule} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={setCompletionDraft} /><DialogFooter><Button variant="outline" onClick={closeCompletionEditor}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={flowOpen} onOpenChange={setFlowOpen}><DialogContent className="flex max-h-[min(48rem,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0"><DialogHeader className="shrink-0 border-b px-5 py-4 pr-12"><DialogTitle>{selected.name} · 节点流转</DialogTitle><DialogDescription>配置前序节点、后继节点和分支进入条件，修改会即时写入当前草稿。</DialogDescription></DialogHeader><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4"><div className="grid gap-6"><section className="grid gap-3"><div><h3 className="text-sm font-semibold">前序节点</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div>{incomingNodes.length > 1 ? readOnly ? <div className="grid gap-2">{incomingNodes.map((node) => <div className="rounded-md border p-3 text-sm" key={node.id}>{node.name} · {String(selected.predecessor_rule?.operator ?? "OR")}</div>)}</div> : <PredecessorRuleEditor node={selected} incomingNodes={incomingNodes} onChange={updatePredecessorRule} /> : <p className="m-0 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">{incomingNodes.length ? "当前只有一个前序节点，无需配置组合条件。" : "当前节点没有前序节点，将作为起始节点进入流程。"}</p>}</section><section className="grid gap-3 border-t pt-5"><div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-sm font-semibold">后继节点与分支</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">设置完成当前节点后进入的节点和判断条件。</p></div><Button className="shrink-0" size="sm" variant="secondary" disabled={readOnly} onClick={() => void addBranch()}><RiAddLine data-icon="inline-start" />新增分支</Button></div>{outgoingEdges.length ? <div className="tn-workflow-tickets-edge-config">{outgoingEdges.map((edge, index) => readOnly ? <div className="rounded-md border p-3 text-sm" key={edge.id}>{nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点"} · 优先级 {edge.priority ?? 0} · {edge.condition ? "已配置条件" : "无条件进入"}</div> : <WorkflowEdgeEditor key={edge.id} edge={edge} index={index} nodes={nodes} onChange={updateEdge} onRemove={() => void removeEdge(edge.id)} />)}</div> : <p className="m-0 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">当前节点还没有后继节点，点击“新增分支”添加流向。</p>}</section></div></div><DialogFooter className="shrink-0 border-t px-5 py-3"><Button variant="outline" onClick={() => setFlowOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}><DialogContent><DialogHeader><DialogTitle>模板信息</DialogTitle><DialogDescription>修改模板名称、描述和分组。</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>模板名称</FieldLabel><Input value={metaDraft.name} onChange={(event) => setMetaDraft({ ...metaDraft, name: event.target.value })} /></Field><Field><FieldLabel>模板描述</FieldLabel><Textarea value={metaDraft.description} onChange={(event) => setMetaDraft({ ...metaDraft, description: event.target.value })} /></Field><Field><FieldLabel>模板分组</FieldLabel><Input value={metaDraft.group_name} onChange={(event) => setMetaDraft({ ...metaDraft, group_name: event.target.value })} /></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => setMetaOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void saveMeta()}>保存修改</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}><DialogContent><DialogHeader><DialogTitle>发布工作流</DialogTitle><DialogDescription>发布后会生成不可修改的版本快照，新建工单将使用当前发布版本。</DialogDescription></DialogHeader><Field><FieldLabel>版本说明</FieldLabel><Textarea value={publishNote} onChange={(event) => setPublishNote(event.target.value)} placeholder="例如：增加结果复核节点，调整附件要求" /></Field><DialogFooter><Button variant="outline" onClick={() => setPublishOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void publish()}>确认发布</Button></DialogFooter></DialogContent></Dialog>
