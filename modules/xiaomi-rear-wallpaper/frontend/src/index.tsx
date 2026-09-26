@@ -9,7 +9,7 @@ import "./styles.css";
 
 const module: ToolNestReactFrontendModule = {
   id: "xiaomi-rear-wallpaper",
-  version: "0.1.5",
+  version: "0.1.6",
   layout: { content: "padded" },
   install(context) {
     setModuleApiClient(context.apiClient);
