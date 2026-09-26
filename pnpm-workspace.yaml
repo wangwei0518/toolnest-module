@@ -6,3 +6,6 @@ packages:
 allowBuilds:
   esbuild: true
   sharp: true
+
+minimumReleaseAgeExclude:
+  - mediabunny@1.60.0

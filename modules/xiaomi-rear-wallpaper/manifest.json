@@ -1,0 +1,56 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "xiaomi-rear-wallpaper",
+  "name": "背屏壁纸",
+  "version": "0.1.3",
+  "description": "为小米手机背屏裁切、预览和管理壁纸。",
+  "author": "ToolNest",
+  "icon": "box",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "node",
+    "entry": "backend/dist/main.js",
+    "transport": "http",
+    "startup": "lazy",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 30000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": []
+  },
+  "api": {
+    "base_path": "/api/v1/modules/xiaomi-rear-wallpaper"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@toolnest/react-module-sdk"
+    ]
+  },
+  "permissions": [
+    "xiaomi.rear.wallpaper.read",
+    "xiaomi.rear.wallpaper.create",
+    "xiaomi.rear.wallpaper.update",
+    "xiaomi.rear.wallpaper.delete"
+  ],
+  "capabilities": [
+    "xiaomi.rear.wallpaper.basic"
+  ],
+  "menus": [
+    {
+      "key": "xiaomi-rear-wallpaper",
+      "label": "背屏壁纸",
+      "path": "",
+      "icon": "box",
+      "order": 100
+    }
+  ],
+  "settings": []
+}
