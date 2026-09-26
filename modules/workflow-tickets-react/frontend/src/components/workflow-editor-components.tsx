@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { RiAddLine, RiArrowDownLine, RiArrowUpLine, RiDeleteBinLine, RiDraggable, RiEyeLine, RiFileTextLine, RiPencilLine } from "@remixicon/react";
 
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -72,6 +72,12 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   const [dropId, setDropId] = useState("");
   const [error, setError] = useState("");
   const active = fields.find((field) => field.id === activeId);
+  useEffect(() => {
+    if (open) return;
+    setFields(initialFields);
+    setActiveId(initialFieldId && initialFields.some((field) => field.id === initialFieldId) ? initialFieldId : initialFields[0]?.id ?? "");
+    setOriginIds(Object.fromEntries(initialFields.map((field) => [field.id, field.id])));
+  }, [initialFieldId, initialFields, open]);
   const templateVariables = useMemo(() => [...variables, ...fields.filter((field) => field.type !== "script").map((field) => ({ label: `${node.name} / ${field.label}`, value: `current.values.${field.id}`, group: `${node.name}（当前节点）`, source_type: field.type }))], [variables, fields, node.name]);
   const referenceVariables = useMemo(() => {
     const type = active?.type;
