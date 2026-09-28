@@ -303,7 +303,10 @@ export class AnimeCalendarService {
     // filters stay consistent with the cour page without one detail request per
     // weekly item. This also repairs an already persisted weekly cache.
     const detailed = new Map<string, AnimeItem>();
-    for (const item of [...state.items, ...(state.longRunningCache?.items ?? []), ...Object.values(state.detailCache).map((entry) => entry.item)]) detailed.set(item.id, item);
+    for (const item of [...state.items, ...(state.longRunningCache?.items ?? []), ...Object.values(state.detailCache).map((entry) => entry.item)]) {
+      const previous = detailed.get(item.id);
+      detailed.set(item.id, previous ? mergePreservingEpisodeCount(previous, item) : item);
+    }
     return items.map((item) => {
       const cached = detailed.get(item.id);
       if (!cached) return item;
@@ -313,6 +316,9 @@ export class AnimeCalendarService {
         tags: cached.tags.length ? cached.tags : item.tags,
         region: cached.region !== "unknown" ? cached.region : item.region,
         raw: Object.keys(cached.raw).length ? cached.raw : item.raw,
+        media_type: cached.media_type !== "unknown" ? cached.media_type : item.media_type,
+        episode_count: item.episode_count ?? cached.episode_count,
+        estimated_end_date: item.episode_count !== null ? item.estimated_end_date : cached.episode_count !== null ? cached.estimated_end_date : item.estimated_end_date ?? cached.estimated_end_date,
       };
     });
   }
@@ -338,7 +344,7 @@ export class AnimeCalendarService {
     const sources = [...state.items, ...this.enrichWeeklyItems(state.weeklyCache?.items ?? [], state), ...(state.longRunningCache?.items ?? [])];
     for (const item of sources) {
       const previous = items.get(item.id);
-      items.set(item.id, previous ? { ...previous, ...item } : item);
+      items.set(item.id, previous ? mergePreservingEpisodeCount(previous, item) : item);
     }
     return [...items.values()];
   }
@@ -413,6 +419,14 @@ export class AnimeCalendarService {
 
 function publicItem(item: AnimeItem): AnimeListItem { const { title_romaji: _a, estimated_end_date: _b, air_month: _c, summary: _d, tags: _e, raw: _f, created_at: _g, updated_at: _h, ...rest } = item; return rest; }
 function clearMark(item: AnimeItem): AnimeItem { return { ...item, mark_type: null }; }
+function mergePreservingEpisodeCount(previous: AnimeItem, next: AnimeItem): AnimeItem {
+  const merged = { ...previous, ...next };
+  if (previous.episode_count !== null && next.episode_count === null) {
+    merged.episode_count = previous.episode_count;
+    merged.estimated_end_date = previous.estimated_end_date;
+  }
+  return merged;
+}
 function mergeDetail(base: AnimeItem, detail: AnimeItem, mark: AnimeMarkType | null): AnimeItem { return { ...base, ...detail, id: base.id, provider_id: base.provider_id, year: base.year, cour_month: base.cour_month, cour_label: base.cour_label, cour_relation: base.cour_relation, cour_relation_label: base.cour_relation_label, weekday: base.weekday, air_time: base.air_time, mark_type: mark }; }
 function displayTitle(item: AnimeItem) { return item.title_cn || item.title_original; }
 function cacheMessage(status: AnimeCacheStatus, error: string) { if (status === "fresh") return "缓存已是最新"; if (status === "stale") return "正在使用可能过期的缓存"; if (status === "refreshing") return "正在刷新档期数据"; if (status === "failed") return error || "刷新失败，已保留现有数据"; return "当前档期暂无缓存"; }
@@ -428,7 +442,6 @@ function withCourRelation(item: AnimeItem, year: number, month: number): AnimeIt
     const span = episodeSpan(item);
     if (span === "long_running") relation = "long_running";
     else if (span === "half_year") relation = "continuing";
-    else if (isUnboundedAiring(item)) relation = "long_running";
   }
   return { ...item, estimated_end_date: estimatedEndDate, year, cour_month: month, cour_label: courLabel(year, month), cour_relation: relation, cour_relation_label: relation === "new_this_cour" ? "新番" : relation === "continuing" ? "续播" : relation === "long_running" ? "长期" : "未定" };
 }
@@ -438,7 +451,6 @@ function isSingleEpisodeNonMovie(item: AnimeItem) {
   return !/(剧场版|电影|theatrical|movie)/i.test(title);
 }
 function effectiveEstimatedEndDate(item: AnimeItem) {
-  if (isUnboundedAiring(item)) return null;
   if (!item.air_date) return item.estimated_end_date;
   const start = new Date(`${item.air_date}T00:00:00Z`);
   if (Number.isNaN(start.getTime())) return item.estimated_end_date;
@@ -447,7 +459,6 @@ function effectiveEstimatedEndDate(item: AnimeItem) {
 }
 function defaultEpisodeCount(mediaType: AnimeItem["media_type"]) { return mediaType === "movie" || mediaType === "ova" || mediaType === "sp" || mediaType === "unknown" ? 1 : 12; }
 function episodeSpan(item: AnimeItem) { const courCount = Math.floor((item.episode_count ?? defaultEpisodeCount(item.media_type)) / 12); return courCount >= 3 ? "long_running" : courCount >= 2 ? "half_year" : "single_cour"; }
-function isUnboundedAiring(item: AnimeItem) { return item.status === "airing" && item.media_type === "tv" && item.episode_count === null && item.estimated_end_date === null; }
 function isLongRunningActive(item: AnimeItem) { return Boolean(item.air_date) && episodeSpan(item) === "long_running"; }
 function relationCounts(items: AnimeItem[]) { return { new_this_cour: items.filter((item) => item.cour_relation === "new_this_cour").length, continuing: items.filter((item) => item.cour_relation === "continuing").length, long_running: items.filter((item) => item.cour_relation === "long_running").length, unknown: items.filter((item) => item.cour_relation === "unknown").length }; }
 function platformNow() { return new Date(); }
