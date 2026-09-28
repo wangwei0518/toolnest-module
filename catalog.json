@@ -5,21 +5,21 @@
     {
       "id": "anime-calendar-react",
       "name": "新番日历",
-      "version": "0.1.36",
+      "version": "0.1.37",
       "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-25-1-2abcccc 发布。",
+      "release_notes": "由 module-release-26-1-7b9af00 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-26T15:56:26.276Z",
+      "published_at": "2026-09-28T05:27:36.129Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-25-1-2abcccc/anime-calendar-react-0.1.36.tnmod",
-        "sha256": "ec4930962fa4cd893b0514427130192bc8104d8c2a78cde4c4e02987200cdbea",
-        "size_bytes": 777177
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-26-1-7b9af00/anime-calendar-react-0.1.37.tnmod",
+        "sha256": "a50aa279ad61eda2d0158245be45bbb65ed300788acb92326ed026212e219849",
+        "size_bytes": 777227
       }
     },
     {
@@ -30,15 +30,15 @@
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-25-1-2abcccc 发布。",
+      "release_notes": "由 module-release-26-1-7b9af00 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-26T15:56:26.278Z",
+      "published_at": "2026-09-28T05:27:36.130Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-25-1-2abcccc/python-runner-2.0.11.tnmod",
-        "sha256": "68a936bc0aee518108d6488705a022408461e7cfdb3cb9cbf774d98add8df06f",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-26-1-7b9af00/python-runner-2.0.11.tnmod",
+        "sha256": "ec8aba8629c4cc6e7530b47f2c4ba10c73806426af53acf053c2e1450a19d12f",
         "size_bytes": 1417432
       }
     },
@@ -50,15 +50,15 @@
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-25-1-2abcccc 发布。",
+      "release_notes": "由 module-release-26-1-7b9af00 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-26T15:56:26.280Z",
+      "published_at": "2026-09-28T05:27:36.131Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-25-1-2abcccc/workflow-tickets-react-0.1.96.tnmod",
-        "sha256": "6a01841b49ffb95c12c0fcd5d6adf4bc49ad008ef3c069cc428377e7d4255dc3",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-26-1-7b9af00/workflow-tickets-react-0.1.96.tnmod",
+        "sha256": "19a9d6d73e6dca2051930ec43b8657b00290c28baee45447af194536672e900f",
         "size_bytes": 765723
       }
     },
@@ -70,15 +70,15 @@
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-25-1-2abcccc 发布。",
+      "release_notes": "由 module-release-26-1-7b9af00 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-09-26T15:56:26.281Z",
+      "published_at": "2026-09-28T05:27:36.132Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-25-1-2abcccc/xiaomi-rear-wallpaper-0.1.6.tnmod",
-        "sha256": "09e12cb1a600c740ea423e638745dd12c56867a2b5ebdc8955887d0ff6f9adec",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-26-1-7b9af00/xiaomi-rear-wallpaper-0.1.6.tnmod",
+        "sha256": "f9e9285762d68fa6084277c94f4a84fb134938ec8c09860bfdfcccfad7215f0a",
         "size_bytes": 9924724
       }
     }
