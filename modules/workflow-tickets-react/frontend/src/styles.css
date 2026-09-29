@@ -80,6 +80,24 @@
   line-height: 1.75;
 }
 
+.tn-workflow-tickets-markdown-preview :where(table) {
+  width: max-content;
+  min-width: 100%;
+  margin-block: calc(var(--spacing) * 3);
+  border-collapse: collapse;
+}
+
+.tn-workflow-tickets-markdown-preview :where(th, td) {
+  border: 1px solid var(--border);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  vertical-align: top;
+}
+
+.tn-workflow-tickets-markdown-preview :where(th) {
+  background: var(--muted);
+  font-weight: 600;
+}
+
 .tn-workflow-tickets-markdown-preview :where(h1, h2, h3) {
   margin-block: 1rem 0.5rem;
   font-weight: 600;
