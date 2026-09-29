@@ -841,7 +841,7 @@ export class WorkflowTicketsService {
       if (expressionPath === "ticket.title") return ticket.title;
       if (expressionPath === "ticket.number") return ticket.number;
       if (expressionPath.startsWith("current.values.")) return text(node.values[expressionPath.slice("current.values.".length)]);
-      const match = /^nodes\\.([^\\.]+)\\.(values|outputs|resources)\\.(.+)$/.exec(expressionPath);
+      const match = /^nodes\.([^.]+)\.(values|outputs|resources)\.(.+)$/.exec(expressionPath);
       if (!match) return "";
       const source = ticket.node_instances.find((item) => item.key === match[1]);
       if (!source) return "";
