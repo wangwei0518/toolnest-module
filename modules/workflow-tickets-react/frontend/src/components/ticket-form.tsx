@@ -33,6 +33,16 @@ function browserUrl(value: string): string {
   if (!value || /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith("//") || typeof window === "undefined") return value;
   return new URL(value, window.location.origin).toString();
 }
+function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\"'\"'")}'`; }
+function powerShellQuote(value: string): string { return `'${value.replaceAll("'", "''")}'`; }
+function executableCommand(url: string, filename: string, language: string): string {
+  if (language === "cmd") return `for %F in ("%TEMP%\\toolnest-run-%RANDOM%.cmd") do @(curl.exe -fsSL "${url}" -o "%~F" && call "%~F" & del /f /q "%~F" >nul 2>&1)`;
+  if (language === "powershell") return `(Invoke-WebRequest -UseBasicParsing -Uri ${powerShellQuote(url)}).Content | Invoke-Expression`;
+  if (language === "python") return `curl -fsSL ${shellQuote(url)} | python3`;
+  if (language === "javascript") return `curl -fsSL ${shellQuote(url)} | node`;
+  if (language === "typescript") return `curl -fsSL ${shellQuote(url)} -o ${shellQuote(filename)} && tsx ${shellQuote(filename)}`;
+  return `curl -fsSL ${shellQuote(url)} | bash`;
+}
 function hasValue(value: unknown): boolean { return value === false || value === 0 || (Array.isArray(value) ? value.length > 0 : value != null && text(value).trim() !== ""); }
 function asObject(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function asArray(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
@@ -147,10 +157,10 @@ function AttachmentField({ api, ticket, node, field, value, onChange, readonly }
 }
 
 function ExecutableResourceField({ field, resource }: { field: FormField; resource?: Record<string, unknown> | undefined }) {
-  const [copied, setCopied] = useState(""); const content = text(resource?.content); const url = browserUrl(text(resource?.url)); const filename = text(resource?.filename) || "run.txt"; const language = text(field.config?.language) || "shell";
+  const [copied, setCopied] = useState(""); const content = text(resource?.content); const url = browserUrl(text(resource?.url)); const filename = text(resource?.filename) || "run.txt"; const language = text(field.config?.language).toLowerCase() || "shell"; const command = executableCommand(url, filename, language);
   const copy = async (value: string, label: string) => { if (!value) return; try { await navigator.clipboard.writeText(value); setCopied(label); window.setTimeout(() => setCopied(""), 1600); } catch { setCopied("复制失败"); } };
   if (!resource) return <Alert><RiTimeLine /><AlertDescription>保存节点后生成临时执行资源。</AlertDescription></Alert>;
-  return <div className="grid gap-3 rounded-md border bg-muted/20 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><RiCodeLine /><span className="truncate font-mono text-xs">{filename}</span><Badge variant="outline">{language}</Badge></div><span className="text-xs text-muted-foreground">访问次数受限</span></div><pre className="max-h-48 overflow-auto rounded-md border bg-background p-3 text-xs leading-5">{content || "暂无脚本内容"}</pre><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void copy(content, "内容已复制")}><RiClipboardLine data-icon="inline-start" />复制脚本</Button>{url ? <Button type="button" size="sm" variant="outline" onClick={() => void copy(url, "链接已复制")}><RiDownloadLine data-icon="inline-start" />复制链接</Button> : null}{copied ? <span className="self-center text-xs text-muted-foreground">{copied}</span> : null}</div></div>;
+  return <div className="grid gap-3 rounded-md border bg-muted/20 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><RiCodeLine /><span className="truncate font-mono text-xs">{filename}</span><Badge variant="outline">{language}</Badge></div><span className="text-xs text-muted-foreground">访问次数受限</span></div><pre className="max-h-48 overflow-auto rounded-md border bg-background p-3 text-xs leading-5">{content || "暂无脚本内容"}</pre><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" onClick={() => void copy(content, "内容已复制")}><RiClipboardLine data-icon="inline-start" />复制脚本</Button>{url ? <Button type="button" size="sm" variant="outline" onClick={() => void copy(url, "链接已复制")}><RiDownloadLine data-icon="inline-start" />复制链接</Button> : null}{copied ? <span className="self-center text-xs text-muted-foreground">{copied}</span> : null}</div>{url ? <div className="grid min-w-0 gap-2 rounded-md border bg-background p-3"><div className="flex flex-wrap items-start justify-between gap-2"><div className="grid gap-1"><p className="text-sm font-medium">终端执行命令</p><p className="text-xs text-muted-foreground">在目标设备的 {language === "powershell" ? "PowerShell" : language === "cmd" ? "CMD" : "终端"} 中运行。此命令会直接执行临时链接中的脚本，并消耗一次访问次数；执行前请确认脚本内容可信。{language === "typescript" ? " 目标设备需预先安装 tsx。" : ""}</p></div><Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => void copy(command, "执行命令已复制")}><RiClipboardLine data-icon="inline-start" />{copied === "执行命令已复制" ? "命令已复制" : "复制执行命令"}</Button></div><code className="block min-w-0 break-all rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-xs leading-5">{command}</code></div> : null}</div>;
 }
 
 export function TicketFormRenderer({ api, ticket, node, definition, workflowNodes = [], values, onChange, resources, readonly, errors }: { api: WorkflowApi; ticket: Ticket; node: TicketNode; definition: WorkflowNode; workflowNodes?: WorkflowNode[]; values: Values; onChange: (values: Values) => void; resources: RelatedResource[]; readonly: boolean; errors?: Record<string, string> }) {
