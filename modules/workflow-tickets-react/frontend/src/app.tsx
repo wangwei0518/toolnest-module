@@ -65,28 +65,176 @@ const notificationChannels: Array<{ value: NotificationChannel; label: string }>
 const defaultNotificationRule: NotificationRule = { enabled: true, level: "info", channels: ["web_internal"] };
 const priorityLabels: Record<string, string> = { none: "无优先级", low: "低", medium: "中", high: "高", urgent: "紧急" };
 const fieldTypeLabels: Record<string, string> = { text: "单行文本", textarea: "多行文本", number: "数字", select: "下拉选择", radio: "单选", multiselect: "多选", switch: "开关", date: "日期", checklist: "清单", todo: "待办", markdown: "Markdown", json: "JSON", code: "代码", file: "文件", image: "图片", url: "链接", script: "脚本" };
-const cronIntervalOptions = [
-  { value: "5", label: "每 5 分钟" },
-  { value: "10", label: "每 10 分钟" },
-  { value: "15", label: "每 15 分钟" },
-  { value: "20", label: "每 20 分钟" },
-  { value: "30", label: "每 30 分钟" },
-  { value: "60", label: "每小时" },
-] as const;
-function cronExpressionForInterval(interval: string): string { return interval === "60" ? "0 * * * *" : `*/${interval} * * * *`; }
+const SCHEDULE_TIME_ZONE = "Asia/Shanghai";
+const scheduleWeekdays = [
+  { value: "0", label: "星期日" },
+  { value: "1", label: "星期一" },
+  { value: "2", label: "星期二" },
+  { value: "3", label: "星期三" },
+  { value: "4", label: "星期四" },
+  { value: "5", label: "星期五" },
+  { value: "6", label: "星期六" },
+];
+type ScheduleDateParts = { year: number; month: number; day: number; hour: number; minute: number; second: number };
+function normalizedScheduleTimeZone(timeZone?: string): string {
+  if (!timeZone) return SCHEDULE_TIME_ZONE;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return SCHEDULE_TIME_ZONE;
+  }
+}
+function scheduleDateParts(date: Date, timeZone = SCHEDULE_TIME_ZONE): ScheduleDateParts {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: normalizedScheduleTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(value.year),
+    month: Number(value.month),
+    day: Number(value.day),
+    hour: Number(value.hour),
+    minute: Number(value.minute),
+    second: Number(value.second),
+  };
+}
+function scheduleInstant(parts: ScheduleDateParts, timeZone = SCHEDULE_TIME_ZONE): Date {
+  const wallClock = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  let timestamp = wallClock;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const actual = scheduleDateParts(new Date(timestamp), timeZone);
+    const actualWallClock = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
+    const correction = wallClock - actualWallClock;
+    if (!correction) return new Date(timestamp);
+    timestamp += correction;
+  }
+  return new Date(timestamp);
+}
+function schedulePartsFromInput(value: string): ScheduleDateParts {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) throw new Error("请选择有效的执行日期和时间。");
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]), hour: Number(match[4]), minute: Number(match[5]), second: 0 };
+}
+function formatScheduleDateTime(date: Date, timeZone = SCHEDULE_TIME_ZONE): string {
+  const parts = scheduleDateParts(date, timeZone);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}T${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+}
+function scheduleWeekdayIndex(date: Date, timeZone = SCHEDULE_TIME_ZONE): number {
+  const label = new Intl.DateTimeFormat("en-US", { timeZone: normalizedScheduleTimeZone(timeZone), weekday: "short" }).format(date);
+  return ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[label] ?? 0;
+}
+function scheduleDatePartsWithOffset(parts: ScheduleDateParts, minutes: number): ScheduleDateParts {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute + minutes, parts.second));
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate(), hour: shifted.getUTCHours(), minute: shifted.getUTCMinutes(), second: shifted.getUTCSeconds() };
+}
+function scheduleDatePartsWithDays(parts: ScheduleDateParts, days: number): ScheduleDateParts {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return { ...parts, year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+}
+function cronExpressionForInterval(interval: string): string {
+  if (interval === "60") return "0 * * * *";
+  if (interval === "1") return "* * * * *";
+  return `*/${interval} * * * *`;
+}
+function cronExpressionForSchedule(type: string, weekday: string, dayOfMonth: string, runTime: string, interval: string, existingCron: string): string {
+  if (type === "once") return "";
+  if (type === "cron") {
+    if (interval === "legacy") return existingCron;
+    const minutes = Number(interval);
+    return Number.isInteger(minutes) && minutes >= 1 && minutes <= 60 ? cronExpressionForInterval(interval) : "";
+  }
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(runTime)) return "";
+  const [hour = "0", minute = "0"] = runTime.split(":");
+  const prefix = `${Number(minute)} ${Number(hour)}`;
+  if (type === "weekly") return scheduleWeekdays.some((day) => day.value === weekday) ? `${prefix} * * ${Number(weekday)}` : "";
+  if (type === "monthly") {
+    const day = Number(dayOfMonth);
+    return Number.isInteger(day) && day >= 1 && day <= 31 ? `${prefix} ${day} * *` : "";
+  }
+  return `${prefix} * * *`;
+}
+function firstScheduleOccurrence(type: string, startAt: string, weekday: string, dayOfMonth: string, interval: string): Date {
+  const base = schedulePartsFromInput(startAt);
+  let candidate = { ...base };
+  const now = Date.now();
+  if (type === "once") return scheduleInstant(candidate);
+  if (type === "cron" && interval === "legacy") return scheduleInstant(candidate);
+  if (type === "daily") {
+    let instant = scheduleInstant(candidate);
+    while (instant.getTime() <= now) {
+      candidate = scheduleDatePartsWithDays(candidate, 1);
+      instant = scheduleInstant(candidate);
+    }
+    return instant;
+  }
+  if (type === "weekly") {
+    if (!scheduleWeekdays.some((day) => day.value === weekday)) throw new Error("请选择有效的星期。");
+    let instant = scheduleInstant(candidate);
+    while (instant.getTime() <= now || new Date(Date.UTC(candidate.year, candidate.month - 1, candidate.day)).getUTCDay() !== Number(weekday)) {
+      candidate = scheduleDatePartsWithDays(candidate, 1);
+      instant = scheduleInstant(candidate);
+    }
+    return instant;
+  }
+  if (type === "monthly") {
+    const requestedDay = Number(dayOfMonth);
+    if (!Number.isInteger(requestedDay) || requestedDay < 1 || requestedDay > 31) throw new Error("每月日期必须在 1 到 31 之间。");
+    const baseInstant = scheduleInstant(base);
+    for (let offset = 0; offset < 24; offset++) {
+      const month = new Date(Date.UTC(base.year, base.month - 1 + offset, 1));
+      const year = month.getUTCFullYear();
+      const monthNumber = month.getUTCMonth() + 1;
+      const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+      if (requestedDay > daysInMonth) continue;
+      candidate = { ...base, year, month: monthNumber, day: requestedDay };
+      const instant = scheduleInstant(candidate);
+      if (instant.getTime() >= baseInstant.getTime() && instant.getTime() > now) return instant;
+    }
+    throw new Error("无法计算首次执行时间，请检查每月日期。");
+  }
+  if (type === "cron") {
+    const minutes = Number(interval);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) throw new Error("重复间隔必须在 1 到 60 分钟之间。");
+    let instant = scheduleInstant(candidate);
+    while (instant.getTime() <= now || candidate.minute % minutes !== 0) {
+      candidate = scheduleDatePartsWithOffset(candidate, 1);
+      instant = scheduleInstant(candidate);
+    }
+    return instant;
+  }
+  return scheduleInstant(candidate);
+}
 function cronIntervalFromExpression(expression: string): string | null {
   const normalized = expression.trim();
   if (normalized === "0 * * * *") return "60";
+  if (normalized === "* * * * *") return "1";
   const match = /^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/.exec(normalized);
   const interval = Number(match?.[1]);
-  return match && Number.isInteger(interval) && interval > 0 ? String(interval) : null;
+  return match && Number.isInteger(interval) && interval >= 2 && interval < 60 ? String(interval) : null;
 }
 function schedulePlanLabel(schedule: Schedule): string {
+  const timeZone = normalizedScheduleTimeZone(schedule.timezone);
+  const time = new Intl.DateTimeFormat("zh-CN", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(schedule.start_at));
+  if (schedule.schedule_type === "once") return `一次 · ${formatDate(schedule.start_at)}`;
+  if (schedule.schedule_type === "daily") return `每天 ${time}`;
+  if (schedule.schedule_type === "weekly") {
+    const weekday = schedule.weekday ?? scheduleWeekdayIndex(new Date(schedule.start_at), timeZone);
+    return `每周${scheduleWeekdays[weekday]?.label.slice(2) ?? "一"} ${time}`;
+  }
+  if (schedule.schedule_type === "monthly") return `每月 ${schedule.day_of_month ?? scheduleDateParts(new Date(schedule.start_at), timeZone).day} 日 ${time}`;
   if (schedule.schedule_type === "cron") {
     const interval = cronIntervalFromExpression(schedule.cron_expression);
     return interval === "60" ? "每小时" : interval ? `每 ${interval} 分钟` : "自定义频率";
   }
-  return ({ once: "一次", daily: "每天", weekly: "每周", monthly: "每月" } as Record<string, string>)[schedule.schedule_type] ?? schedule.schedule_type;
+  return schedule.schedule_type;
 }
 function statusVariant(value: string): "default" | "secondary" | "outline" | "destructive" { return ["completed", "published", "success", "succeeded", "active", "enabled", "ready", "normal"].includes(value) ? "default" : ["blocked", "cancelled", "failed", "overdue", "urgent", "risk"].includes(value) ? "destructive" : ["draft", "pending", "planning", "in_progress"].includes(value) ? "outline" : "secondary"; }
 function StatusBadge({ value }: { value: string }) { return <Badge variant={statusVariant(value)}>{(statusLabels[value] ?? value) || "未知"}</Badge>; }
@@ -169,15 +317,90 @@ function WorkflowDesignerPage({ api, router, params, query }: PageProps) { const
 function WorkflowVersionsPage({ api, router, params }: PageProps) { const workflowId = requiredParam(params.id || params.workflowId, "工作流"); const [workflow, setWorkflow] = useState<Workflow>(); const [error, setError] = useState(""); const load = async () => { try { setWorkflow(await api.getWorkflow(workflowId)); } catch (err) { setError(errorMessage(err, "版本加载失败")); } }; useEffect(() => { void load(); }, [workflowId]); if (error) return <PageFrame title="版本记录"><ErrorState message={error} retry={() => void load()} /></PageFrame>; if (!workflow) return <PageFrame title="版本记录"><LoadingState /></PageFrame>; const versions = [...workflow.versions].sort((a, b) => b.version - a.version); return <PageFrame title={`${workflow.name} · 版本`} description="每个工单绑定创建时的不可变版本快照。" extra={<Button variant="outline" onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/designer`)}><RiArrowLeftLine data-icon="inline-start" />返回设计器</Button>}><Card><CardContent className="grid gap-3 pt-5">{versions.map((version) => <div key={version.id} className="flex flex-col gap-3 rounded-md border p-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className="text-lg font-semibold">v{version.version}</span><StatusBadge value={version.status} /></div><p className="mt-1 text-sm text-muted-foreground">{version.change_note || "未填写版本说明"} · {formatDate(version.created_at)}</p><p className="mt-1 text-xs text-muted-foreground">{version.nodes.length} 个节点 · {version.ticket_count} 个工单绑定</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/designer?versionId=${version.id}`)}>查看设计</Button>{version.status === "published" ? <Button size="sm" onClick={async () => { const draft = await api.createVersion(workflow.id, { source_version_id: version.id, change_note: "基于已发布版本继续编辑" }); await router.push(`/modules/workflow-tickets-react/workflows/${workflow.id}/designer?versionId=${draft.id}`); }}>创建草稿</Button> : <Button size="sm" onClick={async () => { await api.publishWorkflow(workflow.id, { version_id: version.id, publish_note: "从版本记录发布" }); await load(); }}>发布</Button>}</div></div>)}</CardContent></Card></PageFrame>; }
 
 function ScheduleRunsAction({ api, schedule }: { api: PageProps["api"]; schedule: Schedule & { workflow_name?: string } }) { const [open, setOpen] = useState(false); const [runs, setRuns] = useState<Awaited<ReturnType<typeof api.listScheduleRuns>>>([]); const [error, setError] = useState(""); const load = async () => { try { setError(""); setRuns(await api.listScheduleRuns(schedule.workflow_id, schedule.id)); } catch (err) { setError(errorMessage(err, "执行记录加载失败")); } }; return <><DropdownMenuItem onSelect={(event) => { event.preventDefault(); setOpen(true); void load(); }}>查看执行记录</DropdownMenuItem><Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogHeader><DialogTitle>{schedule.name} · 执行记录</DialogTitle><DialogDescription>{schedule.workflow_name || "定时任务"} 的最近执行结果。</DialogDescription></DialogHeader>{error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : runs.length ? <TableContainer><Table><TableHeader><TableRow><TableHead className="w-28">状态</TableHead><TableHead className="w-44">计划时间</TableHead><TableHead className="w-44">执行时间</TableHead><TableHead>结果</TableHead></TableRow></TableHeader><TableBody>{runs.map((run) => <TableRow key={run.id}><TableCell><StatusBadge value={run.status} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatDate(run.planned_at)}</TableCell><TableCell className="text-xs text-muted-foreground">{formatDate(run.executed_at)}</TableCell><TableCell className="max-w-56 truncate text-xs">{run.error || (run.ticket_id ? "已创建工单" : "未创建工单")}</TableCell></TableRow>)}</TableBody></Table></TableContainer> : <EmptyState description="暂无执行记录。" />}</DialogContent></Dialog></>; }
-function ScheduleDeleteAction({ api, schedule, reload }: { api: PageProps["api"]; schedule: Schedule; reload: () => Promise<void> }) { const [open, setOpen] = useState(false); return <><DropdownMenuItem variant="destructive" onSelect={(event) => { event.preventDefault(); setOpen(true); }}>删除定时任务</DropdownMenuItem><AlertDialog open={open} onOpenChange={setOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除这个定时任务？</AlertDialogTitle><AlertDialogDescription>定时任务和执行记录都会被删除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => void api.deleteSchedule(schedule.workflow_id, schedule.id).then(reload).then(() => setOpen(false))}>确认删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></>; }
-function SchedulePage({ api, router }: PageProps) { const [workflows, setWorkflows] = useState<Workflow[]>([]); const [schedules, setSchedules] = useState<Array<Schedule & { workflow_name?: string }>>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const load = async () => { try { setLoading(true); const nextWorkflows = await api.listWorkflows(); setWorkflows(nextWorkflows); const groups = await Promise.all(nextWorkflows.map(async (workflow) => (await api.listSchedules(workflow.id)).map((schedule) => ({ ...schedule, workflow_name: workflow.name })))); setSchedules(groups.flat()); } catch (err) { setError(errorMessage(err, "定时任务加载失败")); } finally { setLoading(false); } }; useEffect(() => { void load(); }, []); return <PageFrame title="定时任务" description="按计划从已发布模板自动创建工单。" extra={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}><RiAddLine data-icon="inline-start" />新建定时任务</Button>}>{error ? <ErrorState message={error} retry={() => void load()} /> : null}<Card><CardContent>{loading ? <LoadingState /> : schedules.length ? <TableContainer><Table><TableHeader><TableRow><TableHead className="w-64">任务</TableHead><TableHead className="w-32">计划</TableHead><TableHead className="w-28">状态</TableHead><TableHead className="w-44">下次执行</TableHead><TableHead className="w-48 text-right">操作</TableHead></TableRow></TableHeader><TableBody>{schedules.map((schedule) => <TableRow key={schedule.id}><TableCell><div className="grid gap-1"><span className="font-medium">{schedule.name}</span><span className="text-xs text-muted-foreground">{schedule.workflow_name}</span></div></TableCell><TableCell>{schedulePlanLabel(schedule)}</TableCell><TableCell><StatusBadge value={schedule.enabled ? "active" : "disabled"} /></TableCell><TableCell className="text-xs text-muted-foreground">{formatDate(schedule.next_run_at)}</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2"><Button size="sm" onClick={async () => { await api.runScheduleNow(schedule.workflow_id, schedule.id); await load(); }}><RiPlayLine data-icon="inline-start" />立即执行</Button><DropdownMenu><DropdownMenuTrigger render={<Button size="sm" variant="outline">更多</Button>} /><DropdownMenuContent align="end"><DropdownMenuItem onClick={() => void router.push("/modules/workflow-tickets-react/schedules/" + schedule.id + "?workflow_id=" + schedule.workflow_id)}>编辑</DropdownMenuItem><ScheduleRunsAction api={api} schedule={schedule} /><ScheduleDeleteAction api={api} schedule={schedule} reload={load} /></DropdownMenuContent></DropdownMenu></div></TableCell></TableRow>)}</TableBody></Table></TableContainer> : <EmptyState description="暂无定时任务。" action={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}>创建定时任务</Button>} />} </CardContent></Card></PageFrame>; }
+function SchedulePage({ api, router }: PageProps) {
+  const [schedules, setSchedules] = useState<Array<Schedule & { workflow_name?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Schedule | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const workflows = await api.listWorkflows();
+      const groups = await Promise.all(workflows.map(async (workflow) =>
+        (await api.listSchedules(workflow.id)).map((schedule) => ({ ...schedule, workflow_name: workflow.name }))
+      ));
+      setSchedules(groups.flat());
+    } catch (err) {
+      setError(errorMessage(err, "定时任务加载失败"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void load(); }, []);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api.deleteSchedule(target.workflow_id, target.id);
+      setSchedules((current) => current.filter((schedule) => schedule.id !== target.id));
+      setDeleteTarget(null);
+      await load();
+    } catch (err) {
+      setDeleteError(errorMessage(err, "定时任务删除失败"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return <PageFrame title="定时任务" description="按计划从已发布模板自动创建工单。" extra={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}><RiAddLine data-icon="inline-start" />新建定时任务</Button>}>
+    {error ? <ErrorState message={error} retry={() => void load()} /> : null}
+    <Card><CardContent>
+      {loading ? <LoadingState /> : schedules.length ? <TableContainer><Table>
+        <TableHeader><TableRow><TableHead className="w-64">任务</TableHead><TableHead className="w-32">计划</TableHead><TableHead className="w-28">状态</TableHead><TableHead className="w-44">下次执行</TableHead><TableHead className="w-48 text-right">操作</TableHead></TableRow></TableHeader>
+        <TableBody>{schedules.map((schedule) => <TableRow key={schedule.id}>
+          <TableCell><div className="grid gap-1"><span className="font-medium">{schedule.name}</span><span className="text-xs text-muted-foreground">{schedule.workflow_name}</span></div></TableCell>
+          <TableCell>{schedulePlanLabel(schedule)}</TableCell>
+          <TableCell><StatusBadge value={schedule.enabled ? "active" : "disabled"} /></TableCell>
+          <TableCell className="text-xs text-muted-foreground">{formatDate(schedule.next_run_at)}</TableCell>
+          <TableCell className="text-right"><div className="flex justify-end gap-2">
+            <Button size="sm" onClick={async () => { await api.runScheduleNow(schedule.workflow_id, schedule.id); await load(); }}><RiPlayLine data-icon="inline-start" />立即执行</Button>
+            <DropdownMenu><DropdownMenuTrigger render={<Button size="sm" variant="outline">更多</Button>} /><DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void router.push("/modules/workflow-tickets-react/schedules/" + schedule.id + "?workflow_id=" + schedule.workflow_id)}>编辑</DropdownMenuItem>
+              <ScheduleRunsAction api={api} schedule={schedule} />
+              <DropdownMenuItem variant="destructive" onClick={() => { setDeleteError(""); setDeleteTarget(schedule); }}>删除定时任务</DropdownMenuItem>
+            </DropdownMenuContent></DropdownMenu>
+          </div></TableCell>
+        </TableRow>)}</TableBody>
+      </Table></TableContainer> : <EmptyState description="暂无定时任务。" action={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}>创建定时任务</Button>} />}
+    </CardContent></Card>
+    <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
+      if (!open && !deleting) {
+        setDeleteTarget(null);
+        setDeleteError("");
+      }
+    }}>
+      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除这个定时任务？</AlertDialogTitle><AlertDialogDescription>定时任务和执行记录都会被删除。</AlertDialogDescription></AlertDialogHeader>
+        {deleteError ? <Alert variant="destructive"><AlertDescription>{deleteError}</AlertDescription></Alert> : null}
+        <AlertDialogFooter><AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel><Button type="button" variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>{deleting ? "删除中…" : "确认删除"}</Button></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </PageFrame>;
+}
 function ScheduleFormPage({ api, router, query, params }: PageProps) {
   const scheduleId = params.id;
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [workflowId, setWorkflowId] = useState(query.workflow_id || "");
   const [name, setName] = useState("");
   const [type, setType] = useState("daily");
-  const [startAt, setStartAt] = useState(new Date(Date.now() + 3_600_000).toISOString().slice(0, 16));
+  const [startAt, setStartAt] = useState(() => formatScheduleDateTime(new Date(Date.now() + 3_600_000)));
   const [endAt, setEndAt] = useState("");
   const [weekday, setWeekday] = useState("1");
   const [dayOfMonth, setDayOfMonth] = useState("1");
@@ -186,6 +409,17 @@ function ScheduleFormPage({ api, router, query, params }: PageProps) {
   const [titleTemplate, setTitleTemplate] = useState("{workflow} · {date}");
   const [noteTemplate, setNoteTemplate] = useState("");
   const [error, setError] = useState("");
+  const startDate = startAt.slice(0, 10);
+  const runTime = startAt.slice(11, 16);
+  const generatedCron = cronExpressionForSchedule(type, weekday, dayOfMonth, runTime, cronInterval, cron);
+  let firstRunPreview: Date | null = null;
+  let previewError = "";
+  try {
+    firstRunPreview = firstScheduleOccurrence(type, startAt, weekday, dayOfMonth, cronInterval);
+  } catch (err) {
+    previewError = errorMessage(err, "无法计算首次执行时间。");
+  }
+
   useEffect(() => {
     void (async () => {
       try {
@@ -196,16 +430,18 @@ function ScheduleFormPage({ api, router, query, params }: PageProps) {
         const match = groups.flat().find((item) => item.schedule.id === scheduleId);
         if (!match) throw new Error("定时任务不存在。");
         const schedule = match.schedule;
+        const timeZone = normalizedScheduleTimeZone(schedule.timezone);
+        const scheduleStartAt = formatScheduleDateTime(new Date(schedule.start_at), timeZone);
         setWorkflowId(match.workflowId);
         setName(schedule.name);
         setType(schedule.schedule_type);
-        setStartAt(new Date(schedule.start_at).toISOString().slice(0, 16));
-        setEndAt(schedule.end_at ? new Date(schedule.end_at).toISOString().slice(0, 16) : "");
-        setWeekday(String(schedule.weekday ?? 1));
-        setDayOfMonth(String(schedule.day_of_month ?? 1));
+        setStartAt(scheduleStartAt);
+        setEndAt(schedule.end_at ? formatScheduleDateTime(new Date(schedule.end_at), timeZone) : "");
+        setWeekday(String(schedule.weekday ?? scheduleWeekdayIndex(new Date(schedule.start_at), timeZone)));
+        setDayOfMonth(String(schedule.day_of_month ?? scheduleDateParts(new Date(schedule.start_at), timeZone).day));
         const existingCron = schedule.cron_expression || "0 * * * *";
         setCron(existingCron);
-        setCronInterval(cronIntervalFromExpression(existingCron) ?? "legacy");
+        setCronInterval(schedule.schedule_type === "cron" ? cronIntervalFromExpression(existingCron) ?? "legacy" : "60");
         setTitleTemplate(schedule.title_template);
         setNoteTemplate(schedule.note_template);
       } catch (err) {
@@ -213,14 +449,37 @@ function ScheduleFormPage({ api, router, query, params }: PageProps) {
       }
     })();
   }, [scheduleId]);
+
+  const updateStartDate = (date: string) => setStartAt(date ? `${date}T${runTime || "09:00"}` : "");
+  const updateRunTime = (time: string) => setStartAt(startDate && time ? `${startDate}T${time}` : "");
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    setError("");
     if (!workflowId || !name.trim()) {
       setError("请选择模板并填写任务名称。");
       return;
     }
     try {
-      const payload = { name, schedule_type: type, start_at: new Date(startAt).toISOString(), end_at: endAt ? new Date(endAt).toISOString() : null, weekday: Number(weekday), day_of_month: Number(dayOfMonth), cron_expression: cron, timezone: "Asia/Shanghai", title_template: titleTemplate, note_template: noteTemplate, enabled: true };
+      const firstRunAt = firstScheduleOccurrence(type, startAt, weekday, dayOfMonth, cronInterval);
+      if (type === "once" && firstRunAt.getTime() <= Date.now()) throw new Error("执行时间必须晚于当前时间。");
+      if (type === "cron" && cronInterval !== "legacy" && (!Number.isInteger(Number(cronInterval)) || Number(cronInterval) < 1 || Number(cronInterval) > 60)) {
+        throw new Error("重复间隔必须在 1 到 60 分钟之间。");
+      }
+      const endDate = type !== "once" && endAt ? scheduleInstant(schedulePartsFromInput(endAt)) : null;
+      if (endDate && endDate.getTime() <= firstRunAt.getTime()) throw new Error("结束时间必须晚于首次执行时间。");
+      const payload = {
+        name: name.trim(),
+        schedule_type: type,
+        start_at: firstRunAt.toISOString(),
+        end_at: endDate?.toISOString() ?? null,
+        weekday: Number(weekday),
+        day_of_month: Number(dayOfMonth),
+        cron_expression: generatedCron,
+        timezone: SCHEDULE_TIME_ZONE,
+        title_template: titleTemplate,
+        note_template: noteTemplate,
+        enabled: true,
+      };
       if (scheduleId) await api.updateSchedule(workflowId, scheduleId, payload);
       else await api.createSchedule(workflowId, payload);
       await router.push("/modules/workflow-tickets-react/schedules");
@@ -228,7 +487,32 @@ function ScheduleFormPage({ api, router, query, params }: PageProps) {
       setError(errorMessage(err, scheduleId ? "更新定时任务失败" : "创建定时任务失败"));
     }
   };
-  return <PageFrame title={scheduleId ? "编辑定时任务" : "新建定时任务"} description="计划必须基于已发布模板执行。"><Card><CardContent className="pt-5"><form className="grid gap-5" onSubmit={save}><FieldGroup><Field><FieldLabel>工作流模板</FieldLabel><Select value={workflowId} onValueChange={(value) => setWorkflowId(value ?? "")} disabled={Boolean(scheduleId)}><SelectTrigger><SelectValue placeholder="选择已发布模板" /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>模板</SelectLabel>{workflows.filter((workflow) => workflow.status === "published").map((workflow) => <SelectItem key={workflow.id} value={workflow.id}>{workflow.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field><Field><FieldLabel>任务名称</FieldLabel><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：每天生成巡检工单" /></Field><Field><FieldLabel>计划类型</FieldLabel><Select value={type} onValueChange={(value) => setType(value ?? "daily")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>计划类型</SelectLabel>{[["once", "一次"], ["daily", "每天"], ["weekly", "每周"], ["monthly", "每月"], ["cron", "按间隔"]].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field><div className="grid gap-4 md:grid-cols-2"><Field><FieldLabel>开始时间</FieldLabel><Input type="datetime-local" value={startAt} onChange={(event) => setStartAt(event.target.value)} /></Field><Field><FieldLabel>结束时间（可选）</FieldLabel><Input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /></Field></div>{type === "weekly" ? <Field><FieldLabel>每周星期</FieldLabel><Input type="number" min="0" max="6" value={weekday} onChange={(event) => setWeekday(event.target.value)} /></Field> : null}{type === "monthly" ? <Field><FieldLabel>每月日期</FieldLabel><Input type="number" min="1" max="28" value={dayOfMonth} onChange={(event) => setDayOfMonth(event.target.value)} /></Field> : null}{type === "cron" ? <Field><FieldLabel>重复间隔</FieldLabel><Select value={cronInterval} onValueChange={(value) => { const nextInterval = value ?? "60"; setCronInterval(nextInterval); if (nextInterval !== "legacy") setCron(cronExpressionForInterval(nextInterval)); }}><SelectTrigger aria-label="重复间隔"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>重复间隔</SelectLabel>{cronIntervalOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}{cronInterval !== "legacy" && !cronIntervalOptions.some((option) => option.value === cronInterval) ? <SelectItem value={cronInterval}>每 {cronInterval} 分钟（当前设置）</SelectItem> : null}{cronInterval === "legacy" ? <SelectItem value="legacy">保留现有频率</SelectItem> : null}</SelectGroup></SelectContent></Select>{cronInterval === "legacy" ? <FieldDescription>当前任务使用旧的自定义设置，保存时会保留；选择其他频率即可替换。</FieldDescription> : <FieldDescription>首次执行时间由开始时间决定，之后按所选间隔重复创建工单。</FieldDescription>}</Field> : null}<Field><FieldLabel>工单标题模板</FieldLabel><Input value={titleTemplate} onChange={(event) => setTitleTemplate(event.target.value)} /><FieldDescription>支持 workflow、date、year、month、day、time、sequence 占位符。</FieldDescription></Field><Field><FieldLabel>备注模板</FieldLabel><Textarea value={noteTemplate} onChange={(event) => setNoteTemplate(event.target.value)} /></Field></FieldGroup>{error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}<div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => void router.back?.()}>取消</Button><Button type="submit">{scheduleId ? "保存计划" : "创建计划"}</Button></div></form></CardContent></Card></PageFrame>;
+
+  return <PageFrame title={scheduleId ? "编辑定时任务" : "新建定时任务"} description="按计划类型设置执行细节；周期计划自动生成 Cron，一次性计划直接按指定时间执行。">
+    <Card><CardContent className="pt-5"><form className="grid gap-5" onSubmit={save}>
+      <FieldGroup>
+        <Field><FieldLabel>工作流模板</FieldLabel><Select value={workflowId} onValueChange={(value) => setWorkflowId(value ?? "")} disabled={Boolean(scheduleId)}><SelectTrigger><SelectValue placeholder="选择已发布模板" /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>模板</SelectLabel>{workflows.filter((workflow) => workflow.status === "published").map((workflow) => <SelectItem key={workflow.id} value={workflow.id}>{workflow.name}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+        <Field><FieldLabel>任务名称</FieldLabel><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：每天生成巡检工单" /></Field>
+        <Field><FieldLabel>计划类型</FieldLabel><Select value={type} onValueChange={(value) => { setError(""); setType(value ?? "daily"); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>计划类型</SelectLabel>{[["once", "一次"], ["daily", "每天"], ["weekly", "每周"], ["monthly", "每月"], ["cron", "按间隔"]].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
+        {type === "once" ? <Field><FieldLabel>执行时间</FieldLabel><Input type="datetime-local" required value={startAt} onChange={(event) => setStartAt(event.target.value)} /><FieldDescription>按 {SCHEDULE_TIME_ZONE} 时区执行。</FieldDescription></Field> : <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field><FieldLabel>开始日期</FieldLabel><Input type="date" required value={startDate} onChange={(event) => updateStartDate(event.target.value)} /></Field>
+            <Field><FieldLabel>{type === "cron" ? "首次执行时间" : "执行时间"}</FieldLabel><Input type="time" required value={runTime} onChange={(event) => updateRunTime(event.target.value)} /><FieldDescription>按 {SCHEDULE_TIME_ZONE} 时区设置。</FieldDescription></Field>
+          </div>
+          {type === "weekly" ? <Field><FieldLabel>每周星期</FieldLabel><Select value={weekday} onValueChange={(value) => setWeekday(value ?? "1")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>选择星期</SelectLabel>{scheduleWeekdays.map((day) => <SelectItem key={day.value} value={day.value}>{day.label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field> : null}
+          {type === "monthly" ? <Field><FieldLabel>每月日期</FieldLabel><Input type="number" min="1" max="31" step="1" required value={dayOfMonth} onChange={(event) => setDayOfMonth(event.target.value)} /><FieldDescription>没有该日期的月份会跳过，例如每月 31 日不会在 2 月执行。</FieldDescription></Field> : null}
+          {type === "cron" ? <Field><FieldLabel>重复间隔（分钟）</FieldLabel><Input type="number" min="1" max="60" step="1" value={cronInterval === "legacy" ? "" : cronInterval} placeholder={cronInterval === "legacy" ? "输入 1–60 分钟以替换自定义频率" : "1–60"} onChange={(event) => setCronInterval(event.target.value)} />{cronInterval === "legacy" ? <FieldDescription>当前任务使用自定义 Cron：{cron}。保留此项会沿用原频率；输入分钟数后自动切换为标准间隔。</FieldDescription> : <FieldDescription>{cronInterval === "60" ? "每小时整点执行。" : `每 ${cronInterval || "…"} 分钟执行一次，首次执行会对齐到符合间隔的时间点。`}</FieldDescription>}</Field> : null}
+          <Field><FieldLabel>自动生成的 Cron 表达式</FieldLabel><div className="rounded-md border bg-muted px-3 py-2 font-mono text-sm">{generatedCron || "请输入有效的执行配置"}</div><FieldDescription>{type === "cron" && cronInterval === "legacy" ? "保留原 Cron 表达式；更改间隔后会自动生成新的表达式。" : `表达式使用 ${SCHEDULE_TIME_ZONE} 时区。`}</FieldDescription></Field>
+          <Field><FieldLabel>首次执行预览</FieldLabel><div className="rounded-md border px-3 py-2 text-sm">{firstRunPreview ? formatScheduleDateTime(firstRunPreview).replace("T", " ") : "—"}</div>{previewError ? <FieldDescription>{previewError}</FieldDescription> : <FieldDescription>按开始日期、频率和执行时间计算下次可执行时间。</FieldDescription>}</Field>
+          <Field><FieldLabel>结束时间（可选）</FieldLabel><Input type="datetime-local" value={endAt} onChange={(event) => setEndAt(event.target.value)} /><FieldDescription>到达结束时间后不再创建工单。</FieldDescription></Field>
+        </>}
+        <Field><FieldLabel>工单标题模板</FieldLabel><Input value={titleTemplate} onChange={(event) => setTitleTemplate(event.target.value)} /><FieldDescription>支持 workflow、date、year、month、day、time、sequence 占位符。</FieldDescription></Field>
+        <Field><FieldLabel>备注模板</FieldLabel><Textarea value={noteTemplate} onChange={(event) => setNoteTemplate(event.target.value)} /></Field>
+      </FieldGroup>
+      {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
+      <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => void router.back?.()}>取消</Button><Button type="submit">{scheduleId ? "保存计划" : "创建计划"}</Button></div>
+    </form></CardContent></Card>
+  </PageFrame>;
 }
 function SettingsPage({ api, router }: PageProps) {
   const [settings, setSettings] = useState<Settings>();
@@ -328,6 +612,7 @@ export function ModuleApp(props: ToolNestModuleRouteRenderProps) {
     ...props.params,
     ...(parts[0] === "projects" && parts[1] ? { id: parts[1], projectId: parts[1], ...(parts[2] === "milestones" && parts[3] ? { milestoneId: parts[3] } : {}) } : {}),
     ...(parts[0] === "tickets" && parts[1] ? { id: parts[1], ticketId: parts[1] } : {}),
+    ...(parts[0] === "schedules" && parts[1] && parts[1] !== "new" ? { id: decodePathPart(parts[1]), scheduleId: decodePathPart(parts[1]) } : {}),
     ...(workflowId ? { id: workflowId, workflowId, ...(nodeId ? { nodeId: decodePathPart(nodeId) } : {}) } : {}),
   };
   const pageProps = { ...props, api, params: parsedParams };

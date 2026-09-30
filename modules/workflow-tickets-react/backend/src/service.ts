@@ -76,6 +76,69 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+type ScheduleWallClock = { year: number; month: number; day: number; hour: number; minute: number; second: number };
+
+function scheduleWallClockAt(date: Date, timeZone: string): ScheduleWallClock {
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  } catch {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  }
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+}
+
+function scheduleDateAtWallClock(parts: ScheduleWallClock, timeZone: string): Date {
+  const wallClock = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  let timestamp = wallClock;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const actual = scheduleWallClockAt(new Date(timestamp), timeZone);
+    const actualWallClock = Date.UTC(actual.year, actual.month - 1, actual.day, actual.hour, actual.minute, actual.second);
+    const correction = wallClock - actualWallClock;
+    if (!correction) return new Date(timestamp);
+    timestamp += correction;
+  }
+  return new Date(timestamp);
+}
+
+function shiftScheduleWallClock(parts: ScheduleWallClock, days: number, minutes = 0): ScheduleWallClock {
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, parts.hour, parts.minute + minutes, parts.second));
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+  };
+}
+
 function canonicalAutomationTrigger(value: string): string {
   return AUTOMATION_TRIGGER_ALIASES[value] ?? value;
 }
@@ -1003,7 +1066,7 @@ export class WorkflowTicketsService {
     const start = text(body.start_at) || existing?.start_at || nowIso();
     const parsed = safeDate(start);
     if (!parsed) fail(422, "开始时间无效");
-    const cron = text(body.cron_expression) || existing?.cron_expression || "";
+    const cron = body.cron_expression === undefined ? existing?.cron_expression || "" : text(body.cron_expression);
     if (type === "cron" && !/^\S+(?:\s+\S+){4}$/.test(cron)) fail(422, "Cron 表达式必须包含 5 个字段");
     const enabled = body.enabled === undefined ? existing?.enabled ?? true : Boolean(body.enabled);
     const result: Schedule = {
@@ -1032,7 +1095,7 @@ export class WorkflowTicketsService {
       updated_at: nowIso(),
     };
     if (enabled) {
-      if (existing?.next_run_at && existing.schedule_type === type) result.next_run_at = existing.next_run_at;
+      if (existing?.next_run_at && existing.schedule_type === type && parsed.getTime() === new Date(existing.next_run_at).getTime()) result.next_run_at = existing.next_run_at;
       else if (type === "once" || parsed > new Date()) result.next_run_at = parsed.toISOString();
       else {
         let candidate = this.nextScheduleAt(result, parsed);
@@ -1043,26 +1106,55 @@ export class WorkflowTicketsService {
     return result;
   }
   private nextScheduleAt(schedule: Schedule, plannedAt: Date): string | null {
-    const next = new Date(plannedAt);
     if (schedule.schedule_type === "once") return null;
-    if (schedule.schedule_type === "daily") next.setUTCDate(next.getUTCDate() + 1);
-    else if (schedule.schedule_type === "weekly") {
-      const days = schedule.weekday == null ? 7 : ((schedule.weekday - next.getUTCDay() + 7) % 7 || 7);
-      next.setUTCDate(next.getUTCDate() + days);
+    const timeZone = schedule.timezone || "UTC";
+    const planned = scheduleWallClockAt(plannedAt, timeZone);
+    let next: Date;
+
+    if (schedule.schedule_type === "daily") {
+      next = scheduleDateAtWallClock(shiftScheduleWallClock(planned, 1), timeZone);
+    } else if (schedule.schedule_type === "weekly") {
+      const weekday = new Date(Date.UTC(planned.year, planned.month - 1, planned.day)).getUTCDay();
+      const targetWeekday = schedule.weekday == null ? weekday : ((schedule.weekday % 7) + 7) % 7;
+      const days = ((targetWeekday - weekday + 7) % 7) || 7;
+      next = scheduleDateAtWallClock(shiftScheduleWallClock(planned, days), timeZone);
     } else if (schedule.schedule_type === "monthly") {
-      next.setUTCMonth(next.getUTCMonth() + 1);
-      if (schedule.day_of_month) next.setUTCDate(Math.min(schedule.day_of_month, 28));
+      const targetDay = Math.max(1, Math.min(31, schedule.day_of_month ?? planned.day));
+      let nextMonthly: Date | null = null;
+      for (let offset = 1; offset <= 24; offset++) {
+        const month = new Date(Date.UTC(planned.year, planned.month - 1 + offset, 1));
+        const year = month.getUTCFullYear();
+        const monthNumber = month.getUTCMonth() + 1;
+        const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+        if (targetDay > daysInMonth) continue;
+        nextMonthly = scheduleDateAtWallClock({ ...planned, year, month: monthNumber, day: targetDay }, timeZone);
+        break;
+      }
+      if (!nextMonthly) return null;
+      next = nextMonthly;
     } else {
       const minuteField = schedule.cron_expression.trim().split(/\s+/)[0] || "*";
       const stepMatch = /^\*\/(\d+)$/.exec(minuteField);
-      if (stepMatch) {
+      if (minuteField === "*") {
+        next = scheduleDateAtWallClock(shiftScheduleWallClock(planned, 0, 1), timeZone);
+      } else if (stepMatch) {
         const step = Math.max(1, Number(stepMatch[1]));
-        const nextMinute = Math.floor(next.getUTCMinutes() / step) * step + step;
-        next.setUTCMinutes(nextMinute, 0, 0);
+        let candidate = planned;
+        if (step >= 60) {
+          candidate = shiftScheduleWallClock(candidate, 0, 60 - candidate.minute);
+        } else {
+          do {
+            candidate = shiftScheduleWallClock(candidate, 0, 1);
+          } while (candidate.minute % step !== 0);
+        }
+        next = scheduleDateAtWallClock(candidate, timeZone);
       } else {
-        next.setUTCMinutes(next.getUTCMinutes() + 60, 0, 0);
+        let candidate = shiftScheduleWallClock(planned, 0, 60 - planned.minute);
+        while (candidate.minute !== 0) candidate = shiftScheduleWallClock(candidate, 0, 1);
+        next = scheduleDateAtWallClock(candidate, timeZone);
       }
     }
+
     if (schedule.end_at && next > new Date(schedule.end_at)) return null;
     return next.toISOString();
   }
