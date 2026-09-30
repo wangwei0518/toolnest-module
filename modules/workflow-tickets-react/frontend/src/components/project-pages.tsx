@@ -298,7 +298,7 @@ function MilestoneInfoRail({ project, milestone, timeline, resources }: { projec
 type GanttScale = "month" | "week" | "day" | "hour" | "quarter-hour";
 type GanttBucket = { key: string; start: Date; label: string };
 type GanttSegment = { id: string; nodeId: string; name: string; status: string; start: Date; end: Date; stageIndex: number };
-type GanttSegmentLayout = GanttSegment & { left: number; width: number; lane: number; stacked: boolean };
+type GanttSegmentLayout = GanttSegment & { left: number; width: number };
 type GanttTicketTimeline = { created: Date | undefined; completed: Date | undefined; segments: GanttSegment[] };
 
 const ganttStageClasses = ["bg-gantt-stage-1", "bg-gantt-stage-2", "bg-gantt-stage-3", "bg-gantt-stage-4", "bg-gantt-stage-5"];
@@ -434,36 +434,23 @@ function ganttTicketEnd(ticket: Ticket, now: Date) {
 }
 
 function ganttSegmentLayouts(segments: GanttSegment[], range: { start: Date; end: Date }): GanttSegmentLayout[] {
-  const raw = segments.map((segment) => {
+  return segments.map((segment) => {
     const left = ganttPosition(segment.start, range.start, range.end);
     const right = ganttPosition(segment.end, range.start, range.end);
-    return { segment, left, width: Math.max(1.5, right - left) };
+    return { ...segment, left, width: Math.max(0, right - left) };
   });
-  const layouts: GanttSegmentLayout[] = [];
-  for (const [index, item] of raw.entries()) {
-    const overlaps = raw.some((other, otherIndex) => otherIndex !== index && item.left < other.left + other.width && other.left < item.left + item.width);
-    const previousLanes = layouts.filter((other) => item.left < other.left + other.width && other.left < item.left + other.width).map((other) => other.lane);
-    let lane = 0;
-    while (previousLanes.includes(lane)) lane += 1;
-    layouts.push({ ...item.segment, left: item.left, width: item.width, lane, stacked: overlaps });
-  }
-  return layouts;
 }
 
-function ganttDependencyConnectors(segments: GanttSegment[], layouts: GanttSegmentLayout[], edges: WorkflowVersion["edges"], range: { start: Date; end: Date }) {
-  const segmentsByNode = new Map<string, GanttSegment>(segments.map((segment) => [segment.nodeId, segment] as const));
+function ganttDependencyConnectors(layouts: GanttSegmentLayout[], edges: WorkflowVersion["edges"]) {
   const layoutsByNode = new Map<string, GanttSegmentLayout>(layouts.map((layout) => [layout.nodeId, layout] as const));
   return edges.flatMap((edge) => {
-    const source = segmentsByNode.get(edge.source_node_id);
-    const target = segmentsByNode.get(edge.target_node_id);
-    const sourceLayout = layoutsByNode.get(edge.source_node_id);
-    const targetLayout = layoutsByNode.get(edge.target_node_id);
-    if (!source || !target || !sourceLayout || !targetLayout) return [];
-    const x1 = ganttPosition(source.end, range.start, range.end);
-    const x2 = ganttPosition(target.start, range.start, range.end);
+    const source = layoutsByNode.get(edge.source_node_id);
+    const target = layoutsByNode.get(edge.target_node_id);
+    if (!source || !target) return [];
+    const x1 = source.left + source.width;
+    const x2 = target.left;
     if (x2 <= x1) return [];
-    const centerY = (layout: GanttSegmentLayout) => layout.stacked ? (layout.lane === 0 ? 12 : 36) : 24;
-    return [{ id: edge.id, x1, x2, y1: centerY(sourceLayout), y2: centerY(targetLayout) }];
+    return [{ id: edge.id, x1, x2 }];
   });
 }
 
@@ -511,15 +498,15 @@ function GanttTicketTimelineRow({ ticket, milestones, buckets, range, now, today
   const version = workflowVersions.get(ganttWorkflowVersionKey(ticket));
   const timeline = ganttTicketTimeline(ticket, now, ganttPhaseIndexes(ticket, version));
   const segmentLayouts = ganttSegmentLayouts(timeline.segments, range);
-  const dependencyConnectors = version ? ganttDependencyConnectors(timeline.segments, segmentLayouts, version.edges, range) : [];
+  const dependencyConnectors = version ? ganttDependencyConnectors(segmentLayouts, version.edges) : [];
   const markerPosition = timeline.created ? ganttPosition(timeline.created, range.start, range.end) : 0;
   const todayPosition = ["completed", "cancelled", "archived"].includes(ticket.status) ? null : Math.min(ganttPosition(today, range.start, range.end), 98.5);
   return <GanttTicketSelection ticket={ticket} selected={selected} onSelect={onSelect}><div className="relative h-full min-w-0 px-3 sm:px-4">
     <div className="pointer-events-none absolute inset-0" style={chartGrid} />
     {milestones.map((milestone) => { const target = parseDate(milestone.target_at); if (!target) return null; return <span key={milestone.id} className="pointer-events-none absolute inset-y-0 border-l border-dashed border-primary/35" style={{ left: ganttPosition(target, range.start, range.end) + "%" }} aria-hidden="true" />; })}
     {todayPosition !== null ? <span className="pointer-events-none absolute inset-y-0 border-l border-dashed border-primary/70" style={{ left: todayPosition + "%" }} aria-hidden="true" /> : null}
-    {dependencyConnectors.length ? <svg className="pointer-events-none absolute inset-0 z-0 h-full w-full" viewBox="0 0 100 48" preserveAspectRatio="none" aria-hidden="true">{dependencyConnectors.map((connector) => <line key={connector.id} x1={connector.x1} y1={connector.y1} x2={connector.x2} y2={connector.y2} stroke="var(--muted-foreground)" strokeOpacity="0.42" strokeWidth="0.14" strokeDasharray="0.35 0.25" />)}</svg> : null}
-    {segmentLayouts.length ? segmentLayouts.map((segment, segmentIndex) => { const summary = segment.name + " · " + formatDate(segment.start.toISOString()) + " 至 " + formatDate(segment.end.toISOString()); const top = segment.stacked ? (segment.lane === 0 ? "calc(50% - 0.75rem)" : "calc(50% + 0.75rem)") : "50%"; const left = Math.min(segment.left, 99); const width = Math.min(segment.width, 100 - left); const hasNeighbors = segmentLayouts.length > 1; const insetStart = hasNeighbors && segmentIndex > 0 ? 2 : 0; const insetEnd = hasNeighbors && segmentIndex < segmentLayouts.length - 1 ? 2 : 0; return <Fragment key={segment.id}><span className={"absolute z-10 h-5 -translate-y-1/2 rounded-[calc(var(--radius-sm)-4px)] " + ganttSegmentClass(segment.status, ticket.status, segment.stageIndex)} style={{ left: `calc(${left}% + ${insetStart}px)`, width: `max(2px, calc(${width}% - ${insetStart + insetEnd}px))`, top }} title={summary} aria-label={summary} /></Fragment>; }) : <span className="absolute top-1/2 flex -translate-y-1/2 items-center gap-2" style={{ left: markerPosition + "%" }} title={ticket.title + " · 尚未开始执行"}><span className="size-2.5 shrink-0 rounded-full border-2 border-card bg-muted-foreground/50" /><span className="whitespace-nowrap text-xs text-muted-foreground">待开始 · {timeline.created ? ganttShortDate(timeline.created) : ""}</span></span>}
+    {dependencyConnectors.map((connector) => <span key={connector.id} className="pointer-events-none absolute top-1/2 z-0 h-0.5 -translate-y-1/2 rounded-full bg-muted-foreground/60" style={{ left: `${connector.x1}%`, width: `max(2px, ${connector.x2 - connector.x1}%)` }} aria-hidden="true" />)}
+    {segmentLayouts.length ? segmentLayouts.map((segment) => { const summary = segment.name + " · " + formatDate(segment.start.toISOString()) + " 至 " + formatDate(segment.end.toISOString()); const left = Math.min(segment.left, 99); const width = Math.min(segment.width, 100 - left); return <span key={segment.id} className={"absolute top-1/2 z-10 h-5 -translate-y-1/2 rounded-[calc(var(--radius-sm)-4px)] " + ganttSegmentClass(segment.status, ticket.status, segment.stageIndex)} style={{ left: `${left}%`, width: `max(2px, ${width}%)` }} title={summary} aria-label={summary} />; }) : <span className="absolute top-1/2 flex -translate-y-1/2 items-center gap-2" style={{ left: markerPosition + "%" }} title={ticket.title + " · 尚未开始执行"}><span className="size-2.5 shrink-0 rounded-full border-2 border-card bg-muted-foreground/50" /><span className="whitespace-nowrap text-xs text-muted-foreground">待开始 · {timeline.created ? ganttShortDate(timeline.created) : ""}</span></span>}
   </div></GanttTicketSelection>;
 }
 
