@@ -300,6 +300,8 @@ type GanttBucket = { key: string; start: Date; label: string };
 type GanttSegment = { id: string; nodeId: string; name: string; status: string; start: Date; end: Date; stageIndex: number };
 type GanttSegmentLayout = GanttSegment & { left: number; width: number };
 type GanttTicketTimeline = { created: Date | undefined; completed: Date | undefined; segments: GanttSegment[] };
+type GanttActivityByNode = Map<string, TimelineEvent[]>;
+type GanttActivityByTicket = Map<string, GanttActivityByNode>;
 
 const ganttStageClasses = ["bg-gantt-stage-1", "bg-gantt-stage-2", "bg-gantt-stage-3", "bg-gantt-stage-4", "bg-gantt-stage-5"];
 
@@ -402,33 +404,61 @@ function ganttNodeTimestamp(node: Ticket["node_instances"][number]) {
   return parseDate(node.started_at)?.getTime() ?? parseDate(node.completed_at)?.getTime() ?? Number.POSITIVE_INFINITY;
 }
 
+function indexGanttActivity(events: TimelineEvent[]): GanttActivityByTicket {
+  const byTicket: GanttActivityByTicket = new Map();
+  for (const event of events) {
+    if (!event.ticket_id || !event.node_id || !["node_ready", "node_completed", "node_rolled_back"].includes(event.type)) continue;
+    const byNode = byTicket.get(event.ticket_id) ?? new Map<string, TimelineEvent[]>();
+    const nodeEvents = byNode.get(event.node_id) ?? [];
+    nodeEvents.push(event);
+    byNode.set(event.node_id, nodeEvents);
+    byTicket.set(event.ticket_id, byNode);
+  }
+  return byTicket;
+}
+
+function latestGanttActivityDate(events: TimelineEvent[], types: string[], notAfter?: Date) {
+  let latest: Date | undefined;
+  for (const event of events) {
+    if (!types.includes(event.type)) continue;
+    const date = parseDate(event.created_at);
+    if (!date || (notAfter && date > notAfter)) continue;
+    if (!latest || date > latest) latest = date;
+  }
+  return latest;
+}
+
 function ganttStageCount(ticket: Ticket, version?: WorkflowVersion) {
   const indexes = ganttPhaseIndexes(ticket, version);
   return Math.max(0, ...indexes.values()) + 1;
 }
 
-function ganttTicketTimeline(ticket: Ticket, now: Date, phaseIndexes = ganttPhaseIndexes(ticket)): GanttTicketTimeline {
+function ganttTicketTimeline(ticket: Ticket, now: Date, phaseIndexes = ganttPhaseIndexes(ticket), activityByNode?: GanttActivityByNode): GanttTicketTimeline {
   const created = parseDate(ticket.created_at);
   let previousEnd = created;
   const segments: GanttSegment[] = [];
   const orderedNodes = ticket.node_instances.map((node, index) => ({ node, index, stageIndex: phaseIndexes.get(node.node_id) ?? index }))
     .sort((left, right) => left.stageIndex - right.stageIndex || ganttNodeTimestamp(left.node) - ganttNodeTimestamp(right.node) || left.index - right.index);
   orderedNodes.forEach(({ node, stageIndex }, orderedIndex) => {
+    const nodeEvents = activityByNode?.get(node.node_id) ?? [];
     const active = ["ready", "in_progress", "blocked", "waiting"].includes(node.status);
-    const ended = parseDate(node.completed_at) ?? (active ? now : node.status === "cancelled" ? parseDate(ticket.updated_at) : undefined);
+    const completedEvent = node.status === "completed" ? latestGanttActivityDate(nodeEvents, ["node_completed"]) : undefined;
+    const ended = completedEvent ?? parseDate(node.completed_at) ?? (active ? now : node.status === "cancelled" ? parseDate(ticket.updated_at) : undefined);
     if (!ended) return;
-    const started = orderedIndex === 0 ? (created ?? parseDate(node.started_at)) : (parseDate(node.started_at) ?? previousEnd);
+    const activityStart = latestGanttActivityDate(nodeEvents, ["node_ready", "node_rolled_back"], ended);
+    const started = activityStart ?? parseDate(node.started_at) ?? (orderedIndex === 0 ? created : previousEnd);
     if (!started) return;
     const end = ended.getTime() >= started.getTime() ? ended : started;
     segments.push({ id: node.id, nodeId: node.node_id, name: node.name, status: node.status, start: started, end, stageIndex });
     previousEnd = end;
   });
-  const completed = latestDate(ticket.node_instances.map((node) => parseDate(node.completed_at)));
+  const completed = latestDate(segments.filter((segment) => segment.status === "completed").map((segment) => segment.end))
+    ?? latestDate(ticket.node_instances.map((node) => parseDate(node.completed_at)));
   return { created, completed, segments };
 }
 
-function ganttTicketEnd(ticket: Ticket, now: Date) {
-  const timeline = ganttTicketTimeline(ticket, now);
+function ganttTicketEnd(ticket: Ticket, now: Date, activityByTicket: GanttActivityByTicket) {
+  const timeline = ganttTicketTimeline(ticket, now, ganttPhaseIndexes(ticket), activityByTicket.get(ticket.id));
   const ended = ["completed", "cancelled", "archived"].includes(ticket.status);
   return ended ? timeline.completed ?? parseDate(ticket.updated_at) ?? now : now;
 }
@@ -441,22 +471,9 @@ function ganttSegmentLayouts(segments: GanttSegment[], range: { start: Date; end
   });
 }
 
-function ganttDependencyConnectors(layouts: GanttSegmentLayout[], edges: WorkflowVersion["edges"]) {
-  const layoutsByNode = new Map<string, GanttSegmentLayout>(layouts.map((layout) => [layout.nodeId, layout] as const));
-  return edges.flatMap((edge) => {
-    const source = layoutsByNode.get(edge.source_node_id);
-    const target = layoutsByNode.get(edge.target_node_id);
-    if (!source || !target) return [];
-    const x1 = source.left + source.width;
-    const x2 = target.left;
-    if (x2 <= x1) return [];
-    return [{ id: edge.id, x1, x2 }];
-  });
-}
-
-function ganttRange(tickets: Ticket[], now: Date) {
+function ganttRange(tickets: Ticket[], now: Date, activityByTicket: GanttActivityByTicket) {
   const starts = tickets.map((ticket) => parseDate(ticket.created_at)).filter((value): value is Date => Boolean(value));
-  const ends = tickets.map((ticket) => ganttTicketEnd(ticket, now));
+  const ends = tickets.map((ticket) => ganttTicketEnd(ticket, now, activityByTicket));
   const start = starts.length ? new Date(Math.min(...starts.map((value) => value.getTime()))) : new Date(now);
   const latest = ends.length ? new Date(Math.max(...ends.map((value) => value.getTime()))) : new Date(start);
   const end = latest.getTime() > start.getTime() ? latest : addHours(start, 1);
@@ -494,18 +511,16 @@ function GanttTicketInfoRow({ ticket, selected, onSelect }: GanttTicketRowProps)
   </div></GanttTicketSelection>;
 }
 
-function GanttTicketTimelineRow({ ticket, milestones, buckets, range, now, today, selected, onSelect, chartGrid, workflowVersions }: { ticket: Ticket; milestones: Milestone[]; buckets: GanttBucket[]; range: { start: Date; end: Date }; now: Date; today: Date; selected: boolean; onSelect: () => void; chartGrid: CSSProperties; workflowVersions: Map<string, WorkflowVersion> }) {
+function GanttTicketTimelineRow({ ticket, milestones, buckets, range, now, today, selected, onSelect, chartGrid, workflowVersions, ganttActivities }: { ticket: Ticket; milestones: Milestone[]; buckets: GanttBucket[]; range: { start: Date; end: Date }; now: Date; today: Date; selected: boolean; onSelect: () => void; chartGrid: CSSProperties; workflowVersions: Map<string, WorkflowVersion>; ganttActivities: GanttActivityByTicket }) {
   const version = workflowVersions.get(ganttWorkflowVersionKey(ticket));
-  const timeline = ganttTicketTimeline(ticket, now, ganttPhaseIndexes(ticket, version));
+  const timeline = ganttTicketTimeline(ticket, now, ganttPhaseIndexes(ticket, version), ganttActivities.get(ticket.id));
   const segmentLayouts = ganttSegmentLayouts(timeline.segments, range);
-  const dependencyConnectors = version ? ganttDependencyConnectors(segmentLayouts, version.edges) : [];
   const markerPosition = timeline.created ? ganttPosition(timeline.created, range.start, range.end) : 0;
   const todayPosition = ["completed", "cancelled", "archived"].includes(ticket.status) ? null : Math.min(ganttPosition(today, range.start, range.end), 98.5);
   return <GanttTicketSelection ticket={ticket} selected={selected} onSelect={onSelect}><div className="relative h-full min-w-0 px-3 sm:px-4">
     <div className="pointer-events-none absolute inset-0" style={chartGrid} />
     {milestones.map((milestone) => { const target = parseDate(milestone.target_at); if (!target) return null; return <span key={milestone.id} className="pointer-events-none absolute inset-y-0 border-l border-dashed border-primary/35" style={{ left: ganttPosition(target, range.start, range.end) + "%" }} aria-hidden="true" />; })}
     {todayPosition !== null ? <span className="pointer-events-none absolute inset-y-0 border-l border-dashed border-primary/70" style={{ left: todayPosition + "%" }} aria-hidden="true" /> : null}
-    {dependencyConnectors.map((connector) => <span key={connector.id} className="pointer-events-none absolute top-1/2 z-0 h-0.5 -translate-y-1/2 rounded-full bg-muted-foreground/60" style={{ left: `${connector.x1}%`, width: `max(2px, ${connector.x2 - connector.x1}%)` }} aria-hidden="true" />)}
     {segmentLayouts.length ? segmentLayouts.map((segment) => { const summary = segment.name + " · " + formatDate(segment.start.toISOString()) + " 至 " + formatDate(segment.end.toISOString()); const left = Math.min(segment.left, 99); const width = Math.min(segment.width, 100 - left); return <span key={segment.id} className={"absolute top-1/2 z-10 h-5 -translate-y-1/2 rounded-[calc(var(--radius-sm)-4px)] " + ganttSegmentClass(segment.status, ticket.status, segment.stageIndex)} style={{ left: `${left}%`, width: `max(2px, ${width}%)` }} title={summary} aria-label={summary} />; }) : <span className="absolute top-1/2 flex -translate-y-1/2 items-center gap-2" style={{ left: markerPosition + "%" }} title={ticket.title + " · 尚未开始执行"}><span className="size-2.5 shrink-0 rounded-full border-2 border-card bg-muted-foreground/50" /><span className="whitespace-nowrap text-xs text-muted-foreground">待开始 · {timeline.created ? ganttShortDate(timeline.created) : ""}</span></span>}
   </div></GanttTicketSelection>;
 }
@@ -528,19 +543,19 @@ function ganttGroups(milestones: Milestone[], tickets: Ticket[]): GanttGroupData
   return [...groups, ...unknown.values(), ...(unassigned.length ? [{ key: "unassigned", title: "未关联里程碑", tickets: unassigned }] : [])].filter((group) => group.tickets.length).map((group) => ({ ...group, tickets: sortTickets(group.tickets) }));
 }
 
-function GanttGroup({ title, tickets, pane, ...props }: { title: string; tickets: Ticket[]; pane: "info" | "timeline"; projectId: string; milestones: Milestone[]; buckets: GanttBucket[]; range: { start: Date; end: Date }; now: Date; today: Date; selectedId: string; onSelect: (id: string) => void; router: Router; chartGrid: CSSProperties; workflowVersions: Map<string, WorkflowVersion> }) {
+function GanttGroup({ title, tickets, pane, ...props }: { title: string; tickets: Ticket[]; pane: "info" | "timeline"; projectId: string; milestones: Milestone[]; buckets: GanttBucket[]; range: { start: Date; end: Date }; now: Date; today: Date; selectedId: string; onSelect: (id: string) => void; router: Router; chartGrid: CSSProperties; workflowVersions: Map<string, WorkflowVersion>; ganttActivities: GanttActivityByTicket }) {
   const groupHeader = pane === "info" ? <div className="flex h-8 min-w-0 items-center gap-2 border-b border-border/60 bg-muted/30 px-3 text-xs font-medium sm:px-4"><span className="truncate">{title}</span><span className="shrink-0 text-muted-foreground">{tickets.length} 条</span></div> : <div className="h-8 border-b border-border/60 bg-muted/30" aria-hidden="true" />;
   return <>{groupHeader}{tickets.map((ticket) => pane === "info" ? <GanttTicketInfoRow key={ticket.id} ticket={ticket} selected={props.selectedId === ticket.id} onSelect={() => props.onSelect(ticket.id)} /> : <GanttTicketTimelineRow key={ticket.id} ticket={ticket} {...props} selected={props.selectedId === ticket.id} onSelect={() => props.onSelect(ticket.id)} />)}</>;
 }
 
-function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, router, workflowVersions }: { milestones: Milestone[]; tickets: Ticket[]; projectId: string; selectedId: string; onSelect: (id: string) => void; router: Router; workflowVersions: Map<string, WorkflowVersion> }) {
+function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, router, workflowVersions, ganttActivities }: { milestones: Milestone[]; tickets: Ticket[]; projectId: string; selectedId: string; onSelect: (id: string) => void; router: Router; workflowVersions: Map<string, WorkflowVersion>; ganttActivities: GanttActivityByTicket }) {
   const now = new Date();
   const today = now;
   const [scale, setScale] = useState<GanttScale>(() => {
-    const defaultRange = ganttRange(tickets, new Date());
+    const defaultRange = ganttRange(tickets, new Date(), ganttActivities);
     return ganttDefaultScale(defaultRange);
   });
-  const range = useMemo(() => ganttRange(tickets, now), [tickets, now.getTime()]);
+  const range = useMemo(() => ganttRange(tickets, now, ganttActivities), [tickets, ganttActivities, now.getTime()]);
   const shortScalesAllowed = range.end.getTime() - range.start.getTime() <= 24 * 3_600_000;
   useEffect(() => { if (!shortScalesAllowed && ["hour", "quarter-hour"].includes(scale)) setScale("day"); }, [scale, shortScalesAllowed]);
   const buckets = useMemo(() => ganttBuckets(range, scale), [range, scale]);
@@ -570,7 +585,7 @@ function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, rout
           <div className="grid h-12 min-w-0 grid-cols-[minmax(0,1fr)_minmax(5.5rem,5.5rem)] border-b border-border/60 bg-muted/70">
             <div className="flex min-w-0 items-center gap-1.5 px-3 text-xs font-medium text-muted-foreground sm:px-4"><RiFileTextLine className="size-3.5 shrink-0 text-primary" aria-hidden="true" /><span className="truncate">工单标题</span></div><div className="flex min-w-0 items-center justify-center border-l border-border/60 px-2 text-xs font-medium text-muted-foreground">当前节点</div>
           </div>
-          {groups.map((group) => <GanttGroup key={group.key} pane="info" title={group.title} tickets={group.tickets} projectId={projectId} milestones={milestones} buckets={buckets} range={range} now={now} today={today} selectedId={selectedId} onSelect={onSelect} router={router} chartGrid={chartGrid} workflowVersions={workflowVersions} />)}
+          {groups.map((group) => <GanttGroup key={group.key} pane="info" title={group.title} tickets={group.tickets} projectId={projectId} milestones={milestones} buckets={buckets} range={range} now={now} today={today} selectedId={selectedId} onSelect={onSelect} router={router} chartGrid={chartGrid} workflowVersions={workflowVersions} ganttActivities={ganttActivities} />)}
         </div>
         <div className="tn-workflow-tickets-gantt__timeline min-w-0">
           <div className="min-w-0" aria-label="甘特图日期区域">
@@ -581,7 +596,7 @@ function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, rout
                 {milestoneMarkers.map(({ milestone, position }) => <span key={milestone.id} className="absolute top-1 z-10 max-w-28 -translate-x-1/2 truncate text-[10px] font-medium text-primary" style={{ left: position + "%" }} title={milestone.name + " · " + formatDate(milestone.target_at)}>{milestone.name}</span>)}
                 {todayLinePosition !== null ? <><span className={cn("absolute top-1/2 z-10 -translate-y-1/2 whitespace-nowrap rounded-sm bg-card px-1 text-[10px] font-medium text-primary", todayLabelAlignment)} style={{ left: todayLinePosition + "%" }}>今天</span><span className="absolute inset-y-0 border-l-2 border-dashed border-primary/70" style={{ left: todayLinePosition + "%" }} aria-label="今天" /></> : null}
               </div>
-              {groups.map((group) => <GanttGroup key={group.key} pane="timeline" title={group.title} tickets={group.tickets} projectId={projectId} milestones={milestones} buckets={buckets} range={range} now={now} today={today} selectedId={selectedId} onSelect={onSelect} router={router} chartGrid={chartGrid} workflowVersions={workflowVersions} />)}
+              {groups.map((group) => <GanttGroup key={group.key} pane="timeline" title={group.title} tickets={group.tickets} projectId={projectId} milestones={milestones} buckets={buckets} range={range} now={now} today={today} selectedId={selectedId} onSelect={onSelect} router={router} chartGrid={chartGrid} workflowVersions={workflowVersions} ganttActivities={ganttActivities} />)}
             </div>
           </div>
         </div>
@@ -630,13 +645,22 @@ function TicketsTab({ api, projectId, milestones, tickets, router }: { api: Work
   const initialSelectedId = tickets.find((ticket) => !["completed", "cancelled", "archived"].includes(ticket.status))?.id ?? tickets[0]?.id ?? "";
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [ganttTimeline, setGanttTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [workflowVersions, setWorkflowVersions] = useState<Map<string, WorkflowVersion>>(() => new Map());
   const workflowVersionKey = useMemo(() => [...new Set(tickets.map(ganttWorkflowVersionKey))].sort().join("|"), [tickets]);
+  const ganttActivities = useMemo(() => indexGanttActivity(ganttTimeline), [ganttTimeline]);
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedId);
 
   useEffect(() => { if (!tickets.some((ticket) => ticket.id === selectedId)) setSelectedId(initialSelectedId); }, [initialSelectedId, selectedId, tickets]);
   useEffect(() => { if (!selectedId) { setTimeline([]); return; } setLoading(true); void api.getTimeline({ ticket_id: selectedId }).then(setTimeline).catch(() => setTimeline([])).finally(() => setLoading(false)); }, [api, selectedId]);
+  useEffect(() => {
+    let current = true;
+    if (!tickets.length) { setGanttTimeline([]); return () => { current = false; }; }
+    const limit = Math.max(1000, tickets.reduce((count, ticket) => count + Math.max(1, ticket.node_instances.length) * 50, 0));
+    void api.getTimeline({ project_id: projectId, limit }).then((events) => { if (current) setGanttTimeline(events); }).catch(() => { if (current) setGanttTimeline([]); });
+    return () => { current = false; };
+  }, [api, projectId, tickets]);
   useEffect(() => {
     if (!workflowVersionKey) { setWorkflowVersions(new Map()); return; }
     let current = true;
@@ -658,7 +682,7 @@ function TicketsTab({ api, projectId, milestones, tickets, router }: { api: Work
   }, [api, workflowVersionKey]);
 
   return <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.4fr)]">
-    <GanttBoard milestones={milestones} tickets={tickets} projectId={projectId} selectedId={selectedId} onSelect={setSelectedId} router={router} workflowVersions={workflowVersions} />
+    <GanttBoard milestones={milestones} tickets={tickets} projectId={projectId} selectedId={selectedId} onSelect={setSelectedId} router={router} workflowVersions={workflowVersions} ganttActivities={ganttActivities} />
     <TicketDetailsRail selectedTicket={selectedTicket} timeline={timeline} loading={loading} projectId={projectId} router={router} />
   </div>;
 }
