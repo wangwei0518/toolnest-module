@@ -33,7 +33,7 @@
   --gantt-stage-2: oklch(0.65 0.13 165);
   --gantt-stage-3: oklch(0.72 0.15 82);
   --gantt-stage-4: oklch(0.64 0.15 300);
-  --gantt-stage-5: oklch(0.66 0.15 35);
+  --gantt-stage-5: oklch(0.65 0.14 205);
 }
 
 .dark {
@@ -41,7 +41,7 @@
   --gantt-stage-2: oklch(0.75 0.11 165);
   --gantt-stage-3: oklch(0.79 0.13 82);
   --gantt-stage-4: oklch(0.75 0.13 300);
-  --gantt-stage-5: oklch(0.76 0.13 35);
+  --gantt-stage-5: oklch(0.75 0.12 205);
 }
 
 .tn-workflow-tickets-react__ticket-tab {
