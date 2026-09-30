@@ -298,7 +298,7 @@ function MilestoneInfoRail({ project, milestone, timeline, resources }: { projec
 type GanttScale = "month" | "week" | "day" | "hour" | "quarter-hour";
 type GanttBucket = { key: string; start: Date; label: string };
 type GanttSegment = { id: string; nodeId: string; name: string; status: string; start: Date; end: Date; stageIndex: number };
-type GanttSegmentLayout = GanttSegment & { left: number; width: number };
+type GanttSegmentLayout = GanttSegment & { left: number; width: number; gapBefore: boolean; gapAfter: boolean };
 type GanttTicketTimeline = { created: Date | undefined; completed: Date | undefined; segments: GanttSegment[] };
 type GanttActivityByNode = Map<string, TimelineEvent[]>;
 type GanttActivityByTicket = Map<string, GanttActivityByNode>;
@@ -467,7 +467,9 @@ function ganttSegmentLayouts(segments: GanttSegment[], range: { start: Date; end
   return segments.map((segment) => {
     const left = ganttPosition(segment.start, range.start, range.end);
     const right = ganttPosition(segment.end, range.start, range.end);
-    return { ...segment, left, width: Math.max(0, right - left) };
+    const gapBefore = segments.some((candidate) => candidate.nodeId !== segment.nodeId && candidate.stageIndex !== segment.stageIndex && Math.abs(candidate.end.getTime() - segment.start.getTime()) <= 1000);
+    const gapAfter = segments.some((candidate) => candidate.nodeId !== segment.nodeId && candidate.stageIndex !== segment.stageIndex && Math.abs(segment.end.getTime() - candidate.start.getTime()) <= 1000);
+    return { ...segment, left, width: Math.max(0, right - left), gapBefore, gapAfter };
   });
 }
 
@@ -521,7 +523,7 @@ function GanttTicketTimelineRow({ ticket, milestones, buckets, range, now, today
     <div className="pointer-events-none absolute inset-0" style={chartGrid} />
     {milestones.map((milestone) => { const target = parseDate(milestone.target_at); if (!target) return null; return <span key={milestone.id} className="pointer-events-none absolute inset-y-0 border-l border-dashed border-primary/35" style={{ left: ganttPosition(target, range.start, range.end) + "%" }} aria-hidden="true" />; })}
     {todayPosition !== null ? <span className="pointer-events-none absolute inset-y-0 border-l border-dashed border-primary/70" style={{ left: todayPosition + "%" }} aria-hidden="true" /> : null}
-    {segmentLayouts.length ? segmentLayouts.map((segment) => { const summary = segment.name + " · " + formatDate(segment.start.toISOString()) + " 至 " + formatDate(segment.end.toISOString()); const left = Math.min(segment.left, 99); const width = Math.min(segment.width, 100 - left); return <span key={segment.id} className={"absolute top-1/2 z-10 h-5 -translate-y-1/2 rounded-[calc(var(--radius-sm)-4px)] " + ganttSegmentClass(segment.status, ticket.status, segment.stageIndex)} style={{ left: `${left}%`, width: `max(2px, ${width}%)` }} title={summary} aria-label={summary} />; }) : <span className="absolute top-1/2 flex -translate-y-1/2 items-center gap-2" style={{ left: markerPosition + "%" }} title={ticket.title + " · 尚未开始执行"}><span className="size-2.5 shrink-0 rounded-full border-2 border-card bg-muted-foreground/50" /><span className="whitespace-nowrap text-xs text-muted-foreground">待开始 · {timeline.created ? ganttShortDate(timeline.created) : ""}</span></span>}
+    {segmentLayouts.length ? segmentLayouts.map((segment) => { const summary = segment.name + " · " + formatDate(segment.start.toISOString()) + " 至 " + formatDate(segment.end.toISOString()); const left = Math.min(segment.left, 99); const width = Math.min(segment.width, 100 - left); const inset = Number(segment.gapBefore) + Number(segment.gapAfter); return <span key={segment.id} className={"absolute top-1/2 z-10 h-5 -translate-y-1/2 rounded-[calc(var(--radius-sm)-4px)] " + ganttSegmentClass(segment.status, ticket.status, segment.stageIndex)} style={{ left: segment.gapBefore ? `calc(${left}% + 1px)` : `${left}%`, width: `max(2px, calc(${width}% - ${inset}px))` }} title={summary} aria-label={summary} />; }) : <span className="absolute top-1/2 flex -translate-y-1/2 items-center gap-2" style={{ left: markerPosition + "%" }} title={ticket.title + " · 尚未开始执行"}><span className="size-2.5 shrink-0 rounded-full border-2 border-card bg-muted-foreground/50" /><span className="whitespace-nowrap text-xs text-muted-foreground">待开始 · {timeline.created ? ganttShortDate(timeline.created) : ""}</span></span>}
   </div></GanttTicketSelection>;
 }
 
