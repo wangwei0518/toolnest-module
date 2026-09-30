@@ -386,6 +386,7 @@ function ganttPhaseIndexes(ticket: Ticket, version?: WorkflowVersion): Map<strin
   queue.forEach((nodeId) => indexes.set(nodeId, 0));
   for (let index = 0; index < queue.length; index += 1) {
     const sourceId = queue[index];
+    if (sourceId === undefined) continue;
     const nextIndex = (indexes.get(sourceId) ?? 0) + 1;
     for (const targetId of outgoing.get(sourceId) ?? []) {
       if (nextIndex <= (indexes.get(targetId) ?? -1)) continue;
@@ -550,7 +551,7 @@ function GanttGroup({ title, tickets, pane, ...props }: { title: string; tickets
   return <>{groupHeader}{tickets.map((ticket) => pane === "info" ? <GanttTicketInfoRow key={ticket.id} ticket={ticket} selected={props.selectedId === ticket.id} onSelect={() => props.onSelect(ticket.id)} /> : <GanttTicketTimelineRow key={ticket.id} ticket={ticket} {...props} selected={props.selectedId === ticket.id} onSelect={() => props.onSelect(ticket.id)} />)}</>;
 }
 
-function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, router, workflowVersions, ganttActivities }: { milestones: Milestone[]; tickets: Ticket[]; projectId: string; selectedId: string; onSelect: (id: string) => void; router: Router; workflowVersions: Map<string, WorkflowVersion>; ganttActivities: GanttActivityByTicket }) {
+function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, router, workflowVersions, ganttActivities, emptyDescription }: { milestones: Milestone[]; tickets: Ticket[]; projectId: string; selectedId: string; onSelect: (id: string) => void; router: Router; workflowVersions: Map<string, WorkflowVersion>; ganttActivities: GanttActivityByTicket; emptyDescription: string }) {
   const now = new Date();
   const today = now;
   const [scale, setScale] = useState<GanttScale>(() => {
@@ -602,7 +603,7 @@ function GanttBoard({ milestones, tickets, projectId, selectedId, onSelect, rout
             </div>
           </div>
         </div>
-      </div> : <div className="px-4 sm:px-5"><EmptyState description="暂无关联工单。" /></div>}
+      </div> : <div className="px-4 sm:px-5"><EmptyState description={emptyDescription} /></div>}
     </CardContent>
   </Card>;
 }
@@ -644,30 +645,33 @@ function TicketDetailsRail({ selectedTicket, timeline, loading, projectId, route
 }
 
 function TicketsTab({ api, projectId, milestones, tickets, router }: { api: WorkflowApi; projectId: string; milestones: Milestone[]; tickets: Ticket[]; router: Router }) {
-  const initialSelectedId = tickets.find((ticket) => !["completed", "cancelled", "archived"].includes(ticket.status))?.id ?? tickets[0]?.id ?? "";
+  const activeMilestones = useMemo(() => milestones.filter((milestone) => ["active", "in_progress"].includes(normalizeMilestoneStatus(milestone.status))), [milestones]);
+  const activeMilestoneIds = useMemo(() => new Set(activeMilestones.map((milestone) => milestone.id)), [activeMilestones]);
+  const visibleTickets = useMemo(() => tickets.filter((ticket) => !ticket.milestone_id || activeMilestoneIds.has(ticket.milestone_id)), [activeMilestoneIds, tickets]);
+  const initialSelectedId = visibleTickets.find((ticket) => !["completed", "cancelled", "archived"].includes(ticket.status))?.id ?? visibleTickets[0]?.id ?? "";
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [ganttTimeline, setGanttTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [workflowVersions, setWorkflowVersions] = useState<Map<string, WorkflowVersion>>(() => new Map());
-  const workflowVersionKey = useMemo(() => [...new Set(tickets.map(ganttWorkflowVersionKey))].sort().join("|"), [tickets]);
+  const workflowVersionKey = useMemo(() => [...new Set(visibleTickets.map(ganttWorkflowVersionKey))].sort().join("|"), [visibleTickets]);
   const ganttActivities = useMemo(() => indexGanttActivity(ganttTimeline), [ganttTimeline]);
-  const selectedTicket = tickets.find((ticket) => ticket.id === selectedId);
+  const selectedTicket = visibleTickets.find((ticket) => ticket.id === selectedId);
 
-  useEffect(() => { if (!tickets.some((ticket) => ticket.id === selectedId)) setSelectedId(initialSelectedId); }, [initialSelectedId, selectedId, tickets]);
+  useEffect(() => { if (!visibleTickets.some((ticket) => ticket.id === selectedId)) setSelectedId(initialSelectedId); }, [initialSelectedId, selectedId, visibleTickets]);
   useEffect(() => { if (!selectedId) { setTimeline([]); return; } setLoading(true); void api.getTimeline({ ticket_id: selectedId }).then(setTimeline).catch(() => setTimeline([])).finally(() => setLoading(false)); }, [api, selectedId]);
   useEffect(() => {
     let current = true;
-    if (!tickets.length) { setGanttTimeline([]); return () => { current = false; }; }
-    const limit = Math.max(1000, tickets.reduce((count, ticket) => count + Math.max(1, ticket.node_instances.length) * 50, 0));
+    if (!visibleTickets.length) { setGanttTimeline([]); return () => { current = false; }; }
+    const limit = Math.max(1000, visibleTickets.reduce((count, ticket) => count + Math.max(1, ticket.node_instances.length) * 50, 0));
     void api.getTimeline({ project_id: projectId, limit }).then((events) => { if (current) setGanttTimeline(events); }).catch(() => { if (current) setGanttTimeline([]); });
     return () => { current = false; };
-  }, [api, projectId, tickets]);
+  }, [api, projectId, visibleTickets]);
   useEffect(() => {
     if (!workflowVersionKey) { setWorkflowVersions(new Map()); return; }
     let current = true;
     const versionKeys = workflowVersionKey.split("|");
-    const workflowIds = [...new Set(versionKeys.map((key) => key.split(":")[0]))];
+    const workflowIds = [...new Set(versionKeys.map((key) => key.split(":")[0]).filter((workflowId): workflowId is string => Boolean(workflowId)))];
     void Promise.allSettled(workflowIds.map((workflowId) => api.getWorkflow(workflowId))).then((results) => {
       if (!current) return;
       const workflowsById = new Map<string, Awaited<ReturnType<WorkflowApi["getWorkflow"]>>>();
@@ -675,6 +679,7 @@ function TicketsTab({ api, projectId, milestones, tickets, router }: { api: Work
       const next = new Map<string, WorkflowVersion>();
       for (const key of versionKeys) {
         const [workflowId, versionId] = key.split(":");
+        if (!workflowId || !versionId) continue;
         const version = workflowsById.get(workflowId)?.versions.find((item) => item.id === versionId);
         if (version) next.set(key, version);
       }
@@ -684,7 +689,7 @@ function TicketsTab({ api, projectId, milestones, tickets, router }: { api: Work
   }, [api, workflowVersionKey]);
 
   return <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,0.4fr)]">
-    <GanttBoard milestones={milestones} tickets={tickets} projectId={projectId} selectedId={selectedId} onSelect={setSelectedId} router={router} workflowVersions={workflowVersions} ganttActivities={ganttActivities} />
+    <GanttBoard milestones={activeMilestones} tickets={visibleTickets} projectId={projectId} selectedId={selectedId} onSelect={setSelectedId} router={router} workflowVersions={workflowVersions} ganttActivities={ganttActivities} emptyDescription={tickets.length ? "暂无进行中的里程碑工单。" : "暂无关联工单。"} />
     <TicketDetailsRail selectedTicket={selectedTicket} timeline={timeline} loading={loading} projectId={projectId} router={router} />
   </div>;
 }

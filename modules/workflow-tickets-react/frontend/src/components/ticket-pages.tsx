@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 import type { FormField, Milestone, Project, RelatedResource, SavedView, Ticket, TicketNode, Workflow, WorkflowEdge, WorkflowNode } from "../api";
 import type { WorkflowApi } from "../api";
+import { notifyModule } from "../module-notifications";
 import { ResourceRelationPicker } from "../shared/components/resource-relation-picker";
 import { resourceIcon, resourceSummary, resourceTypeLabel } from "../shared/components/resource-types";
 import { BranchTimeline, buildRuntimeNodes, evaluateCompletionRule, hydrateFormValues, NodeRuleSummary, TicketFormRenderer } from "./ticket-form";
@@ -33,6 +34,15 @@ export type TicketPagesProps = { api: WorkflowApi; router: Router; query?: Recor
 type Filters = { keyword: string; status: string; view: string; project_id: string; priority: string; tag: string };
 
 const ticketsPath = "/modules/workflow-tickets-react/tickets";
+
+function scrollModulePageToTop() {
+  const scrollContainer = document.querySelector<HTMLElement>('[data-slot="app-scroll"]');
+  if (scrollContainer) {
+    scrollContainer.scrollTo({ top: 0, behavior: "smooth" });
+    return;
+  }
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 
 const statusLabels: Record<string, string> = { draft: "草稿", in_progress: "进行中", blocked: "阻塞", completed: "已完成", cancelled: "已终止", archived: "已归档", pending: "待处理", ready: "待执行", waiting: "等待中", skipped: "已跳过", failed: "失败", active: "进行中", planning: "规划中", paused: "已暂停", normal: "正常", risk: "注意", overdue: "已逾期" };
 const priorityLabels: Record<string, string> = { none: "无优先级", low: "低", medium: "中", high: "高", urgent: "紧急" };
@@ -276,10 +286,10 @@ export function TicketDetailParityPage({ api, router, params = {} }: TicketPages
 
   const selectNode = (next: TicketNode) => { const nextDefinition = version?.nodes.find((item) => item.id === next.node_id); setSelectedNodeId(next.id); if (nextDefinition && ticket) setValues(hydrateFormValues(nextDefinition, next.values, { ticket, current: { values: next.values, node: next }, nodes: buildRuntimeNodes(ticket, version?.nodes) })); };
   const saveNode = async () => { if (!ticket || !node || !editable) return; try { setSaving(true); setActionError(""); const next = await api.saveNode(ticket.id, node.id, values); setTicket(next); setValues(next.node_instances.find((item) => item.id === node.id)?.values ?? values); } catch (err) { setActionError(errorMessage(err, "保存节点失败")); } finally { setSaving(false); } };
-  const completeNode = async () => { if (!ticket || !node || !definition || !editable) return; const missing: Record<string, string> = {}; for (const field of definition.form_schema.fields) if (field.required && !isFilled(values[field.id])) missing[field.id] = `请填写${field.label}`; setFormErrors(missing); if (Object.keys(missing).length || !ruleEvaluation.passed) return; try { setSaving(true); setActionError(""); await api.saveNode(ticket.id, node.id, values); const completedTicket = await api.completeNode(ticket.id, node.id); const nextNode = completedTicket.node_instances.find((item) => activeNodeStatuses.has(item.status)); await load(nextNode?.id); } catch (err) { setActionError(errorMessage(err, "完成节点失败")); } finally { setSaving(false); } };
+  const completeNode = async () => { if (!ticket || !node || !definition || !editable) return; const missing: Record<string, string> = {}; for (const field of definition.form_schema.fields) if (field.required && !isFilled(values[field.id])) missing[field.id] = `请填写${field.label}`; setFormErrors(missing); if (Object.keys(missing).length || !ruleEvaluation.passed) return; try { setSaving(true); setActionError(""); await api.saveNode(ticket.id, node.id, values); const completedTicket = await api.completeNode(ticket.id, node.id); const nextNode = completedTicket.node_instances.find((item) => activeNodeStatuses.has(item.status)); await load(nextNode?.id); requestAnimationFrame(scrollModulePageToTop); notifyModule({ type: "success", content: nextNode ? `已进入下一节点：${nextNode.name}` : "工单流程已完成。" }); } catch (err) { setActionError(errorMessage(err, "完成节点失败")); } finally { setSaving(false); } };
   const blockNode = async () => { if (!ticket || !node || !editable || !blockReason.trim()) return; try { await api.blockNode(ticket.id, node.id, blockReason.trim()); setBlockOpen(false); setBlockReason(""); await load(); } catch (err) { setActionError(errorMessage(err, "标记阻塞失败")); } };
   const cancelTicket = async () => { if (!ticket) return; try { await api.cancelTicket(ticket.id, cancelReason.trim()); setCancelOpen(false); setCancelReason(""); await load(); } catch (err) { setActionError(errorMessage(err, "终止工单失败")); } };
-  const rollbackNode = async () => { if (!ticket || !activeNode || !rollbackTarget || !rollbackReason.trim()) return; try { await api.rollbackNode(ticket.id, activeNode.node_id, rollbackTarget, rollbackReason.trim()); setRollbackOpen(false); setRollbackTarget(""); setRollbackReason(""); await load(); } catch (err) { setActionError(errorMessage(err, "回退节点失败")); } };
+  const rollbackNode = async () => { if (!ticket || !activeNode || !rollbackTarget || !rollbackReason.trim()) return; try { const updatedTicket = await api.rollbackNode(ticket.id, activeNode.node_id, rollbackTarget, rollbackReason.trim()); const targetNode = updatedTicket.node_instances.find((item) => item.node_id === rollbackTarget); setRollbackOpen(false); setRollbackTarget(""); setRollbackReason(""); await load(targetNode?.id ?? ""); } catch (err) { setActionError(errorMessage(err, "回退节点失败")); } };
   const duplicate = async () => { if (!ticket) return; try { const copy = await api.duplicateTicket(ticket.id); await router.push(`/modules/workflow-tickets-react/tickets/${copy.id}`); } catch (err) { setActionError(errorMessage(err, "复制工单失败")); } };
   const remove = async () => { if (!ticket) return; try { await api.deleteTicket(ticket.id); await router.push("/modules/workflow-tickets-react/tickets"); } catch (err) { setActionError(errorMessage(err, "删除工单失败")); } };
   const openDiagnostics = async () => { if (!ticket) return; setDiagnosticOpen(true); setDiagnosticLoading(true); try { setDiagnostics(await api.getTicketDiagnostics(ticket.id)); } catch (err) { setActionError(errorMessage(err, "运行诊断加载失败")); } finally { setDiagnosticLoading(false); } };
