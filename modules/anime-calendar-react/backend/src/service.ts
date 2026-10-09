@@ -109,11 +109,11 @@ export class AnimeCalendarService {
 
   async today(timeZone = configuredTimeZone()) {
     const today = platformDateKey(timeZone);
-    const state = this.store.read();
-    if (state.todayCache?.cache_date === today) return this.todayResponse(this.withMarks(state.todayCache.items, state.marks), state.todayCache.updated_at, today);
-    const weekly = state.weeklyCache ? this.enrichWeeklyItems(state.weeklyCache.items, state) : [];
     const weekday = platformWeekday(timeZone);
-    const items = weekly.filter((item) => item.weekday === weekday);
+    const state = this.store.read();
+    if (state.todayCache?.cache_date === today) return this.todayResponse(this.withMarks(state.todayCache.items.filter((item) => isScheduledForToday(item, today, weekday)), state.marks), state.todayCache.updated_at, today);
+    const weekly = state.weeklyCache ? this.enrichWeeklyItems(state.weeklyCache.items, state) : [];
+    const items = weekly.filter((item) => isScheduledForToday(item, today, weekday));
     const cache: DataCache = { cache_date: today, updated_at: nowIso(), items: items.map(clearMark) };
     await this.store.update((next) => { next.todayCache = cache; });
     const next = this.store.read();
@@ -168,7 +168,8 @@ export class AnimeCalendarService {
     const resolved = this.resolveCour(year, courMonth);
     const state = this.store.read();
     const items = this.itemsForCour(this.withMarks(this.catalogItems(state), state.marks), resolved.year, resolved.cour_month);
-    const todayWeekday = platformWeekday();
+    const today = platformDateKey();
+    const todayWeekday = weekdayForDate(today);
     return {
       year: resolved.year, cour_month: resolved.cour_month, cour_label: courLabel(resolved.year, resolved.cour_month), total: items.length,
       watching: items.filter((item) => item.mark_type === "watching").length,
@@ -176,7 +177,7 @@ export class AnimeCalendarService {
       airing: items.filter((item) => item.status === "airing").length,
       not_started: items.filter((item) => item.status === "not_started").length,
       finished: items.filter((item) => item.status === "finished").length,
-      today_updated: items.filter((item) => item.weekday === todayWeekday).length,
+      today_updated: items.filter((item) => isScheduledForToday(item, today, todayWeekday)).length,
     };
   }
 
@@ -573,6 +574,10 @@ function zonedDateTime(value: Date, timeZone: string) {
 function platformDateKey(timeZone = configuredTimeZone()) { return zonedDateTime(platformNow(), timeZone).date; }
 function platformWeekday(timeZone = configuredTimeZone()) { return weekdayForDate(platformDateKey(timeZone)); }
 function weekdayForDate(date: string) { const day = new Date(`${date}T00:00:00.000Z`).getUTCDay(); return day === 0 ? 7 : day; }
+function isScheduledForToday(item: Pick<AnimeItem, "air_date" | "media_type" | "status" | "weekday">, date: string, weekday: number) {
+  if (item.media_type !== "tv" && item.media_type !== "ona") return item.air_date === date;
+  return item.status === "airing" && item.weekday === weekday;
+}
 function nowIso() { return new Date().toISOString(); }
 function safeError(error: unknown) { return error instanceof Error ? error.message.replace(/[A-Za-z]:\\[^\s]+/g, "本地路径") : "操作失败"; }
 export function httpError(statusCode: number, message: string) { return Object.assign(new Error(message), { statusCode }); }

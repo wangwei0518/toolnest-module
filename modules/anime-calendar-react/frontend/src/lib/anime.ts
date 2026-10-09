@@ -11,6 +11,11 @@ export const weekdayLabel = (weekday: number) => weekdayOptions.find(([value]) =
 export const regionLabel = (region: string) => regionOptions.find(([value]) => value === region)?.[1] ?? "未知";
 export const airInfo = (item: AnimeListItem) => item.air_date ? `${weekdayLabel(item.weekday)} · ${item.air_date}${item.air_time ? ` ${item.air_time}` : ""}` : "播出时间未定";
 
+export function isTodayUpdate(item: Pick<AnimeListItem, "air_date" | "media_type" | "status" | "weekday">, today: { key: string; weekday: number }) {
+  if (item.media_type !== "tv" && item.media_type !== "ona") return item.air_date === today.key;
+  return item.status === "airing" && item.weekday === today.weekday;
+}
+
 export function filterItems(items: AnimeListItem[], options: { keyword: string; weekday: number | null; status: AnimeStatus | null; mediaType: AnimeMediaType | null; markType: "watching" | "ignored" | null; region: string; showContinuing: boolean; showUnknown: boolean; sort: "default" | "score"; preservedOrder?: ReadonlyMap<string, number>; }) {
   const keyword = options.keyword.trim().toLocaleLowerCase();
   const result = items.filter((item) => {
