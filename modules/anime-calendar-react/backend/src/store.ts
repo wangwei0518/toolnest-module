@@ -88,7 +88,8 @@ export class JsonStore {
 }
 
 export function mergeSettings(value?: Partial<AnimeSettings>): AnimeSettings {
-  const source = value ?? {};
+  const legacyKeys = ["autoFetchEmptyCour", "autoRefreshCurrentCour", "refreshIntervalHours"];
+  const source = Object.fromEntries(Object.entries(value ?? {}).filter(([key]) => !legacyKeys.includes(key))) as Partial<AnimeSettings>;
   return {
     ...clone(defaultSettings),
     ...source,

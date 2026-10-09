@@ -9,6 +9,20 @@ export const calendarKeys = { items: (year: number, month: number) => ["anime-ca
 export function useCourItems(year: number, month: number) { return useQuery({ queryKey: calendarKeys.items(year, month), queryFn: () => animeApi.items({ year, cour_month: month, include_ignored: true }) }); }
 export function useToday() { return useQuery({ queryKey: calendarKeys.today, queryFn: animeApi.today }); }
 export function useWeekly() { return useQuery({ queryKey: calendarKeys.weekly, queryFn: () => animeApi.weekly(false) }); }
+export function useWeeklyRefreshMutation() {
+  const client = useQueryClient();
+  return useMutation<Awaited<ReturnType<typeof animeApi.weekly>>, Error, void, { toastId: string | number }>({
+    mutationFn: () => animeApi.weekly(true),
+    onMutate: () => ({ toastId: notify("loading", "正在刷新周历缓存…") }),
+    onSuccess: (result, _variables, context) => {
+      client.setQueryData(calendarKeys.weekly, result);
+      void client.invalidateQueries({ queryKey: ["anime-calendar", "items"] });
+      void client.invalidateQueries({ queryKey: calendarKeys.today });
+      notify("success", `周历已更新，共 ${result.total} 部`, context?.toastId);
+    },
+    onError: (_error, _variables, context) => notify("error", "周历刷新失败，已保留现有缓存", context?.toastId),
+  });
+}
 export function useDetail(id: string | null) { return useQuery({ queryKey: calendarKeys.detail(id ?? ""), queryFn: () => animeApi.detail(id!), enabled: Boolean(id) }); }
 export function useSettings() { return useQuery({ queryKey: calendarKeys.settings, queryFn: animeApi.settings }); }
 

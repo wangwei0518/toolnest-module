@@ -94,27 +94,60 @@ describe("service cache and marks", () => {
     const weekday = new Date().getDay() || 7;
     const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => { calls += 1; await new Promise((resolve) => setTimeout(resolve, 10)); return [item({ weekday, air_date: new Date().toISOString().slice(0, 10) })]; }, fetchDetail: async () => item() } as unknown as BangumiProvider;
     const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
-    await Promise.all([service.weekly(), service.weekly()]);
+    await Promise.all([service.weekly(true), service.weekly(true)]);
     expect(calls).toBe(1);
     const today = await service.today();
     expect(today.items).toHaveLength(1);
     expect(store.snapshot().todayCache).not.toBeNull();
   });
 
-  it("includes weekly-only long-running titles in the cour catalog", async () => {
-    const weeklyOnly = item({ id: "bangumi:one-piece", provider_id: "one-piece", title_cn: "航海王", title_original: "ONE PIECE", air_date: "1999-10-20", estimated_end_date: null, episode_count: null, status: "airing" });
-    const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => [weeklyOnly], fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
+  it("serves weekly and today requests from cache without contacting the provider", async () => {
+    let calls = 0;
+    const provider = { setProxyUrl() {}, fetchCour: async () => { calls += 1; return []; }, fetchWeekly: async () => { calls += 1; return []; }, fetchDetail: async () => item() } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    const weekly = await service.weekly();
+    const today = await service.today();
+
+    expect(weekly.total).toBe(0);
+    expect(today.total).toBe(0);
+    expect(calls).toBe(0);
+  });
+
+  it("refreshes the current cour daily and the upcoming cour and weekly feed once per week", async () => {
+    let courCalls = 0;
+    let weeklyCalls = 0;
+    const provider = { setProxyUrl() {}, fetchCour: async () => { courCalls += 1; return []; }, fetchWeekly: async () => { weeklyCalls += 1; return []; }, fetchDetail: async () => item() } as unknown as BangumiProvider;
+    await store.saveSettings({ ...defaultSettings, dataRefreshTime: "00:00" });
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    await service.runScheduledDataRefresh();
+    await service.runScheduledDataRefresh();
+
+    expect(courCalls).toBe(2);
+    expect(weeklyCalls).toBe(1);
+  });
+
+  it("includes cached weekly-only long-running titles in the cour catalog without a provider request", async () => {
+    const current = currentCour();
+    const airDate = new Date(Date.UTC(current.year, current.cour_month - 2, 3)).toISOString().slice(0, 10);
+    const weeklyOnly = item({ id: "bangumi:cached-long-running", provider_id: "cached-long-running", title_cn: "缓存长期番", air_date: airDate, estimated_end_date: null, episode_count: 36, status: "airing" });
+    let calls = 0;
+    await store.update((state) => { state.weeklyCache = { cache_date: "2026-09-19", updated_at: "2026-09-19T00:00:00.000Z", items: [clearMarkForTest(weeklyOnly)] }; });
+    const provider = { setProxyUrl() {}, fetchCour: async () => { calls += 1; return []; }, fetchWeekly: async () => { calls += 1; return [weeklyOnly]; }, fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
     const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
     const current = service.currentCour();
 
     const result = await service.listItems({ year: current.year, cour_month: current.cour_month, include_ignored: true });
 
-    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "bangumi:one-piece", title_cn: "航海王", cour_relation: "long_running" })]));
+    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "bangumi:cached-long-running", title_cn: "缓存长期番", cour_relation: "long_running" })]));
+    expect(calls).toBe(0);
   });
 
-  it("refreshes an expired weekly cache before building the current cour catalog", async () => {
+  it("does not refresh an expired weekly cache while listing a cour", async () => {
     const weeklyOnly = item({ id: "bangumi:one-piece", provider_id: "one-piece", title_cn: "航海王", title_original: "ONE PIECE", air_date: "1999-10-20", estimated_end_date: null, episode_count: null, status: "airing" });
-    const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => [weeklyOnly], fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
+    let calls = 0;
+    const provider = { setProxyUrl() {}, fetchCour: async () => { calls += 1; return []; }, fetchWeekly: async () => { calls += 1; return [weeklyOnly]; }, fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
     await store.update((state) => {
       state.weeklyCache = { cache_date: "2026-09-19", updated_at: "2026-09-19T00:00:00.000Z", items: [] };
     });
@@ -123,7 +156,8 @@ describe("service cache and marks", () => {
 
     const result = await service.listItems({ year: current.year, cour_month: current.cour_month, include_ignored: true });
 
-    expect(result.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: "bangumi:one-piece", cour_relation: "long_running" })]));
+    expect(result.items).toEqual([]);
+    expect(calls).toBe(0);
   });
 
   it("reuses catalog regions for an already cached weekly response", async () => {
@@ -151,6 +185,7 @@ describe("settings validation", () => {
     expect(() => validateSettings({ ...defaultSettings, notifications: { ...defaultSettings.notifications, courRelease: { ...defaultSettings.notifications.courRelease, minScore: 11 } } })).toThrow(/最低评分/);
     expect(() => validateSettings({ ...defaultSettings, notifications: { ...defaultSettings.notifications, watchingUpdate: { ...defaultSettings.notifications.watchingUpdate, channels: ["unsupported"] } } })).toThrow(/通知渠道/);
     expect(() => validateSettings({ ...defaultSettings, notifications: { ...defaultSettings.notifications, watchingUpdate: { ...defaultSettings.notifications.watchingUpdate, channels: ["default", "email"] } } })).toThrow(/通知渠道/);
+    expect(() => validateSettings({ ...defaultSettings, dataRefreshTime: "24:00" })).toThrow(/自动更新时间/);
   });
 });
 
@@ -158,9 +193,9 @@ describe("platform notifications", () => {
   it("omits channels when the platform default channel is selected", async () => {
     let received: Record<string, unknown> = {};
     const server = createServer((request, response) => {
-      if (request.method === "GET" && request.url?.endsWith("/public-url")) {
+      if (request.method === "GET" && request.url?.endsWith("/platform-context")) {
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify({ data: { public_base_url: "https://toolnest.example.com/" } }));
+        response.end(JSON.stringify({ data: { timezone: "Asia/Shanghai", public_base_url: "https://toolnest.example.com/" } }));
         return;
       }
       let body = "";
@@ -184,6 +219,51 @@ describe("platform notifications", () => {
       expect(received).toMatchObject({ event_type: "anime_calendar.test", source_type: "anime_calendar", summary: "" });
       expect(received.content).toContain("https://toolnest.example.com/modules/anime-calendar-react");
     } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it("schedules notifications using the platform timezone instead of the host timezone", async () => {
+    const originalTimezone = process.env.TZ;
+    process.env.TZ = "UTC";
+    let notificationCount = 0;
+    const server = createServer((request, response) => {
+      if (request.method === "GET" && request.url?.endsWith("/platform-context")) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ data: { timezone: "Asia/Shanghai", public_base_url: "" } }));
+        return;
+      }
+      if (request.method === "POST" && request.url?.endsWith("/notifications")) {
+        notificationCount += 1;
+        request.resume();
+        request.on("end", () => {
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({ notification_id: "notification-1", deliveries: [] }));
+        });
+        return;
+      }
+      response.writeHead(404);
+      response.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
+      const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => [], fetchDetail: async () => item() } as unknown as BangumiProvider;
+      const service = new AnimeCalendarService(store, provider, "anime-calendar-react", `http://127.0.0.1:${address.port}/api/v1`, "token");
+      const settings = structuredClone(defaultSettings);
+      settings.notifications.courRelease.enabled = true;
+      settings.notifications.courRelease.sendTime = "08:00";
+      settings.notifications.courRelease.minimumCount = 0;
+      await service.saveSettings(settings);
+
+      await service.runDueNotifications(new Date("2026-01-01T00:30:00.000Z"));
+
+      expect(notificationCount).toBe(1);
+      expect(store.snapshot().notificationHistory["cour-release:2026:1:default"]).toBeDefined();
+    } finally {
+      if (originalTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTimezone;
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
   });

@@ -38,13 +38,21 @@ export async function createApp(): Promise<FastifyInstance> {
 
   registerRoutes(app, service);
   let notificationRun: Promise<void> | undefined;
+  let scheduledRefreshRun: Promise<void> | undefined;
   const runNotifications = () => {
     if (notificationRun) return;
     notificationRun = service.runDueNotifications().catch(() => undefined).finally(() => { notificationRun = undefined; });
   };
+  const runScheduledRefresh = () => {
+    if (scheduledRefreshRun) return;
+    scheduledRefreshRun = service.runScheduledDataRefresh().catch((error) => app.log.error(error)).finally(() => { scheduledRefreshRun = undefined; });
+  };
   const timer = setInterval(runNotifications, 60_000);
+  const refreshTimer = setInterval(runScheduledRefresh, 60_000);
   timer.unref();
-  app.addHook("onClose", async () => { clearInterval(timer); await notificationRun; await store.close(); });
+  refreshTimer.unref();
+  runScheduledRefresh();
+  app.addHook("onClose", async () => { clearInterval(timer); clearInterval(refreshTimer); await Promise.all([notificationRun, scheduledRefreshRun]); await store.close(); });
 
   return app;
 }

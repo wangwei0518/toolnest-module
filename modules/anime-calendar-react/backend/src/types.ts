@@ -76,14 +76,12 @@ export interface NotificationRuleBase {
 }
 
 export interface AnimeSettings {
-  autoFetchEmptyCour: boolean;
-  autoRefreshCurrentCour: boolean;
+  dataRefreshTime: string;
   cacheRetentionDays: 0 | 30 | 90;
   defaultPage: "cour" | "weekly";
   defaultRegion: string;
   defaultSort: "default" | "score";
   defaultView: "grid" | "list";
-  refreshIntervalHours: 12 | 24 | 168;
   showContinuing: boolean;
   showUnknownRegion: boolean;
   weeklyRegion: string;
@@ -100,14 +98,12 @@ export interface AnimeSettings {
 }
 
 export const defaultSettings: AnimeSettings = {
-  autoFetchEmptyCour: true,
-  autoRefreshCurrentCour: false,
+  dataRefreshTime: "04:00",
   cacheRetentionDays: 90,
   defaultPage: "cour",
   defaultRegion: "all",
   defaultSort: "default",
   defaultView: "grid",
-  refreshIntervalHours: 24,
   showContinuing: true,
   showUnknownRegion: false,
   weeklyRegion: "all",

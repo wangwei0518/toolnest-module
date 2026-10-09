@@ -17,13 +17,18 @@ import {
 
 const weekdayLabels = ["未定", "周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const detailTtlMs = 7 * 24 * 60 * 60 * 1000;
-const weeklyTtlMs = 30 * 60 * 1000;
+const weeklyTtlMs = 7 * 24 * 60 * 60 * 1000;
+const scheduledRetryDelayMs = 30 * 60 * 1000;
 const courTtlMs = 24 * 60 * 60 * 1000;
+type PlatformContext = { timezone: string; publicBaseUrl: string };
 
 export class AnimeCalendarService {
   private weeklyPromise: Promise<AnimeItem[]> | null = null;
   private refreshPromises = new Map<string, Promise<unknown>>();
-  private publicBaseUrlPromise: Promise<string> | null = null;
+  private scheduledRefreshPromise: Promise<void> | null = null;
+  private scheduledRetryAfter = new Map<string, number>();
+  private platformContextCache: { value: PlatformContext; expiresAt: number } | null = null;
+  private platformContextPromise: Promise<PlatformContext> | null = null;
 
   constructor(
     private readonly store: AnimeStoreRepository,
@@ -40,12 +45,6 @@ export class AnimeCalendarService {
     keyword?: string; mark_type?: AnimeMarkType; include_ignored?: boolean;
   }) {
     const resolved = this.resolveCour(query.year, query.cour_month);
-    const current = this.currentCour();
-    const weeklyCache = this.store.read().weeklyCache;
-    const weeklyCacheExpired = !weeklyCache || Date.now() - Date.parse(weeklyCache.updated_at) >= weeklyTtlMs;
-    if (resolved.year === current.year && resolved.cour_month === current.cour_month && weeklyCacheExpired) {
-      try { await this.weeklyItems(false); } catch { /* keep serving the catalog cache when Bangumi is unavailable */ }
-    }
     const state = this.store.read();
     const items = this.itemsForCour(this.withMarks(this.catalogItems(state), state.marks), resolved.year, resolved.cour_month);
     const keyword = query.keyword?.trim().toLocaleLowerCase() ?? "";
@@ -94,9 +93,9 @@ export class AnimeCalendarService {
 
   async weekly(force = false) {
     const state = this.store.read();
-    if (!force && state.weeklyCache && Date.now() - Date.parse(state.weeklyCache.updated_at) < weeklyTtlMs) {
-      const enriched = this.enrichWeeklyItems(state.weeklyCache.items, state);
-      return this.weeklyResponse(this.withMarks(enriched, state.marks), state.weeklyCache.updated_at);
+    if (!force) {
+      const cached = state.weeklyCache ? this.enrichWeeklyItems(state.weeklyCache.items, state) : [];
+      return this.weeklyResponse(this.withMarks(cached, state.marks), state.weeklyCache?.updated_at ?? "");
     }
     try {
       const items = await this.weeklyItems(force);
@@ -108,12 +107,12 @@ export class AnimeCalendarService {
     }
   }
 
-  async today() {
-    const today = platformDateKey();
+  async today(timeZone = configuredTimeZone()) {
+    const today = platformDateKey(timeZone);
     const state = this.store.read();
     if (state.todayCache?.cache_date === today) return this.todayResponse(this.withMarks(state.todayCache.items, state.marks), state.todayCache.updated_at, today);
-    const weekly = await this.weeklyItems(false);
-    const weekday = platformWeekday();
+    const weekly = state.weeklyCache ? this.enrichWeeklyItems(state.weeklyCache.items, state) : [];
+    const weekday = platformWeekday(timeZone);
     const items = weekly.filter((item) => item.weekday === weekday);
     const cache: DataCache = { cache_date: today, updated_at: nowIso(), items: items.map(clearMark) };
     await this.store.update((next) => { next.todayCache = cache; });
@@ -121,7 +120,7 @@ export class AnimeCalendarService {
     return this.todayResponse(this.withMarks(items, next.marks), cache.updated_at, today);
   }
 
-  async refresh(year?: number, courMonth?: number, force = false) {
+  async refresh(year?: number, courMonth?: number, force = false, updateLongRunning = false) {
     const resolved = this.resolveCour(year, courMonth);
     const key = this.courKey(resolved.year, resolved.cour_month);
     const existing = this.store.read().courCaches[key];
@@ -130,7 +129,7 @@ export class AnimeCalendarService {
     }
     const active = this.refreshPromises.get(key);
     if (active) { await active; return this.refreshResponse(this.store.read().courCaches[key]!, 0, 0); }
-    const promise = this.performRefresh(resolved.year, resolved.cour_month);
+    const promise = this.performRefresh(resolved.year, resolved.cour_month, updateLongRunning);
     this.refreshPromises.set(key, promise);
     try { return await promise; } finally { this.refreshPromises.delete(key); }
   }
@@ -141,7 +140,11 @@ export class AnimeCalendarService {
       const source = await this.provider.fetchCour(resolved.year, resolved.cour_month);
       const items = source.filter((item) => !isSingleEpisodeNonMovie(item)).filter(isLongRunningActive).map((item) => ({ ...item, cour_relation: "long_running" as const, cour_relation_label: "长期" }));
       const cache: DataCache = { cache_date: platformDateKey(), updated_at: nowIso(), items: items.map(clearMark) };
-      await this.store.update((state) => { state.longRunningCache = cache; state.weeklyCache = null; state.todayCache = null; });
+      await this.store.update((state) => {
+        state.longRunningCache = cache;
+        state.weeklyCache = mergeLongRunningIntoWeeklyCache(state.weeklyCache, items);
+        state.todayCache = null;
+      });
       return { refresh_status: items.length ? "success" : "empty", source_start: dateKey(new Date(Date.now() - 183 * 86400000)), source_end: platformDateKey(), fetched_count: source.length, retained_count: items.length, last_maintenance_at: cache.updated_at, message: items.length ? "长剧集缓存已更新" : "未发现仍在放送的长剧集" };
     } catch (error) {
       const cached = this.store.read().longRunningCache;
@@ -195,26 +198,73 @@ export class AnimeCalendarService {
 
   async testNotification(kind: "cour" | "watching", input?: unknown) {
     const settings = input ? validateSettings(input) : this.getSettings();
-    const payload = kind === "cour" ? await this.buildCourNotification(settings) : await this.buildWatchingNotification(settings);
+    const context = await this.getPlatformContext();
+    const localNow = zonedDateTime(platformNow(), context.timezone);
+    const month = Number(localNow.date.slice(5, 7));
+    const courMonth = month >= 10 ? 10 : month >= 7 ? 7 : month >= 4 ? 4 : 1;
+    const payload = kind === "cour"
+      ? await this.buildCourNotification(settings, localNow.year, courMonth)
+      : await this.buildWatchingNotification(settings, context.timezone);
     return this.sendNotification(payload.title, payload.body, payload.channels, `test-${kind}-${Date.now()}`, kind === "cour" ? "" : "/weekly");
   }
 
-  async runDueNotifications() {
-    const now = platformNow();
-    const time = now.toTimeString().slice(0, 5);
+  async runDueNotifications(now?: Date) {
     const settings = this.getSettings();
-    if (settings.notifications.courRelease.enabled && time >= settings.notifications.courRelease.sendTime) {
+    const courEnabled = settings.notifications.courRelease.enabled;
+    const watchingEnabled = settings.notifications.watchingUpdate.enabled;
+    if (!courEnabled && !watchingEnabled) return;
+    const context = await this.getPlatformContext();
+    const localNow = zonedDateTime(now ?? platformNow(), context.timezone);
+    const time = localNow.time;
+    if (courEnabled && time >= settings.notifications.courRelease.sendTime) {
       const rule = settings.notifications.courRelease;
       const offsetDays = rule.scheduleMode === "offset" ? rule.offsetDays : 0;
-      for (const year of [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]) {
+      for (const year of [localNow.year - 1, localNow.year, localNow.year + 1]) {
         for (const courMonth of [1, 4, 7, 10]) {
-          const target = new Date(year, courMonth - 1, 1 - offsetDays);
-          if (dateKeyLocal(target) === platformDateKey()) await this.sendScheduledCour(year, courMonth, settings);
+          const target = dateKey(new Date(Date.UTC(year, courMonth - 1, 1 - offsetDays)));
+          if (target === localNow.date) await this.sendScheduledCour(year, courMonth, settings);
         }
       }
     }
-    if (settings.notifications.watchingUpdate.enabled && time >= settings.notifications.watchingUpdate.sendTime) {
-      await this.sendScheduledWatching(settings);
+    if (watchingEnabled && time >= settings.notifications.watchingUpdate.sendTime) {
+      await this.sendScheduledWatching(settings, context.timezone);
+    }
+  }
+
+  runScheduledDataRefresh(now = platformNow()) {
+    if (this.scheduledRefreshPromise) return this.scheduledRefreshPromise;
+    this.scheduledRefreshPromise = this.performScheduledDataRefresh(now).finally(() => { this.scheduledRefreshPromise = null; });
+    return this.scheduledRefreshPromise;
+  }
+
+  private async performScheduledDataRefresh(now: Date) {
+    const settings = this.getSettings();
+    const context = await this.getPlatformContext();
+    const localNow = zonedDateTime(now, context.timezone);
+    if (localNow.time < settings.dataRefreshTime) return;
+
+    const current = courForDate(localNow.date);
+    const next = nextCour(current.year, current.cour_month);
+    const state = this.store.read();
+    const currentCache = state.courCaches[this.courKey(current.year, current.cour_month)];
+    const nextCache = state.courCaches[this.courKey(next.year, next.cour_month)];
+    const currentNeedsRefresh = !wasRefreshedOnDate(currentCache?.last_refreshed_at, localNow.date, context.timezone);
+    const nextNeedsRefresh = isCacheExpired(nextCache?.last_refreshed_at, now.getTime(), weeklyTtlMs);
+    const weeklyNeedsRefresh = isCacheExpired(state.weeklyCache?.updated_at, now.getTime(), weeklyTtlMs);
+
+    await this.runScheduledRefreshTask("current-cour", currentNeedsRefresh, now, () => this.refresh(current.year, current.cour_month, true, true));
+    await this.runScheduledRefreshTask("next-cour", nextNeedsRefresh, now, () => this.refresh(next.year, next.cour_month, true));
+    await this.runScheduledRefreshTask("weekly", weeklyNeedsRefresh, now, async () => { await this.weeklyItems(true); });
+  }
+
+  private async runScheduledRefreshTask(key: string, due: boolean, now: Date, task: () => Promise<unknown>) {
+    if (!due || (this.scheduledRetryAfter.get(key) ?? 0) > now.getTime()) return;
+    try {
+      await task();
+      this.scheduledRetryAfter.delete(key);
+    } catch (error) {
+      console.warn(`[anime-calendar] scheduled refresh failed (${key}): ${safeError(error)}`);
+      this.scheduledRetryAfter.set(key, now.getTime() + scheduledRetryDelayMs);
     }
   }
 
@@ -228,10 +278,10 @@ export class AnimeCalendarService {
     await this.store.update((state) => { state.notificationHistory[historyKey] = { sent_at: nowIso(), notification_id: result.notification_id }; });
   }
 
-  private async sendScheduledWatching(settings: AnimeSettings) {
-    const payload = await this.buildWatchingNotification(settings);
+  private async sendScheduledWatching(settings: AnimeSettings, timeZone: string) {
+    const payload = await this.buildWatchingNotification(settings, timeZone);
     if (!payload.items.length) return;
-    const date = platformDateKey();
+    const date = platformDateKey(timeZone);
     const groups = settings.notifications.watchingUpdate.deliveryMode === "single" ? payload.items.map((item) => [item]) : [payload.items];
     for (const items of groups) {
       const suffix = settings.notifications.watchingUpdate.deliveryMode === "single"
@@ -245,7 +295,7 @@ export class AnimeCalendarService {
     }
   }
 
-  private async performRefresh(year: number, courMonth: number) {
+  private async performRefresh(year: number, courMonth: number, updateLongRunning = false) {
     const key = this.courKey(year, courMonth);
     const range = courRange(year, courMonth);
     await this.store.update((state) => { state.courCaches[key] = { ...emptyCourCache(year, courMonth), candidate_start: dateKey(new Date(Date.UTC(year, courMonth - 7, 1))), candidate_end: range.end_date, refresh_status: "refreshing" }; });
@@ -253,9 +303,13 @@ export class AnimeCalendarService {
       const fetched = await this.provider.fetchCour(year, courMonth);
       const normalized = fetched.map((item) => withCourRelation(item, year, courMonth));
       const included = normalized.filter((item) => item.cour_relation !== "unknown" && !isSingleEpisodeNonMovie(item));
+      const longRunning = updateLongRunning
+        ? fetched.filter((item) => !isSingleEpisodeNonMovie(item)).filter(isLongRunningActive).map((item) => ({ ...item, cour_relation: "long_running" as const, cour_relation_label: "长期" }))
+        : null;
       const counts = relationCounts(included);
       const previousIds = new Set(this.store.read().items.map((item) => item.id));
       let inserted = 0; let updated = 0;
+      const refreshedAt = nowIso();
       await this.store.update((state) => {
         const map = new Map(state.items.map((item) => [item.id, item]));
         for (const [id, item] of map) if (isSingleEpisodeNonMovie(item)) map.delete(id);
@@ -263,11 +317,15 @@ export class AnimeCalendarService {
         state.items = [...map.values()];
         state.courCaches[key] = {
           year, cour_month: courMonth, candidate_start: dateKey(new Date(Date.UTC(year, courMonth - 4, 1))), candidate_end: range.end_date,
-          last_refreshed_at: nowIso(), refresh_status: included.length ? "success" : "empty", fetched_count: fetched.length,
+          last_refreshed_at: refreshedAt, refresh_status: included.length ? "success" : "empty", fetched_count: fetched.length,
           unique_count: new Set(fetched.map((item) => item.id)).size, included_count: included.length,
           new_this_cour_count: counts.new_this_cour, continuing_count: counts.continuing, long_running_count: counts.long_running,
           unknown_count: counts.unknown, skipped_count: fetched.length - included.length, error_message: "",
         };
+        if (longRunning) {
+          state.longRunningCache = { cache_date: platformDateKey(), updated_at: refreshedAt, items: longRunning.map(clearMark) };
+          state.weeklyCache = mergeLongRunningIntoWeeklyCache(state.weeklyCache, longRunning);
+        }
         state.todayCache = null;
       });
       const cache = this.store.read().courCaches[key]!;
@@ -362,15 +420,15 @@ export class AnimeCalendarService {
     return { title: renderTemplate(rule.titleTemplate, values), body: renderTemplate(rule.bodyTemplate, values), channels: rule.channels, items };
   }
 
-  private async buildWatchingNotification(settings: AnimeSettings) {
-    const rule = settings.notifications.watchingUpdate; const response = await this.today();
+  private async buildWatchingNotification(settings: AnimeSettings, timeZone = configuredTimeZone()) {
+    const rule = settings.notifications.watchingUpdate; const response = await this.today(timeZone);
     const items = response.items.filter((item) => item.mark_type === "watching" && notificationMatches(item as AnimeItem, rule));
     return { ...(await this.buildWatchingPayload(settings, response.date, items as AnimeItem[])), items: items as AnimeItem[], date: response.date };
   }
 
   private async buildWatchingPayload(settings: AnimeSettings, date: string, items: AnimeItem[]) {
     const rule = settings.notifications.watchingUpdate; const first = items[0];
-    const values = { date, weekday: weekdayLabels[platformWeekday()], count: items.length, anime_list: animeList(items), region: regionText(rule.regions), module_url: await this.publicModuleUrl(`/modules/${this.moduleId}/weekly`), anime_title: first ? displayTitle(first) : "", anime_title_original: first?.title_original ?? "", score: first?.score ?? "", media_type: first?.media_type ?? "", cour_relation: first?.cour_relation_label ?? "", bangumi_url: first?.external_url ?? "" };
+    const values = { date, weekday: weekdayLabels[weekdayForDate(date)], count: items.length, anime_list: animeList(items), region: regionText(rule.regions), module_url: await this.publicModuleUrl(`/modules/${this.moduleId}/weekly`), anime_title: first ? displayTitle(first) : "", anime_title_original: first?.title_original ?? "", score: first?.score ?? "", media_type: first?.media_type ?? "", cour_relation: first?.cour_relation_label ?? "", bangumi_url: first?.external_url ?? "" };
     return { title: renderTemplate(rule.titleTemplate, values), body: renderTemplate(rule.bodyTemplate, values), channels: rule.channels };
   }
 
@@ -381,24 +439,36 @@ export class AnimeCalendarService {
   }
 
   private async getPublicBaseUrl() {
-    if (this.publicBaseUrlPromise) return this.publicBaseUrlPromise;
-    if (!this.platformApiUrl || !this.platformToken) return "";
-    this.publicBaseUrlPromise = (async () => {
+    return (await this.getPlatformContext()).publicBaseUrl;
+  }
+
+  private async getPlatformContext(): Promise<PlatformContext> {
+    const now = Date.now();
+    if (this.platformContextCache && this.platformContextCache.expiresAt > now) return this.platformContextCache.value;
+    if (this.platformContextPromise) return this.platformContextPromise;
+    const fallback = this.platformContextCache?.value ?? { timezone: configuredTimeZone(), publicBaseUrl: "" };
+    if (!this.platformApiUrl || !this.platformToken) return fallback;
+
+    this.platformContextPromise = (async () => {
       try {
-        const response = await fetch(`${this.platformApiUrl}/internal/modules/${encodeURIComponent(this.moduleId)}/public-url`, { headers: { "x-toolnest-internal-token": this.platformToken }, signal: AbortSignal.timeout(3000) });
-        if (!response.ok) return "";
+        const response = await fetch(`${this.platformApiUrl}/internal/modules/${encodeURIComponent(this.moduleId)}/platform-context`, { headers: { "x-toolnest-internal-token": this.platformToken }, signal: AbortSignal.timeout(3000) });
+        if (!response.ok) throw new Error("platform context request failed");
         const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
         const data = payload.data && typeof payload.data === "object" ? payload.data as Record<string, unknown> : payload;
-        const value = typeof data.public_base_url === "string" ? data.public_base_url.trim().replace(/\/+$/, "") : "";
-        return /^https?:\/\//i.test(value) ? value : "";
+        const timezone = isValidTimeZone(data.timezone) ? data.timezone : fallback.timezone;
+        const rawUrl = typeof data.public_base_url === "string" ? data.public_base_url.trim().replace(/\/+$/, "") : "";
+        const value = { timezone, publicBaseUrl: /^https?:\/\//i.test(rawUrl) ? rawUrl : fallback.publicBaseUrl };
+        this.platformContextCache = { value, expiresAt: Date.now() + 30_000 };
+        return value;
       } catch {
-        return "";
+        this.platformContextCache = { value: fallback, expiresAt: Date.now() + 10_000 };
+        return fallback;
       }
     })();
     try {
-      return await this.publicBaseUrlPromise;
+      return await this.platformContextPromise;
     } finally {
-      this.publicBaseUrlPromise = null;
+      this.platformContextPromise = null;
     }
   }
 
@@ -426,6 +496,15 @@ function mergePreservingEpisodeCount(previous: AnimeItem, next: AnimeItem): Anim
     merged.estimated_end_date = previous.estimated_end_date;
   }
   return merged;
+}
+function mergeLongRunningIntoWeeklyCache(cache: DataCache | null, items: AnimeItem[]) {
+  if (!cache) return cache;
+  const weeklyItems = new Map(cache.items.map((item) => [item.id, item]));
+  for (const item of items) {
+    const weeklyItem = weeklyItems.get(item.id);
+    weeklyItems.set(item.id, weeklyItem ? mergePreservingEpisodeCount(weeklyItem, { ...item, weekday: weeklyItem.weekday, air_time: weeklyItem.air_time }) : item);
+  }
+  return { ...cache, items: [...weeklyItems.values()] };
 }
 function mergeDetail(base: AnimeItem, detail: AnimeItem, mark: AnimeMarkType | null): AnimeItem { return { ...base, ...detail, id: base.id, provider_id: base.provider_id, year: base.year, cour_month: base.cour_month, cour_label: base.cour_label, cour_relation: base.cour_relation, cour_relation_label: base.cour_relation_label, weekday: base.weekday, air_time: base.air_time, mark_type: mark }; }
 function displayTitle(item: AnimeItem) { return item.title_cn || item.title_original; }
@@ -462,9 +541,38 @@ function episodeSpan(item: AnimeItem) { const courCount = Math.floor((item.episo
 function isLongRunningActive(item: AnimeItem) { return Boolean(item.air_date) && episodeSpan(item) === "long_running"; }
 function relationCounts(items: AnimeItem[]) { return { new_this_cour: items.filter((item) => item.cour_relation === "new_this_cour").length, continuing: items.filter((item) => item.cour_relation === "continuing").length, long_running: items.filter((item) => item.cour_relation === "long_running").length, unknown: items.filter((item) => item.cour_relation === "unknown").length }; }
 function platformNow() { return new Date(); }
-function platformDateKey() { return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.TOOLNEST_TIMEZONE || "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(platformNow()); }
-function platformWeekday() { const name = new Intl.DateTimeFormat("en-US", { timeZone: process.env.TOOLNEST_TIMEZONE || "Asia/Shanghai", weekday: "short" }).format(platformNow()); return ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 } as Record<string, number>)[name] ?? 0; }
-function dateKeyLocal(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; }
+function configuredTimeZone() { const value = process.env.TOOLNEST_TIMEZONE; return isValidTimeZone(value) ? value : "Asia/Shanghai"; }
+function courForDate(date: string) {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return { year, cour_month: month >= 10 ? 10 : month >= 7 ? 7 : month >= 4 ? 4 : 1 };
+}
+function nextCour(year: number, month: number) { return month === 10 ? { year: year + 1, cour_month: 1 } : { year, cour_month: month + 3 }; }
+function wasRefreshedOnDate(timestamp: string | null | undefined, date: string, timeZone: string) {
+  if (!timestamp) return false;
+  const instant = new Date(timestamp);
+  return Number.isFinite(instant.getTime()) && zonedDateTime(instant, timeZone).date === date;
+}
+function isCacheExpired(timestamp: string | null | undefined, now: number, ttl: number) {
+  if (!timestamp) return true;
+  const updatedAt = Date.parse(timestamp);
+  return !Number.isFinite(updatedAt) || now - updatedAt >= ttl;
+}
+function isValidTimeZone(value: unknown): value is string {
+  if (typeof value !== "string" || !value.trim()) return false;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return true; } catch { return false; }
+}
+function zonedDateTime(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "00";
+  const year = Number(part("year"));
+  const month = part("month");
+  const day = part("day");
+  return { year, date: `${year}-${month}-${day}`, time: `${part("hour")}:${part("minute")}` };
+}
+function platformDateKey(timeZone = configuredTimeZone()) { return zonedDateTime(platformNow(), timeZone).date; }
+function platformWeekday(timeZone = configuredTimeZone()) { return weekdayForDate(platformDateKey(timeZone)); }
+function weekdayForDate(date: string) { const day = new Date(`${date}T00:00:00.000Z`).getUTCDay(); return day === 0 ? 7 : day; }
 function nowIso() { return new Date().toISOString(); }
 function safeError(error: unknown) { return error instanceof Error ? error.message.replace(/[A-Za-z]:\\[^\s]+/g, "本地路径") : "操作失败"; }
 export function httpError(statusCode: number, message: string) { return Object.assign(new Error(message), { statusCode }); }
@@ -473,7 +581,8 @@ export function validateSettings(input: unknown): AnimeSettings {
   if (!input || typeof input !== "object") throw httpError(422, "设置格式不正确");
   const settings = mergeSettings(input as Partial<AnimeSettings>);
   if (!["cour", "weekly"].includes(settings.defaultPage) || !["grid", "list"].includes(settings.defaultView) || !["default", "score"].includes(settings.defaultSort)) throw httpError(422, "展示偏好包含不支持的选项");
-  if (![12, 24, 168].includes(settings.refreshIntervalHours) || ![0, 30, 90].includes(settings.cacheRetentionDays)) throw httpError(422, "缓存周期包含不支持的选项");
+  if (![0, 30, 90].includes(settings.cacheRetentionDays)) throw httpError(422, "缓存周期包含不支持的选项");
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(settings.dataRefreshTime)) throw httpError(422, "每日自动更新时间必须使用 HH:mm 格式");
   if (settings.proxy.enabled) { try { const url = new URL(settings.proxy.url.trim()); if (!["http:", "https:", "socks5:", "socks5h:"].includes(url.protocol)) throw new Error(); } catch { throw httpError(422, "代理地址必须是有效的 http、https、socks5 或 socks5h URL"); } }
   const allowedChannels = new Set(["default", "web_internal", "qqbot", "email"]); const allowedRegions = new Set(["all", "jp", "cn", "western", "kr", "other", "unknown"]);
   if (!allowedRegions.has(settings.defaultRegion) || !allowedRegions.has(settings.weeklyRegion)) throw httpError(422, "默认地区包含不支持的选项");
