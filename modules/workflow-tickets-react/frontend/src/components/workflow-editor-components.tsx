@@ -366,6 +366,42 @@ const actionEvents: Record<string, string> = { on_enter: "进入节点时", on_c
 export type ActionChannelOption = { key: string; label: string; channels?: string[]; configured?: boolean };
 export type ActionProvider = { key: string; label: string; description?: string; events: string[]; notification_channels?: ActionChannelOption[] };
 type WorkflowAction = Record<string, unknown> & { key: string; event: string; label?: string };
+
+export function WorkflowActionSummary({ actions, providers }: { actions: WorkflowAction[]; providers: ActionProvider[] }) {
+  const providerByKey = new Map(providers.map((provider) => [provider.key, provider]));
+
+  return <div className="grid gap-2">
+    {actions.map((action, index) => {
+      const provider = providerByKey.get(action.key);
+      const customLabel = action.label?.trim();
+      const title = customLabel || provider?.label || `节点动作 ${index + 1}`;
+      const providerLabel = provider?.label ?? "自定义动作";
+      const channels = Array.isArray(action.notification_channels) ? action.notification_channels.map(String) : [];
+      const channelLabels = channels.map((channel) => provider?.notification_channels?.find((option) => option.key === channel)?.label).filter((label): label is string => Boolean(label));
+      const channelSummary = action.notification_channel_mode === "custom"
+        ? channelLabels.length ? channelLabels.join("、") : "自定义通知渠道"
+        : provider?.notification_channels?.find((option) => option.key === "default")?.label ?? "平台默认通知";
+
+      return <article className="grid gap-2 rounded-lg border bg-background p-3" key={`${action.event}-${action.key}-${index}`}>
+        <header className="flex min-w-0 items-start justify-between gap-2">
+          <div className="grid min-w-0 gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <strong className="min-w-0 truncate text-sm" title={title}>{title}</strong>
+              {customLabel ? <Badge variant="secondary">{providerLabel}</Badge> : null}
+            </div>
+            <p className="m-0 text-xs leading-relaxed text-muted-foreground">{provider?.description || "在对应节点时机自动执行。"}</p>
+          </div>
+          <Badge className="shrink-0" variant="outline">{actionEvents[action.event] ?? "其他触发时机"}</Badge>
+        </header>
+        {action.key === "notification" ? <div className="flex min-w-0 flex-wrap gap-x-2 border-t pt-2 text-xs">
+          <span className="shrink-0 text-muted-foreground">通知渠道</span>
+          <span className="min-w-0">{channelSummary}</span>
+        </div> : null}
+      </article>;
+    })}
+  </div>;
+}
+
 export function WorkflowActionEditor({ actions, providers, onChange }: { actions: WorkflowAction[]; providers: ActionProvider[]; onChange: (actions: WorkflowAction[]) => void }) {
   const providerByKey = useMemo(() => new Map(providers.map((provider) => [provider.key, provider])), [providers]);
   const update = (index: number, patch: Partial<WorkflowAction>) => onChange(actions.map((action, itemIndex) => itemIndex === index ? { ...action, ...patch } : { ...action }));
