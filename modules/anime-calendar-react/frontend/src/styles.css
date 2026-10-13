@@ -431,6 +431,8 @@
 .tn-anime-detail__hero > div { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: calc(var(--spacing) * 2); }
 .tn-anime-detail__hero h2 { margin: 0; font-size: 1.25rem; line-height: 1.35; }
 .tn-anime-detail__hero p, .tn-anime-detail__hero span { margin: 0; color: var(--muted-foreground); }
+.tn-anime-detail__follow-button svg { color: var(--primary-foreground); }
+.tn-anime-detail__follow-button[aria-pressed="true"] svg { color: var(--destructive); }
 .tn-anime-detail section { display: grid; gap: calc(var(--spacing) * 3); }
 .tn-anime-detail section h3 { margin: 0; font-size: 0.875rem; }
 .tn-anime-detail__facts { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--spacing) * 2); margin: 0; }
