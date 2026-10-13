@@ -249,7 +249,7 @@ export function BranchTimeline({ nodes, edges, selectedNodeId, onSelect }: { nod
                     <span className="tn-workflow-tickets-branch-node-icon flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-[10px] font-semibold text-primary">{kind === "start" ? "起" : kind === "end" ? "终" : kind === "merge" ? "合" : kind === "parallel" ? "分" : index + 1}</span>
                     <span className="min-w-0 truncate text-sm font-semibold">{node.name}</span>
                   </span>
-                  <Badge className="shrink-0 px-1.5 py-0.5 text-[10px]" variant={node.id === selectedNodeId ? "default" : ["completed", "ready", "in_progress", "blocked"].includes(node.status) ? "secondary" : "outline"}>{node.id === selectedNodeId ? "当前节点" : statusLabels[node.status] ?? node.status}</Badge>
+                  <Badge key={node.status} className="tn-workflow-motion-status shrink-0 px-1.5 py-0.5 text-[10px]" variant={node.id === selectedNodeId ? "default" : ["completed", "ready", "in_progress", "blocked"].includes(node.status) ? "secondary" : "outline"}>{node.id === selectedNodeId ? "当前节点" : statusLabels[node.status] ?? node.status}</Badge>
                 </span>
                 <span className="flex min-w-0 items-center justify-between gap-3 text-[11px] leading-4 text-muted-foreground">
                   <span className="min-w-0 truncate">{node.key || "按节点配置处理当前任务。"}</span>

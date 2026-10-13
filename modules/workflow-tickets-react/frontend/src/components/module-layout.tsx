@@ -166,7 +166,7 @@ export function ModuleLayout({
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [router]);
   return (
-    <main className="tn-workflow-tickets-react">
+    <main className="tn-workflow-motion-enter tn-workflow-tickets-react">
       <ModulePageContent key={relativePath} relativePath={relativePath} query={query} activeKey={activeKey} router={router}>
         {children}
       </ModulePageContent>

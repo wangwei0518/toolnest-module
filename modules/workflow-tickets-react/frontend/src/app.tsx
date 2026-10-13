@@ -237,7 +237,7 @@ function schedulePlanLabel(schedule: Schedule): string {
   return schedule.schedule_type;
 }
 function statusVariant(value: string): "default" | "secondary" | "outline" | "destructive" { return ["completed", "published", "success", "succeeded", "active", "enabled", "ready", "normal"].includes(value) ? "default" : ["blocked", "cancelled", "failed", "overdue", "urgent", "risk"].includes(value) ? "destructive" : ["draft", "pending", "planning", "in_progress"].includes(value) ? "outline" : "secondary"; }
-function StatusBadge({ value }: { value: string }) { return <Badge variant={statusVariant(value)}>{(statusLabels[value] ?? value) || "未知"}</Badge>; }
+function StatusBadge({ value }: { value: string }) { return <Badge key={value} className="tn-workflow-motion-status" variant={statusVariant(value)}>{(statusLabels[value] ?? value) || "未知"}</Badge>; }
 function requiredParam(value: string | undefined, label: string): string { if (!value) throw new Error(`${label}参数缺失。`); return value; }
 function decodePathPart(value: string): string { try { return decodeURIComponent(value); } catch { return value; } }
 function formatDate(value?: string | null): string { return value ? new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "未设置"; }

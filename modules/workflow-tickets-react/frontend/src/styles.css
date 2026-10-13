@@ -119,6 +119,7 @@
 
 .tn-workflow-tickets-react {
   box-sizing: border-box;
+  min-width: 0;
   display: flex;
   width: 100%;
   max-width: 90rem;
@@ -137,6 +138,7 @@
 
 .tn-workflow-tickets-react__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--spacing) * 4);
@@ -162,6 +164,12 @@
 
 .tn-workflow-tickets-react__identity {
   min-width: 0;
+  flex: 1 1 calc(var(--spacing) * 64);
+}
+
+.tn-workflow-tickets-react__navigation {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .tn-workflow-tickets-react__mark {
@@ -1340,9 +1348,6 @@
   background: var(--accent);
 }
 
-.tn-workflow-tickets-detail-page header [role="progressbar"] + span {
-  display: none;
-}
 
 /* Workflow designer: keep the existing workspace geometry while using the React token set. */
 .tn-workflow-tickets-react:has(.tn-workflow-tickets-workflow-designer-page) {
@@ -2546,3 +2551,42 @@
   }
 
 }
+
+/* Module-owned feedback; the Host supplies motion tokens, older hosts use fallbacks. */
+@keyframes tn-workflow-reveal { from { opacity: .15; } to { opacity: 1; } }
+.tn-workflow-motion-enter, .tn-workflow-motion-panel:not([hidden]) { animation: tn-workflow-reveal var(--motion-normal, 280ms) var(--motion-ease, ease-out); }
+.tn-workflow-motion-status { animation: tn-workflow-reveal var(--motion-fast, 160ms) var(--motion-ease, ease-out); }
+.tn-workflow-motion-control { transition-property: color, background-color, border-color, box-shadow, opacity, translate; transition-duration: var(--motion-fast, 160ms); }
+.tn-workflow-motion-overlay { animation-duration: var(--motion-normal, 280ms); transition-duration: var(--motion-slow, 340ms); }
+.tn-workflow-motion-progress { transition-duration: var(--motion-progress, 480ms); transition-timing-function: var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-workflow-motion-enter, .tn-workflow-motion-status, .tn-workflow-motion-panel:not([hidden]), .tn-workflow-motion-overlay, .tn-workflow-motion-spinner, .tn-workflow-motion-skeleton { animation: none; }
+  .tn-workflow-motion-control, .tn-workflow-motion-overlay, .tn-workflow-motion-progress { transition: none; }
+  .tn-workflow-motion-control[data-slot="button"]:active { translate: none; }
+}
+
+/* Visible interaction rhythm; all geometry comes from tokens or Base UI. */
+.tn-workflow-motion-tab-list { position: relative; isolation: isolate; }
+.tn-workflow-motion-tab-indicator { position: absolute; pointer-events: none; left: 0; top: 0; width: var(--active-tab-width); height: var(--active-tab-height); translate: var(--active-tab-left) var(--active-tab-top); border-radius: var(--radius-md); background: var(--background); transition: translate var(--motion-slow, 340ms) var(--motion-ease, ease-out), width var(--motion-slow, 340ms) var(--motion-ease, ease-out), height var(--motion-slow, 340ms) var(--motion-ease, ease-out); }
+.tn-workflow-motion-tab-list > [data-slot="tabs-trigger"] { z-index: 1; }
+.tn-workflow-motion-tab-list > [data-slot="tabs-trigger"][data-active] { background: transparent; border-color: transparent; }
+.tn-workflow-motion-tab-list > [data-slot="tabs-trigger"]::after { content: none; }
+.tn-workflow-motion-tab-list[data-variant="line"] > .tn-workflow-motion-tab-indicator { background: var(--primary); height: calc(var(--spacing) * .5); top: calc(var(--active-tab-height) + var(--spacing)); border-radius: var(--radius-sm); }
+[data-orientation="vertical"] > .tn-workflow-motion-tab-list[data-variant="line"] > .tn-workflow-motion-tab-indicator { top: 0; left: calc(var(--active-tab-width) + var(--spacing)); width: calc(var(--spacing) * .5); height: var(--active-tab-height); }
+.tn-workflow-motion-control[data-slot="button"] { transition-property: color, background-color, border-color, box-shadow, opacity, translate, scale; }
+.tn-workflow-motion-control[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) { scale: .96; }
+@keyframes tn-workflow-motion-confirm { 0% { opacity: .35; scale: .8; } 60% { opacity: 1; scale: 1.08; } 100% { scale: 1; } }
+@keyframes tn-workflow-motion-section { from { opacity: .15; translate: 0 calc(var(--spacing) * 2); } to { opacity: 1; translate: 0 0; } }
+@keyframes tn-workflow-motion-working { 50% { opacity: .35; scale: .75; } }
+.tn-workflow-motion-status { animation: tn-workflow-motion-confirm var(--motion-confirm, 500ms) var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-workflow-motion-tab-indicator { transition: none; }
+  .tn-workflow-motion-control[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) { scale: none; }
+  .tn-workflow-motion-status { animation: none; }
+}
+
+.tn-workflow-tickets-react > .tn-workflow-tickets-react__header { animation: tn-workflow-motion-section var(--motion-scene, 420ms) var(--motion-ease, ease-out); }
+.tn-workflow-tickets-branch-node-icon { transition: color var(--motion-normal, 280ms), background-color var(--motion-normal, 280ms); }
+.tn-workflow-tickets-branch-node.is-completed .tn-workflow-tickets-branch-node-icon { background: var(--primary); color: var(--primary-foreground); }
+.tn-workflow-tickets-branch-node.is-in_progress .tn-workflow-tickets-branch-node-icon { animation: tn-workflow-motion-working calc(var(--motion-scene, 420ms) * 3) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .tn-workflow-tickets-react > .tn-workflow-tickets-react__header, .tn-workflow-tickets-branch-node.is-in_progress .tn-workflow-tickets-branch-node-icon { animation: none; } .tn-workflow-tickets-branch-node-icon { transition: none; } }

@@ -131,7 +131,8 @@ export function DevicePreview({ sourceUrl, motionUrl, crop, alt = "壁纸在小�
       >
         {motionUrl ? (
           <video
-            className="tn-xiaomi-rear-wallpaper__device-wallpaper"
+            key={motionUrl || sourceUrl}
+            className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__device-wallpaper"
             src={motionUrl}
             poster={sourceUrl}
             muted
@@ -144,7 +145,8 @@ export function DevicePreview({ sourceUrl, motionUrl, crop, alt = "壁纸在小�
           />
         ) : sourceUrl ? (
           <img
-            className="tn-xiaomi-rear-wallpaper__device-wallpaper"
+            key={motionUrl || sourceUrl}
+            className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__device-wallpaper"
             src={sourceUrl}
             alt=""
             draggable={false}

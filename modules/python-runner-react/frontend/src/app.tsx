@@ -244,7 +244,7 @@ function StatusBadge({ value }: { value: string }) {
     variant: "secondary" as const,
   };
   return (
-    <Badge variant={meta.variant}>
+    <Badge key={value} className="tn-python-motion-status" data-status={value} variant={meta.variant}>
       <span className="tn-python-module__status-dot" aria-hidden="true" />
       {meta.label}
     </Badge>
@@ -1122,7 +1122,7 @@ function ModuleShell({
             </Tabs>
           </nav>
         </div>
-        <div className="tn-python-module__page">
+        <div className="tn-python-motion-enter tn-python-module__page">
           {children}
         </div>
       </main>

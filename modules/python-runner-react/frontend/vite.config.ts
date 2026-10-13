@@ -7,7 +7,7 @@ import { isToolNestReactSharedDependency } from "@toolnest/react-module-sdk/vite
 const hostDevSharedDependencies = [
   ["react/jsx-dev-runtime", "http://localhost:5174/src/module-system/shared-runtime/react-jsx-dev-runtime-dev.ts"],
   ["react/jsx-runtime", "http://localhost:5174/src/module-system/shared-runtime/react-jsx-runtime-dev.ts"],
-  ["react-dom/client", "http://localhost:5174/src/module-system/shared-runtime/react-dom-client-dev.ts"],
+  ["react-dom/client", "http://localhost:5174/src/module-system/shared-runtime/react-dom-client.ts"],
   ["react-dom", "http://localhost:5174/src/module-system/shared-runtime/react-dom-dev.ts"],
   ["react", "http://localhost:5174/src/module-system/shared-runtime/react-dev.ts"],
   ["lucide-react", "http://localhost:5174/node_modules/.vite/deps/lucide-react.js"],

@@ -15,7 +15,7 @@ export function ModuleLayout({
   onViewChange: (view: ModuleView) => void;
 }) {
   return (
-    <main className="tn-xiaomi-rear-wallpaper">
+    <main className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper">
       <header className="tn-xiaomi-rear-wallpaper__header">
         <div className="tn-xiaomi-rear-wallpaper__identity">
           <span className="tn-xiaomi-rear-wallpaper__mark" aria-hidden="true">

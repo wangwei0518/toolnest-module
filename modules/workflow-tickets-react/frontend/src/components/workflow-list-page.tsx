@@ -23,7 +23,7 @@ type WorkflowFilter = "all" | "published" | "draft";
 const statusLabels: Record<string, string> = { draft: "草稿", published: "已发布", archived: "已归档" };
 
 function StatusBadge({ value }: { value: string }) {
-  return <span className={`tn-workflow-tickets-workflow-status is-${value}`}><i aria-hidden="true" />{statusLabels[value] ?? value}</span>;
+  return <span key={value} className={`tn-workflow-motion-status tn-workflow-tickets-workflow-status is-${value}`}><i aria-hidden="true" />{statusLabels[value] ?? value}</span>;
 }
 
 function currentVersion(workflow: Workflow): WorkflowVersion | undefined {

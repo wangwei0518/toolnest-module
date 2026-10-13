@@ -1408,3 +1408,44 @@
     flex: 1 1 auto;
   }
 }
+
+/* Module-owned feedback; the Host supplies motion tokens, older hosts use fallbacks. */
+@keyframes tn-python-reveal { from { opacity: .15; } to { opacity: 1; } }
+.tn-python-motion-enter, .tn-python-motion-panel:not([hidden]) { animation: tn-python-reveal var(--motion-normal, 280ms) var(--motion-ease, ease-out); }
+.tn-python-motion-status { animation: tn-python-reveal var(--motion-fast, 160ms) var(--motion-ease, ease-out); }
+.tn-python-motion-control { transition-property: color, background-color, border-color, box-shadow, opacity, translate; transition-duration: var(--motion-fast, 160ms); }
+.tn-python-motion-overlay { animation-duration: var(--motion-normal, 280ms); transition-duration: var(--motion-slow, 340ms); }
+.tn-python-motion-progress { transition-duration: var(--motion-progress, 480ms); transition-timing-function: var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-python-motion-enter, .tn-python-motion-status, .tn-python-motion-panel:not([hidden]), .tn-python-motion-overlay, .tn-python-motion-spinner, .tn-python-motion-skeleton { animation: none; }
+  .tn-python-motion-control, .tn-python-motion-overlay, .tn-python-motion-progress { transition: none; }
+  .tn-python-motion-control[data-slot="button"]:active { translate: none; }
+}
+
+/* Visible interaction rhythm; all geometry comes from tokens or Base UI. */
+.tn-python-motion-tab-list { position: relative; isolation: isolate; }
+.tn-python-motion-tab-indicator { position: absolute; pointer-events: none; left: 0; top: 0; width: var(--active-tab-width); height: var(--active-tab-height); translate: var(--active-tab-left) var(--active-tab-top); border-radius: var(--radius-md); background: var(--background); transition: translate var(--motion-slow, 340ms) var(--motion-ease, ease-out), width var(--motion-slow, 340ms) var(--motion-ease, ease-out), height var(--motion-slow, 340ms) var(--motion-ease, ease-out); }
+.tn-python-motion-tab-list > [data-slot="tabs-trigger"] { z-index: 1; }
+.tn-python-motion-tab-list > [data-slot="tabs-trigger"][data-active] { background: transparent; border-color: transparent; }
+.tn-python-motion-tab-list > [data-slot="tabs-trigger"]::after { content: none; }
+.tn-python-motion-tab-list[data-variant="line"] > .tn-python-motion-tab-indicator { background: var(--primary); height: calc(var(--spacing) * .5); top: calc(var(--active-tab-height) + var(--spacing)); border-radius: var(--radius-sm); }
+[data-orientation="vertical"] > .tn-python-motion-tab-list[data-variant="line"] > .tn-python-motion-tab-indicator { top: 0; left: calc(var(--active-tab-width) + var(--spacing)); width: calc(var(--spacing) * .5); height: var(--active-tab-height); }
+.tn-python-motion-control[data-slot="button"] { transition-property: color, background-color, border-color, box-shadow, opacity, translate, scale; }
+.tn-python-motion-control[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) { scale: .96; }
+@keyframes tn-python-motion-confirm { 0% { opacity: .35; scale: .8; } 60% { opacity: 1; scale: 1.08; } 100% { scale: 1; } }
+@keyframes tn-python-motion-section { from { opacity: .15; translate: 0 calc(var(--spacing) * 2); } to { opacity: 1; translate: 0 0; } }
+@keyframes tn-python-motion-working { 50% { opacity: .35; scale: .75; } }
+.tn-python-motion-status { animation: tn-python-motion-confirm var(--motion-confirm, 500ms) var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-python-motion-tab-indicator { transition: none; }
+  .tn-python-motion-control[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) { scale: none; }
+  .tn-python-motion-status { animation: none; }
+}
+
+.tn-python-module__page > :is(header, .tn-python-module__toolbar, [data-slot="card"]) { animation: tn-python-motion-section var(--motion-scene, 420ms) var(--motion-ease, ease-out) backwards; }
+.tn-python-motion-status:is([data-status="running"], [data-status="starting"], [data-status="installing"]) .tn-python-module__status-dot { animation: tn-python-motion-working calc(var(--motion-scene, 420ms) * 3) ease-in-out infinite; }
+@keyframes tn-python-request { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.tn-python-motion-control[aria-busy="true"] { position: relative; }
+.tn-python-motion-control[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(90deg, transparent, color-mix(in oklch, currentColor 18%, transparent), transparent); background-size: 200% 100%; animation: tn-python-request calc(var(--motion-scene, 420ms) * 3) linear infinite; }
+@media (prefers-reduced-motion: reduce) { .tn-python-motion-control[aria-busy="true"]::after { animation: none; background: none; } }
+@media (prefers-reduced-motion: reduce) { .tn-python-module__page > :is(header, .tn-python-module__toolbar, [data-slot="card"]), .tn-python-motion-status .tn-python-module__status-dot { animation: none; } }

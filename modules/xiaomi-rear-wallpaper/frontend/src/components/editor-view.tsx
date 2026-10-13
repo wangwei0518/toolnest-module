@@ -152,7 +152,7 @@ export function EditorView({
         {job ? (
           <div className="tn-xiaomi-rear-wallpaper__job-status" role="status" aria-live="polite">
             <div className="tn-xiaomi-rear-wallpaper__job-copy">
-              <span>{job.message}</span>
+              <span key={`${job.state}:${job.message}`} className="tn-wallpaper-motion-enter">{job.message}</span>
               <span>{job.progress}%</span>
             </div>
             <progress max={100} value={job.progress} aria-label="壁纸生成进度" />
@@ -168,8 +168,8 @@ export function EditorView({
             <progress max={100} value={encodingProgress} aria-label="Live Photo 视频编码进度" />
           </div>
         ) : null}
-        {error ? <p className="tn-xiaomi-rear-wallpaper__feedback is-error" role="alert">{error}</p> : null}
-        {message ? <p className="tn-xiaomi-rear-wallpaper__feedback" role="status">{message}</p> : null}
+        {error ? <p key={error} className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__feedback is-error" role="alert">{error}</p> : null}
+        {message ? <p key={message} className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__feedback" role="status">{message}</p> : null}
 
         <div className="tn-xiaomi-rear-wallpaper__editor-actions">
           <Button type="button" onClick={onSave} disabled={!draft || busy || isProcessing}>

@@ -53,7 +53,7 @@ export interface GifMotionPhotoConversion {
   frameCount: number;
 }
 
-function createMotionPhotoXmp(videoLength: number): Uint8Array {
+function createMotionPhotoXmp(videoLength: number): Uint8Array<ArrayBuffer> {
   const xmp = `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
     `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="ToolNest">` +
     `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
@@ -152,7 +152,7 @@ export async function convertGifToMotionPhoto(
 
     let timestamp = 0;
     for (let index = 0; index < frameCount; index += 1) {
-      let frame = firstFrame;
+      let frame: AnimatedImageFrame = firstFrame;
       if (index > 0) frame = (await decoder.decode({ frameIndex: index, completeFramesOnly: true })).image;
       const durationUs = frame.duration && frame.duration > 0 ? frame.duration : 100_000;
       const duration = durationUs / 1_000_000;

@@ -503,3 +503,48 @@
   .tn-anime-template-sheet__body aside { border-left: 0; border-top: 1px solid var(--border); padding-top: calc(var(--spacing) * 4); padding-left: 0; }
   .tn-anime-settings-content { padding: calc(var(--spacing) * 3); }
 }
+
+/* Module-owned feedback; the Host supplies motion tokens, older hosts use fallbacks. */
+@keyframes tn-anime-reveal { from { opacity: .15; } to { opacity: 1; } }
+.tn-anime-motion-enter, .tn-anime-motion-panel:not([hidden]) { animation: tn-anime-reveal var(--motion-normal, 280ms) var(--motion-ease, ease-out); }
+.tn-anime-motion-status { animation: tn-anime-reveal var(--motion-fast, 160ms) var(--motion-ease, ease-out); }
+.tn-anime-motion-control { transition-property: color, background-color, border-color, box-shadow, opacity, translate; transition-duration: var(--motion-fast, 160ms); }
+.tn-anime-motion-overlay { animation-duration: var(--motion-normal, 280ms); transition-duration: var(--motion-slow, 340ms); }
+.tn-anime-motion-progress { transition-duration: var(--motion-progress, 480ms); transition-timing-function: var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-anime-motion-enter, .tn-anime-motion-status, .tn-anime-motion-panel:not([hidden]), .tn-anime-motion-overlay, .tn-anime-motion-spinner, .tn-anime-motion-skeleton { animation: none; }
+  .tn-anime-motion-control, .tn-anime-motion-overlay, .tn-anime-motion-progress { transition: none; }
+  .tn-anime-motion-control[data-slot="button"]:active { translate: none; }
+}
+
+@keyframes tn-anime-confirm { 0% { opacity: .3; scale: .55; } 55% { opacity: 1; scale: 1.3; } 100% { scale: 1; } }
+.tn-anime-motion-confirm { animation: tn-anime-confirm var(--motion-confirm, 500ms) var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-anime-motion-confirm { animation: none; }
+  .tn-anime-calendar-react :is(.tn-anime-card, .tn-anime-card__media > img, .tn-anime-card__icon-button) { transition: none; }
+}
+
+/* Visible interaction rhythm; all geometry comes from tokens or Base UI. */
+.tn-anime-motion-tab-list { position: relative; isolation: isolate; }
+.tn-anime-motion-tab-indicator { position: absolute; pointer-events: none; left: 0; top: 0; width: var(--active-tab-width); height: var(--active-tab-height); translate: var(--active-tab-left) var(--active-tab-top); border-radius: var(--radius-md); background: var(--background); transition: translate var(--motion-slow, 340ms) var(--motion-ease, ease-out), width var(--motion-slow, 340ms) var(--motion-ease, ease-out), height var(--motion-slow, 340ms) var(--motion-ease, ease-out); }
+.tn-anime-motion-tab-list > [data-slot="tabs-trigger"] { z-index: 1; }
+.tn-anime-motion-tab-list > [data-slot="tabs-trigger"][data-active] { background: transparent; border-color: transparent; }
+.tn-anime-motion-tab-list > [data-slot="tabs-trigger"]::after { content: none; }
+.tn-anime-motion-tab-list[data-variant="line"] > .tn-anime-motion-tab-indicator { background: var(--primary); height: calc(var(--spacing) * .5); top: calc(var(--active-tab-height) + var(--spacing)); border-radius: var(--radius-sm); }
+[data-orientation="vertical"] > .tn-anime-motion-tab-list[data-variant="line"] > .tn-anime-motion-tab-indicator { top: 0; left: calc(var(--active-tab-width) + var(--spacing)); width: calc(var(--spacing) * .5); height: var(--active-tab-height); }
+.tn-anime-motion-control[data-slot="button"] { transition-property: color, background-color, border-color, box-shadow, opacity, translate, scale; }
+.tn-anime-motion-control[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) { scale: .96; }
+@keyframes tn-anime-motion-confirm { 0% { opacity: .35; scale: .8; } 60% { opacity: 1; scale: 1.08; } 100% { scale: 1; } }
+@keyframes tn-anime-motion-section { from { opacity: .15; translate: 0 calc(var(--spacing) * 2); } to { opacity: 1; translate: 0 0; } }
+@keyframes tn-anime-motion-working { 50% { opacity: .35; scale: .75; } }
+.tn-anime-motion-status { animation: tn-anime-motion-confirm var(--motion-confirm, 500ms) var(--motion-ease, ease-out); }
+@media (prefers-reduced-motion: reduce) {
+  .tn-anime-motion-tab-indicator { transition: none; }
+  .tn-anime-motion-control[data-slot="button"]:active:not(:disabled):not([aria-haspopup]) { scale: none; }
+  .tn-anime-motion-status { animation: none; }
+}
+
+.tn-anime-grid.tn-anime-motion-enter > :nth-child(-n+8) { animation: tn-anime-motion-section var(--motion-scene, 420ms) var(--motion-ease, ease-out) backwards; }
+.tn-anime-grid.tn-anime-motion-enter > :nth-child(2n) { animation-delay: var(--motion-step, 55ms); }
+.tn-anime-grid.tn-anime-motion-enter > :nth-child(3n) { animation-delay: calc(var(--motion-step, 55ms) * 2); }
+@media (prefers-reduced-motion: reduce) { .tn-anime-grid.tn-anime-motion-enter > :nth-child(-n+8) { animation: none; } }
