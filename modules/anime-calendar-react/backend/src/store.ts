@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { defaultSettings, type AnimeSettings, type StoreState } from "./types.js";
+import { reclassifyCachedRegions } from "./region.js";
 
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -64,7 +65,7 @@ export class JsonStore {
 
   private normalize(state: Partial<StoreState>): StoreState {
     const defaults = this.emptyState();
-    return {
+    return reclassifyCachedRegions({
       ...defaults,
       ...state,
       items: Array.isArray(state.items) ? state.items : [],
@@ -76,7 +77,7 @@ export class JsonStore {
       detailCache: state.detailCache && typeof state.detailCache === "object" ? state.detailCache : {},
       settings: mergeSettings(state.settings),
       notificationHistory: state.notificationHistory && typeof state.notificationHistory === "object" ? state.notificationHistory : {},
-    };
+    });
   }
 
   private emptyState(): StoreState {

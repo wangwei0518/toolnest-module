@@ -129,8 +129,8 @@ describe("service cache and marks", () => {
   });
 
   it("includes cached weekly-only long-running titles in the cour catalog without a provider request", async () => {
-    const current = currentCour();
-    const airDate = new Date(Date.UTC(current.year, current.cour_month - 2, 3)).toISOString().slice(0, 10);
+    const initialCour = currentCour();
+    const airDate = new Date(Date.UTC(initialCour.year, initialCour.cour_month - 2, 3)).toISOString().slice(0, 10);
     const weeklyOnly = item({ id: "bangumi:cached-long-running", provider_id: "cached-long-running", title_cn: "缓存长期番", air_date: airDate, estimated_end_date: null, episode_count: 36, status: "airing" });
     let calls = 0;
     await store.update((state) => { state.weeklyCache = { cache_date: "2026-09-19", updated_at: "2026-09-19T00:00:00.000Z", items: [clearMarkForTest(weeklyOnly)] }; });

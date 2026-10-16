@@ -6,7 +6,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { PostgresStore } from "../src/postgres-store.js";
-import { defaultSettings, type StoreState } from "../src/types.js";
+import { defaultSettings, type AnimeItem, type StoreState } from "../src/types.js";
 
 const databaseUrl = process.env.TEST_TOOLNEST_PLUGIN_DATABASE_URL;
 const schema = `anime_store_test_${process.pid}`;
@@ -47,5 +47,18 @@ describeDatabase("PostgresStore", () => {
     await second.init();
     expect(second.snapshot().marks["anime-1"]).toBe("completed");
     await second.close();
+  });
+  it("reclassifies an existing SQL cache from its provider tags on startup", async () => {
+    const item = { id: "bangumi:568244", provider: "bangumi", provider_id: "568244", region: "cn", tags: ["日本", "中国风"], studio: "OLM Division 2", raw: { id: 568244, name: "薬屋のひとりごと 第3期" } } as AnimeItem;
+    const pool = new Pool({ connectionString: databaseUrl });
+    try {
+      await pool.query(`INSERT INTO "${schema}".anime_calendar_entities (collection, entity_id, ordinal, payload) VALUES ('items', $1, 0, $2::jsonb)`, [item.id, JSON.stringify(item)]);
+    } finally { await pool.end(); }
+    const store = new PostgresStore(directory, databaseUrl!, schema);
+    try {
+      await store.init();
+      expect(store.read().items.find(value => value.id === item.id)?.region).toBe("jp");
+      expect(store.read().marks["anime-1"]).toBe("completed");
+    } finally { await store.close(); }
   });
 });

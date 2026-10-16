@@ -42,6 +42,10 @@ beforeEach(async () => {
       response.end(JSON.stringify({ id: 42, name: "Original", name_cn: "测试动画", date: "2026-07-03", eps: 12, summary: "完整简介", tags: [{ name: "日本" }] }));
       return;
     }
+    if (request.url === "/v0/subjects/568244") {
+      response.end(JSON.stringify({ id: 568244, name: "薬屋のひとりごと 第3期", name_cn: "药屋少女的呢喃 第三季", platform: "TV", date: "2026-10-02", tags: [{ name: "日本" }, { name: "中国风" }, { name: "中华风" }], infobox: [{ key: "动画制作", value: "OLM Division 2" }] }));
+      return;
+    }
     response.statusCode = 404;
     response.end(JSON.stringify({ message: "not found" }));
   });
@@ -80,5 +84,9 @@ describe("BangumiProvider", () => {
   it("loads full details on demand", async () => {
     const detail = await new BangumiProvider("", apiBase).fetchDetail("42");
     expect(detail.summary).toBe("完整简介");
+  });
+  it("maps the Apothecary Diaries to Japan despite its Chinese-style setting tag", async () => {
+    const detail = await new BangumiProvider("", apiBase).fetchDetail("568244");
+    expect(detail).toMatchObject({ id: "bangumi:568244", region: "jp", studio: "OLM Division 2" });
   });
 });

@@ -3,7 +3,8 @@ import https from "node:https";
 import { ProxyAgent } from "proxy-agent";
 
 import { addMonths, courLabel, courRange, dateKey } from "./cour.js";
-import type { AnimeItem, AnimeMediaType, AnimeRegion, AnimeStatus } from "./types.js";
+import { inferRegion } from "./region.js";
+import type { AnimeItem, AnimeMediaType, AnimeStatus } from "./types.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -170,6 +171,5 @@ function coverUrl(subject: JsonObject) { if (!isObject(subject.images)) return "
 function infoboxValue(items: JsonObject[], keys: string[]) { const wanted = new Set(keys.map((key) => key.toLowerCase())); for (const item of items) { if (!wanted.has(stringValue(item.key).toLowerCase())) continue; const value = item.value; if (typeof value === "string") return value; if (Array.isArray(value)) return value.map((entry) => isObject(entry) ? stringValue(entry.v) : stringValue(entry)).filter(Boolean).join(" / "); } return ""; }
 function mapMediaType(value: unknown): AnimeMediaType { const text = stringValue(value).toLowerCase(); if (/剧场|movie/.test(text)) return "movie"; if (/ova/.test(text)) return "ova"; if (/web|ona/.test(text)) return "ona"; if (/sp|special/.test(text)) return "sp"; if (/tv|电视/.test(text)) return "tv"; return "unknown"; }
 function mapCalendarMediaType(subject: JsonObject): AnimeMediaType { const type = numberValue(subject.type); return type === 2 ? "tv" : mapMediaType(subject.type); }
-function inferRegion(subject: JsonObject, tags: string[], studio: string): AnimeRegion { const text = [subject.name, subject.name_cn, subject.platform, studio, ...tags].map(stringValue).join(" ").toLowerCase(); if (/(中国|国产|国漫|国创|bilibili|腾讯|爱奇艺)/i.test(text)) return "cn"; if (/(韩国|韩漫)/i.test(text)) return "kr"; if (/(欧美|美国|英国|法国|netflix|disney|pixar|cartoon network)/i.test(text)) return "western"; if (/(日本|日漫|mappa|cloverworks|toei|bones|a-1 pictures)/i.test(text)) return "jp"; return "unknown"; }
 function dedupe(subjects: JsonObject[]) { const seen = new Set<string>(); return subjects.filter((subject) => { const id = String(subject.id ?? ""); if (!id || seen.has(id)) return false; seen.add(id); return true; }); }
 function dedupeItems(items: AnimeItem[]) { const seen = new Set<string>(); return items.filter((item) => { if (seen.has(item.id)) return false; seen.add(item.id); return true; }); }

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Pool, type PoolClient } from "pg";
 
 import { mergeSettings, type AnimeStoreRepository } from "./store.js";
+import { reclassifyCachedRegions } from "./region.js";
 import { defaultSettings, type AnimeMarkType, type AnimeSettings, type StoreState } from "./types.js";
 
 type StoredEntity = { collection: string; entity_id: string; ordinal: number; payload: unknown };
@@ -38,7 +39,7 @@ function normalize(state: Partial<StoreState>): StoreState {
     notificationHistory: state.notificationHistory && typeof state.notificationHistory === "object" ? state.notificationHistory : {},
   };
   pruneAnimeCaches(normalized);
-  return normalized;
+  return reclassifyCachedRegions(normalized);
 }
 
 function newestEntries<T>(entries: Array<[string, T]>, limit: number, timestamp: (value: T) => string | number): Record<string, T> {
