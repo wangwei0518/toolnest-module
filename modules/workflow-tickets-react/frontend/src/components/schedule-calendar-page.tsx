@@ -66,7 +66,7 @@ function ticketCalendarDate(ticket: Ticket): { date: Date; usesCreatedDate: bool
   return { date: dueDate ?? parseDate(ticket.created_at) ?? new Date(), usesCreatedDate: !dueDate };
 }
 
-async function listAllTicketsForStatus(api: WorkflowApi, status: "in_progress" | "blocked"): Promise<Ticket[]> {
+async function listAllTicketsForStatus(api: WorkflowApi, status: "in_progress" | "blocked" | "completed"): Promise<Ticket[]> {
   const pageSize = 100;
   const firstPage = await api.listTickets({ status, page: 1, page_size: pageSize });
   const pageCount = Math.ceil(firstPage.total / pageSize);
@@ -81,13 +81,14 @@ async function listAllTicketsForStatus(api: WorkflowApi, status: "in_progress" |
   return pages.flatMap((page) => page.items);
 }
 
-async function listActiveTickets(api: WorkflowApi): Promise<Ticket[]> {
-  const [inProgress, blocked] = await Promise.all([
+async function listCalendarTickets(api: WorkflowApi): Promise<Ticket[]> {
+  const [inProgress, blocked, completed] = await Promise.all([
     listAllTicketsForStatus(api, "in_progress"),
     listAllTicketsForStatus(api, "blocked"),
+    listAllTicketsForStatus(api, "completed"),
   ]);
   const ticketsById = new Map<string, Ticket>();
-  for (const ticket of [...inProgress, ...blocked]) ticketsById.set(ticket.id, ticket);
+  for (const ticket of [...inProgress, ...blocked, ...completed]) ticketsById.set(ticket.id, ticket);
   return [...ticketsById.values()];
 }
 
@@ -154,8 +155,9 @@ function ScheduleCalendarEvent({ item, onOpen }: { item: ScheduleItem; onOpen: (
 
 function TicketCalendarEvent({ event, onOpen }: { event: Extract<CalendarEvent, { kind: "ticket" }>; onOpen: (ticket: Ticket) => void }) {
   const { ticket, scheduledDate, usesCreatedDate, isOngoingToday } = event;
+  const completed = ticket.status === "completed";
   const blocked = ticket.status === "blocked";
-  const statusLabel = blocked ? "阻塞" : "进行中";
+  const statusLabel = completed ? "已完成" : blocked ? "阻塞" : "进行中";
   const dateLabel = usesCreatedDate
     ? `未设置目标日期，按创建日期 ${format(scheduledDate, "yyyy年M月d日", { locale: zhCN })} 显示`
     : `目标日期 ${format(scheduledDate, "yyyy年M月d日", { locale: zhCN })}`;
@@ -170,7 +172,7 @@ function TicketCalendarEvent({ event, onOpen }: { event: Extract<CalendarEvent, 
         render={
           <button
             type="button"
-            className="flex min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={cn("flex min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", completed ? "text-muted-foreground" : "text-foreground")}
             aria-label={`${ticket.title}，工单编号 ${ticket.number}，${statusLabel}，${accessibleDateLabel}`}
             onClick={() => onOpen(ticket)}
           />
@@ -178,9 +180,9 @@ function TicketCalendarEvent({ event, onOpen }: { event: Extract<CalendarEvent, 
       >
         <span
           aria-hidden="true"
-          className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", blocked ? "bg-destructive" : "bg-primary")}
+          className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", completed ? "bg-muted-foreground" : blocked ? "bg-destructive" : "bg-primary")}
         />
-        <span className="min-w-0 truncate">{ticket.title}</span>
+        <span className={cn("min-w-0 truncate", completed && "line-through")}>{ticket.title}</span>
         {isOngoingToday ? <Badge variant="secondary" className="hidden h-4 shrink-0 px-1 text-[10px] font-normal leading-3 md:inline-flex">今日</Badge> : null}
         {usesCreatedDate ? <Badge variant="secondary" className="hidden h-4 shrink-0 px-1 text-[10px] font-normal leading-3 md:inline-flex">创建日</Badge> : null}
       </TooltipTrigger>
@@ -282,7 +284,7 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
       const [itemsResult, workflowsResult, ticketsResult] = await Promise.allSettled([
         api.listScheduleItems(),
         api.listWorkflows(),
-        listActiveTickets(api),
+        listCalendarTickets(api),
       ]);
       if (itemsResult.status === "rejected") throw itemsResult.reason;
       if (workflowsResult.status === "rejected") throw workflowsResult.reason;
@@ -295,7 +297,7 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
         setTickets(ticketsResult.value);
       } else {
         setTickets([]);
-        setTicketLoadError(ticketsResult.reason instanceof Error ? ticketsResult.reason.message : "进行中工单加载失败。");
+        setTicketLoadError(ticketsResult.reason instanceof Error ? ticketsResult.reason.message : "工单加载失败。");
       }
       if (notifyOnSuccess && ticketsResult.status === "fulfilled") {
         notifyModule({ type: "success", content: "日程已刷新。" });
@@ -312,7 +314,7 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
 
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, CalendarEvent[]>();
-    const activeTicketIds = new Set(tickets.map((ticket) => ticket.id));
+    const calendarTicketIds = new Set(tickets.map((ticket) => ticket.id));
     const today = startOfDay(new Date());
     const addEvent = (event: CalendarEvent) => {
       const key = dateKey(event.date);
@@ -321,15 +323,15 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
       else grouped.set(key, [event]);
     };
     for (const item of items) {
-      if (item.status === "converted" || (item.ticket_id && activeTicketIds.has(item.ticket_id))) continue;
+      if (item.status === "converted" || (item.ticket_id && calendarTicketIds.has(item.ticket_id))) continue;
       const date = scheduleItemDate(item);
       addEvent({ id: `schedule:${item.id}`, kind: "schedule", date, item });
     }
     for (const ticket of tickets) {
       const { date: scheduledDate, usesCreatedDate } = ticketCalendarDate(ticket);
-      const isOngoingToday = isSameDay(scheduledDate, today);
+      const isOngoingToday = ticket.status !== "completed" && isSameDay(scheduledDate, today);
       addEvent({ id: `ticket:${ticket.id}`, kind: "ticket", date: scheduledDate, scheduledDate, ticket, usesCreatedDate, isOngoingToday });
-      if (!isOngoingToday) {
+      if (ticket.status !== "completed" && !isOngoingToday) {
         addEvent({ id: `ticket:today:${ticket.id}`, kind: "ticket", date: today, scheduledDate, ticket, usesCreatedDate, isOngoingToday: true });
       }
     }
