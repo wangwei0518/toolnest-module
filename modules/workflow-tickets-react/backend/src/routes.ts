@@ -83,7 +83,38 @@ export function registerRoutes(app: FastifyInstance, service: WorkflowTicketsSer
   app.post("/tickets/:ticketId/cancel", (request, reply) => run(reply, () => service.cancelTicket(params(request).ticketId, text(body(request).reason))));
   app.post("/tickets/:ticketId/reopen", (request, reply) => run(reply, () => service.reopenTicket(params(request).ticketId)));
   app.get("/tickets/:ticketId/diagnostics", (request, reply) => run(reply, () => service.diagnostics(params(request).ticketId)));
-  app.post("/tickets/:ticketId/nodes/:nodeId/attachments", (request, reply) => run(reply, () => service.uploadAttachment(params(request).ticketId, params(request).nodeId, body(request))));
+  app.post("/tickets/:ticketId/nodes/:nodeId/attachments", async (request, reply) => {
+    try {
+      if (!request.isMultipart()) return sendError(reply, new DomainError(415, "附件上传格式无效"));
+      let fieldId = "";
+      for await (const part of request.parts()) {
+        if (part.type === "field") {
+          if (part.fieldname === "field_id") fieldId = text(part.value);
+          continue;
+        }
+        if (part.fieldname !== "file") {
+          part.file.resume();
+          continue;
+        }
+        if (!fieldId) {
+          part.file.resume();
+          return sendError(reply, new DomainError(422, "附件字段不存在"));
+        }
+        const attachment = await service.uploadAttachment(
+          params(request).ticketId,
+          params(request).nodeId,
+          fieldId,
+          part.filename,
+          part.mimetype,
+          part.file,
+        );
+        return reply.send({ data: attachment });
+      }
+      return sendError(reply, new DomainError(422, "上传文件不能为空"));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
   app.delete("/attachments/:attachmentId", (request, reply) => run(reply, () => service.deleteAttachment(params(request).attachmentId)));
   app.get("/attachments/:attachmentId", async (request, reply) => { try { const item = service.getAttachment(params(request).attachmentId); return reply.type(item.attachment.mime_type).header("content-disposition", `inline; filename="${item.attachment.filename.replaceAll('"', "")}"`).send(createReadStream(item.path)); } catch (error) { return sendError(reply, error); } });
   app.get("/temp/:token", async (request, reply) => { try { const result = await service.consumeTemporaryResource(params(request).token); return reply.header("cache-control", "no-store").header("x-content-type-options", "nosniff").type(String(result.resource.mime_type ?? "text/plain")).send(result.content); } catch (error) { return sendError(reply, error); } });

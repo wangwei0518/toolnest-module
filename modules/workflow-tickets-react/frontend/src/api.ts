@@ -93,7 +93,12 @@ export function createWorkflowApi(client: ToolNestModuleApiClient, moduleId = "w
     cancelTicket: (id: string, reason: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${id}/cancel`, { reason })),
     reopenTicket: (id: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${id}/reopen`)),
    getTicketDiagnostics: (id: string) => call(client.get<Envelope<Record<string, unknown>>>(`${base}/tickets/${id}/diagnostics`)),
-    uploadAttachment: (ticketId: string, nodeId: string, payload: Record<string, unknown>) => call(client.post<Envelope<TicketAttachment>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/attachments`, payload)),
+    uploadAttachment: (ticketId: string, nodeId: string, fieldId: string, file: File) => {
+      const form = new FormData();
+      form.append("field_id", fieldId);
+      form.append("file", file, file.name);
+      return call(client.post<Envelope<TicketAttachment>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/attachments`, form));
+    },
     deleteAttachment: (attachmentId: string) => call(client.delete<Envelope<null>>(`${base}/attachments/${attachmentId}`)),
     listScheduleItems: () => call(client.get<Envelope<ScheduleItem[]>>(`${base}/schedule-items`)),
     createScheduleItem: (payload: Record<string, unknown>) => call(client.post<Envelope<ScheduleItem>>(`${base}/schedule-items`, payload)),

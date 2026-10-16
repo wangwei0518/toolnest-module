@@ -1,4 +1,7 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { Transform, type Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 
 import type { WorkflowStoreRepository } from "./store.js";
@@ -640,7 +643,61 @@ export class WorkflowTicketsService {
     await this.store.save(); return this.getTicket(ticket.id);
   }
 
-  async uploadAttachment(ticketId: string, nodeId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> { const ticket = this.executableTicket(ticketId); const node = this.ticketNode(ticket, nodeId); const definition = this.nodeDefinition(ticket, node); this.assertActionableNode(node, definition); const field = definition.form_schema.fields.find((item) => item.id === text(body.field_id)); if (!field || !["file", "image"].includes(field.type)) fail(422, "附件字段不存在"); const content = Buffer.from(text(body.content_base64), "base64"); const max = Number(asObject(field.config).max_size_mb) || this.settings().max_file_size_mb; if (content.length > max * 1024 * 1024) fail(413, `附件不能超过 ${max} MB`); const attachmentDir = path.join(this.store.dataDir, "attachments"); await mkdir(attachmentDir, { recursive: true }); const attachmentId = id(); const filename = path.basename(text(body.filename)) || "attachment"; const filePath = path.join(attachmentDir, `${attachmentId}${path.extname(filename).slice(0, 20)}`); await writeFile(filePath, content); const attachment: Attachment = { id: attachmentId, ticket_id: ticket.id, ticket_node_id: node.id, field_id: field.id, filename, stored_name: path.basename(filePath), mime_type: text(body.mime_type) || "application/octet-stream", extension: path.extname(filename), size: content.length, storage_path: filePath, created_at: nowIso() }; this.data.attachments.push(attachment); await this.store.save(); return this.attachmentRead(attachment); }
+  async uploadAttachment(ticketId: string, nodeId: string, fieldId: string, sourceFilename: string, mimeType: string, content: Readable): Promise<Record<string, unknown>> {
+    const ticket = this.executableTicket(ticketId);
+    const node = this.ticketNode(ticket, nodeId);
+    const definition = this.nodeDefinition(ticket, node);
+    this.assertActionableNode(node, definition);
+    const field = definition.form_schema.fields.find((item) => item.id === fieldId);
+    if (!field || !["file", "image"].includes(field.type)) fail(422, "附件字段不存在");
+    const max = Number(asObject(field.config).max_size_mb) || this.settings().max_file_size_mb;
+    const maxBytes = max * 1024 * 1024;
+    const attachmentDir = path.join(this.store.dataDir, "attachments");
+    await mkdir(attachmentDir, { recursive: true });
+    const attachmentId = id();
+    const filename = path.basename(sourceFilename) || "attachment";
+    const filePath = path.join(attachmentDir, `${attachmentId}${path.extname(filename).slice(0, 20)}`);
+    const temporaryPath = `${filePath}.upload`;
+    let size = 0;
+    let moved = false;
+    const sizeLimit = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        size += chunk.length;
+        if (size > maxBytes) callback(new DomainError(413, `附件不能超过 ${max} MB`));
+        else callback(null, chunk);
+      },
+    });
+
+    try {
+      await pipeline(content, sizeLimit, createWriteStream(temporaryPath, { flags: "wx" }));
+      await rename(temporaryPath, filePath);
+      moved = true;
+      const attachment: Attachment = {
+        id: attachmentId,
+        ticket_id: ticket.id,
+        ticket_node_id: node.id,
+        field_id: field.id,
+        filename,
+        stored_name: path.basename(filePath),
+        mime_type: mimeType || "application/octet-stream",
+        extension: path.extname(filename),
+        size,
+        storage_path: filePath,
+        created_at: nowIso(),
+      };
+      this.data.attachments.push(attachment);
+      try {
+        await this.store.save();
+      } catch (error) {
+        this.data.attachments = this.data.attachments.filter((item) => item.id !== attachmentId);
+        throw error;
+      }
+      return this.attachmentRead(attachment);
+    } catch (error) {
+      try { await unlink(moved ? filePath : temporaryPath); } catch { /* partial upload already removed */ }
+      throw error;
+    }
+  }
 
   async deleteAttachment(attachmentId: string): Promise<void> { const attachment = this.data.attachments.find((item) => item.id === attachmentId); if (!attachment) fail(404, "附件不存在"); try { await unlink(attachment.storage_path); } catch { /* already removed */ } this.data.attachments = this.data.attachments.filter((item) => item.id !== attachmentId); await this.store.save(); }
 

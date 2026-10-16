@@ -12,6 +12,7 @@
     "test": "vitest run test/history-retention.test.ts test/postgres-store.integration.test.ts"
   },
   "dependencies": {
+    "@fastify/multipart": "9.4.0",
     "fastify": "^5.11.3",
     "pg": "^8.20.0"
   },

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import multipart from "@fastify/multipart";
 import { mkdir } from "node:fs/promises";
 
 import { config } from "./config.js";
@@ -8,6 +9,7 @@ import { PostgresStore } from "./postgres-store.js";
 
 export async function createApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  await app.register(multipart, { limits: { files: 1, fields: 1, fileSize: Number.MAX_SAFE_INTEGER } });
 
   await mkdir(config.dataDir, { recursive: true });
   await mkdir(config.logDir, { recursive: true });
