@@ -32,8 +32,8 @@ function PreviewCloseButton({ style }: { style: CSSProperties }) {
 function previewCloseStyle(size?: { width: number; height: number }): CSSProperties {
   if (!size) return { top: "0.75rem", right: "0.75rem" };
   return {
-    top: `calc(50% - ${size.height / 2}px + 0.75rem)`,
-    right: `calc(50% - ${size.width / 2}px + 0.75rem)`,
+    top: `calc(50% - ${size.height / 2}px)`,
+    left: `calc(50% + ${size.width / 2}px + 0.5rem)`,
   };
 }
 
@@ -167,7 +167,7 @@ function AttachmentField({ api, ticket, node, field, value, onChange, readonly }
   const remove = async (attachment: TicketAttachment) => { try { await api.deleteAttachment(attachment.id); onChange(attachments.filter((item) => item.id !== attachment.id)); if (previewAttachment?.id === attachment.id) setPreviewIndex(null); } catch (err) { setError(err instanceof Error ? err.message : "删除附件失败"); } };
   const meta = (attachment: TicketAttachment) => `${text(attachment.mime_type).split("/")[1]?.toUpperCase() || "文件"} · ${formatBytes(attachment.size)}`;
   const imageAttachments = field.type === "image";
-  const fitPreviewImage = (image: HTMLImageElement, attachmentId: string) => { const viewport = previewViewportRef.current; if (!viewport || !image.naturalWidth || !image.naturalHeight) return; const maxWidth = Math.max(1, viewport.clientWidth - (attachments.length > 1 ? 88 : 0)); const maxHeight = Math.max(1, viewport.clientHeight - (attachments.length > 1 ? 32 : 0)); const scale = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight); const size = { width: Math.max(1, Math.round(image.naturalWidth * scale)), height: Math.max(1, Math.round(image.naturalHeight * scale)) }; setPreviewImageSizes((current) => current[attachmentId]?.width === size.width && current[attachmentId]?.height === size.height ? current : { ...current, [attachmentId]: size }); };
+  const fitPreviewImage = (image: HTMLImageElement, attachmentId: string) => { const viewport = previewViewportRef.current; if (!viewport || !image.naturalWidth || !image.naturalHeight) return; const maxWidth = Math.max(1, viewport.clientWidth - (attachments.length > 1 ? 88 : 80)); const maxHeight = Math.max(1, viewport.clientHeight - (attachments.length > 1 ? 32 : 0)); const scale = Math.min(maxWidth / image.naturalWidth, maxHeight / image.naturalHeight); const size = { width: Math.max(1, Math.round(image.naturalWidth * scale)), height: Math.max(1, Math.round(image.naturalHeight * scale)) }; setPreviewImageSizes((current) => current[attachmentId]?.width === size.width && current[attachmentId]?.height === size.height ? current : { ...current, [attachmentId]: size }); };
   useEffect(() => { if (!carouselApi || previewIndex == null) return; if (carouselApi.selectedScrollSnap() !== previewIndex) carouselApi.scrollTo(previewIndex); }, [carouselApi, previewIndex]);
   useEffect(() => { if (!carouselApi) return; const onSelect = () => setPreviewIndex(carouselApi.selectedScrollSnap()); onSelect(); carouselApi.on("select", onSelect); return () => { carouselApi.off("select", onSelect); }; }, [carouselApi]);
   useLayoutEffect(() => { if (!previewAttachment) return; setPreviewControlsVisible(false); const viewport = previewViewportRef.current; if (!viewport) return; const fitImages = () => viewport.querySelectorAll<HTMLImageElement>("[data-preview-attachment]").forEach((image) => { if (image.complete) fitPreviewImage(image, image.dataset.previewAttachment ?? ""); }); fitImages(); const observer = new ResizeObserver(fitImages); observer.observe(viewport); window.addEventListener("resize", fitImages); return () => { observer.disconnect(); window.removeEventListener("resize", fitImages); }; }, [attachments.length, previewAttachment?.id, previewIndex]);
