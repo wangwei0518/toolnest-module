@@ -135,6 +135,7 @@ export interface TicketNode {
   node_id: string;
   name: string;
   key: string;
+  node_type?: "general" | "summary";
   status: TicketNodeStatus;
   values: Record<string, unknown>;
   outputs: Array<Record<string, unknown>>;
