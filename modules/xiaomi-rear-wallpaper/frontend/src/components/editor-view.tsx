@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { deviceProfile } from "@/lib/device-profile";
+import type { WallpaperAssetProgress } from "../api";
 import { CropEditor } from "./crop-editor";
 import { DevicePreview } from "./device-preview";
 import type { CropRect, ProcessingJob, WallpaperSummary } from "../types";
@@ -31,6 +32,9 @@ interface EditorViewProps {
   draft: WallpaperDraft | null;
   job: ProcessingJob | null;
   busy: boolean;
+  openingSource: boolean;
+  sourceProgress: WallpaperAssetProgress | null;
+  onRetrySource: (() => void) | undefined;
   error: string;
   message: string;
   encodingProgress: number | null;
@@ -53,6 +57,9 @@ export function EditorView({
   draft,
   job,
   busy,
+  openingSource,
+  sourceProgress,
+  onRetrySource,
   error,
   message,
   encodingProgress,
@@ -85,6 +92,13 @@ export function EditorView({
       </div>
 
       <div className="tn-xiaomi-rear-wallpaper__editor-controls">
+        {openingSource ? (
+          <div className="tn-xiaomi-rear-wallpaper__job-status" role="status" aria-live="polite">
+            <span>正在读取原图，完成后即可调整取景…</span>
+            {sourceProgress ? <span>已下载 {formatBytes(sourceProgress.loaded)}{sourceProgress.total ? ` / ${formatBytes(sourceProgress.total)}` : ""}</span> : null}
+            <progress aria-label="原图加载进度" max={sourceProgress?.total} value={sourceProgress?.total ? sourceProgress.loaded : undefined} />
+          </div>
+        ) : null}
         <Card>
           <CardHeader>
             <CardTitle>选择图片</CardTitle>
@@ -171,13 +185,18 @@ export function EditorView({
             <progress max={100} value={encodingProgress} aria-label="Live Photo 视频编码进度" />
           </div>
         ) : null}
-        {error ? <p key={error} className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__feedback is-error" role="alert">{error}</p> : null}
+        {error ? (
+          <div className="grid gap-2">
+            <p key={error} className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__feedback is-error" role="alert">{error}</p>
+            {onRetrySource ? <Button type="button" variant="outline" disabled={busy} onClick={onRetrySource}>重新读取原图</Button> : null}
+          </div>
+        ) : null}
         {message ? <p key={message} className="tn-wallpaper-motion-enter tn-xiaomi-rear-wallpaper__feedback" role="status">{message}</p> : null}
 
         <div className="tn-xiaomi-rear-wallpaper__editor-actions">
           <Button type="button" onClick={onSave} disabled={!draft || busy || isProcessing}>
             <RiSaveLine data-icon="inline-start" />
-            {busy ? (encodingMessage.includes("GIF") ? "正在转换…" : "正在保存…") : draft?.saved ? "保存取景" : "保存作品"}
+            {openingSource ? "正在读取…" : busy ? (encodingMessage.includes("GIF") ? "正在转换…" : "正在保存…") : draft?.saved ? "保存取景" : "保存作品"}
           </Button>
           <Button
             type="button"

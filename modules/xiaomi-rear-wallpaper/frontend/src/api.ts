@@ -51,11 +51,33 @@ export function getWallpaperJob(jobId: string): Promise<ProcessingJob> {
   return getModuleApiClient().get<ProcessingJob>(`${base}/jobs/${encodeURIComponent(jobId)}`);
 }
 
-export function getWallpaperAsset(id: string, asset: "source" | "preview" | "export"): Promise<Blob> {
-  return getModuleApiClient().get<Blob>(
-    `${base}/wallpapers/${encodeURIComponent(id)}/${asset}`,
-    { responseType: "blob" },
-  );
+export interface WallpaperAssetProgress {
+  loaded: number;
+  total?: number;
+}
+
+export async function getWallpaperAsset(
+  id: string,
+  asset: "source" | "preview" | "export",
+  options: { timeoutMs?: number; onProgress?: (progress: WallpaperAssetProgress) => void } = {},
+): Promise<Blob> {
+  try {
+    return await getModuleApiClient().get<Blob>(
+      `${base}/wallpapers/${encodeURIComponent(id)}/${asset}`,
+      {
+        responseType: "blob",
+        timeout: options.timeoutMs ?? (asset === "source" ? 30_000 : 0),
+        onDownloadProgress: (event: { loaded: number; total?: number }) => options.onProgress?.(
+          event.total ? { loaded: event.loaded, total: event.total } : { loaded: event.loaded },
+        ),
+      },
+    );
+  } catch (reason) {
+    if (reason && typeof reason === "object" && "code" in reason && ["ECONNABORTED", "ETIMEDOUT"].includes(String(reason.code))) {
+      throw new Error("图片读取超时，请检查网络或服务状态后重试。");
+    }
+    throw reason;
+  }
 }
 
 export function deleteWallpaper(id: string): Promise<void> {

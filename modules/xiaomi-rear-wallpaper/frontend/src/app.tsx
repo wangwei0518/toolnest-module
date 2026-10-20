@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
 
-import { getWallpaper, getWallpaperAsset, getWallpaperJob, updateWallpaperCrop, uploadWallpaper } from "./api";
+import { getWallpaper, getWallpaperAsset, getWallpaperJob, updateWallpaperCrop, uploadWallpaper, type WallpaperAssetProgress } from "./api";
 import { EditorView, type WallpaperDraft } from "./components/editor-view";
 import { GalleryView } from "./components/gallery-view";
 import { ModuleLayout, type ModuleView } from "./components/module-layout";
@@ -48,6 +48,8 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
   const [encodingProgress, setEncodingProgress] = useState<number | null>(null);
   const [encodingMessage, setEncodingMessage] = useState("");
   const [galleryRefreshKey, setGalleryRefreshKey] = useState(0);
+  const [pendingEdit, setPendingEdit] = useState<WallpaperSummary | null>(null);
+  const [sourceProgress, setSourceProgress] = useState<WallpaperAssetProgress | null>(null);
 
   const draftUrl = draft?.url;
   const draftMotionUrl = draft?.motionUrl;
@@ -99,6 +101,7 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
   const onFilesSelected = async (selected: File[]) => {
     if (importing.current || busy || job?.state === "queued" || job?.state === "running") return;
     importing.current = true;
+    setPendingEdit(null);
     setError("");
     setMessage("");
     setJob(null);
@@ -232,13 +235,24 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
   };
 
   const onEdit = async (wallpaper: WallpaperSummary) => {
-    setBusy(true);
+    if (busy || importing.current) throw new Error("正在处理图片，请稍候再打开作品。");
+    setView("editor");
+    setJob(null);
     setError("");
     setMessage("");
+    setSourceProgress(null);
+    if (draft?.saved?.id === wallpaper.id) {
+      setDraft({ ...draft, crop: wallpaper.crop, saved: wallpaper });
+      setPendingEdit(null);
+      return;
+    }
+    setDraft(null);
+    setPendingEdit(wallpaper);
+    setBusy(true);
     let sourceUrl: string | undefined;
     let motionUrl: string | undefined;
     try {
-      const blob = await getWallpaperAsset(wallpaper.id, "source");
+      const blob = await getWallpaperAsset(wallpaper.id, "source", { onProgress: setSourceProgress });
       const file = new File([blob], wallpaper.sourceName, { type: mimeFor(formatOf(wallpaper)) });
       sourceUrl = URL.createObjectURL(file);
       const motion = wallpaper.motionPhoto ? await extractEmbeddedMotionPhoto(file) : null;
@@ -257,12 +271,11 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
         crop: wallpaper.crop,
         saved: wallpaper,
       });
-      setJob(null);
-      setView("editor");
+      setPendingEdit(null);
     } catch (reason) {
       if (sourceUrl) URL.revokeObjectURL(sourceUrl);
       if (motionUrl) URL.revokeObjectURL(motionUrl);
-      throw reason;
+      setError(errorMessage(reason, "原图读取失败，请稍后重试。"));
     } finally {
       setBusy(false);
     }
@@ -277,6 +290,9 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
           draft={draft}
           job={job}
           busy={busy}
+          openingSource={pendingEdit !== null && busy}
+          sourceProgress={sourceProgress}
+          onRetrySource={pendingEdit ? () => void onEdit(pendingEdit) : undefined}
           error={error}
           message={message}
           encodingProgress={encodingProgress}

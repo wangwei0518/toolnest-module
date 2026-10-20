@@ -43,24 +43,30 @@ export function GalleryView({ refreshKey, onRefresh, onEdit }: GalleryViewProps)
     const urls = new Set<string>();
     setLoading(true);
     setError("");
+    setPreviewUrls({});
     void listWallpapers()
       .then(async (records) => {
         if (!active) return;
         setItems(records);
-        const entries = await Promise.all(records
-          .filter((record) => record.state === "ready")
-          .map(async (record) => {
+        setLoading(false);
+        const readyItems = records.filter((record) => record.state === "ready");
+        let nextIndex = 0;
+        const loadPreviews = async () => {
+          while (active && nextIndex < readyItems.length) {
+            const record = readyItems[nextIndex++];
+            if (!record) return;
             try {
-              const blob = await getWallpaperAsset(record.id, "preview");
+              const blob = await getWallpaperAsset(record.id, "preview", { timeoutMs: 15_000 });
+              if (!active) return;
               const url = URL.createObjectURL(blob);
               urls.add(url);
-              return [record.id, url] as const;
+              setPreviewUrls((current) => ({ ...current, [record.id]: url }));
             } catch {
-              return null;
+              // A failed preview must not block the other cards or opening an original.
             }
-          }));
-        if (active) setPreviewUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)));
-        else urls.forEach((url) => URL.revokeObjectURL(url));
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(3, readyItems.length) }, loadPreviews));
       })
       .catch((reason: unknown) => {
         if (active) setError(errorMessage(reason, "作品列表加载失败，请重试。"));
