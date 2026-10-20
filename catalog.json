@@ -10,15 +10,15 @@
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-55-1-51550b8 发布。",
+      "release_notes": "由 module-release-56-1-f06f529 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-20T08:58:03.673Z",
+      "published_at": "2026-10-20T09:27:10.207Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-55-1-51550b8/anime-calendar-react-0.1.45.tnmod",
-        "sha256": "839986869127d5d05d6815d412dcbe17003dfef305b9ea7db8450e20275521c1",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-56-1-f06f529/anime-calendar-react-0.1.45.tnmod",
+        "sha256": "a702b615a112433b759927d7ad72e80a42fd3105140f64b17653e8fd06ccf847",
         "size_bytes": 781841
       }
     },
@@ -30,15 +30,15 @@
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-55-1-51550b8 发布。",
+      "release_notes": "由 module-release-56-1-f06f529 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-20T08:58:03.675Z",
+      "published_at": "2026-10-20T09:27:10.209Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-55-1-51550b8/python-runner-2.0.16.tnmod",
-        "sha256": "9e4dcc123a2f99ebc0cab88091e1f1b13d904a74930951b7f97c33785554ddb9",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-56-1-f06f529/python-runner-2.0.16.tnmod",
+        "sha256": "ecdb4837563ba7df5cb17dfe5eeb99cd4ddd3f867cb4b4e83179720cddb834f2",
         "size_bytes": 1419825
       }
     },
@@ -50,36 +50,36 @@
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-55-1-51550b8 发布。",
+      "release_notes": "由 module-release-56-1-f06f529 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-20T08:58:03.677Z",
+      "published_at": "2026-10-20T09:27:10.211Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-55-1-51550b8/workflow-tickets-react-0.1.120.tnmod",
-        "sha256": "12ff4215fa629c61bf41ba17095bcdc06ccb702ee455c322c82312cb797a7091",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-56-1-f06f529/workflow-tickets-react-0.1.120.tnmod",
+        "sha256": "9f2ce2e77b06369f4f94174bb4ca5d024102a732ee85a7acac2272f524e3e581",
         "size_bytes": 788808
       }
     },
     {
       "id": "xiaomi-rear-wallpaper",
       "name": "背屏壁纸",
-      "version": "0.1.12",
+      "version": "0.1.13",
       "description": "为小米手机背屏裁切、预览和管理壁纸。",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-55-1-51550b8 发布。",
+      "release_notes": "由 module-release-56-1-f06f529 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-20T08:58:03.679Z",
+      "published_at": "2026-10-20T09:27:10.213Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-55-1-51550b8/xiaomi-rear-wallpaper-0.1.12.tnmod",
-        "sha256": "20f34873dcbd49da6ec52058acdfb1a22c81def3bd22ee78cda665b57063062b",
-        "size_bytes": 10735239
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-56-1-f06f529/xiaomi-rear-wallpaper-0.1.13.tnmod",
+        "sha256": "c56b3b8827db1e09692a76e7887e0f1ab8626c1a65e61cea6801dc7ad881cc5e",
+        "size_bytes": 10735349
       }
     }
   ]
