@@ -67,9 +67,12 @@ export async function getWallpaperAsset(
       {
         responseType: "blob",
         timeout: options.timeoutMs ?? (asset === "source" ? 30_000 : 0),
-        onDownloadProgress: (event: { loaded: number; total?: number }) => options.onProgress?.(
-          event.total ? { loaded: event.loaded, total: event.total } : { loaded: event.loaded },
-        ),
+        onDownloadProgress: (event: { loaded: number; total?: number; event?: ProgressEvent }) => {
+          const target = event.event?.target;
+          const assetSize = target instanceof XMLHttpRequest ? Number(target.getResponseHeader("X-ToolNest-Asset-Size")) : 0;
+          const total = event.total || assetSize;
+          options.onProgress?.(Number.isFinite(total) && total > 0 ? { loaded: event.loaded, total } : { loaded: event.loaded });
+        },
       },
     );
   } catch (reason) {

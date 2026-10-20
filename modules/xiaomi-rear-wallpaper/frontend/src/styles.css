@@ -338,12 +338,6 @@
   gap: calc(var(--spacing) * 2);
 }
 
-.tn-xiaomi-rear-wallpaper__job-status progress {
-  width: 100%;
-  height: calc(var(--spacing) * 1.5);
-  accent-color: var(--primary);
-}
-
 .tn-xiaomi-rear-wallpaper__job-status p,
 .tn-xiaomi-rear-wallpaper__feedback {
   margin: 0;

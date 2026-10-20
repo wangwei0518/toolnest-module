@@ -192,6 +192,8 @@ test("中文和特殊字符文件名的原图、预览和导出可通过真实 H
     assert.equal(decodeURIComponent(disposition.split("filename*=UTF-8''")[1]), `${title}.${extension}`);
     const content = Buffer.from(await response.arrayBuffer());
     assert.ok(content.length > 0);
+    assert.equal(Number(response.headers.get("content-length")), content.length);
+    assert.equal(Number(response.headers.get("x-toolnest-asset-size")), content.length);
     assert.equal((await sharp(content).metadata()).format, asset === "preview" ? "webp" : "png");
   }
 });

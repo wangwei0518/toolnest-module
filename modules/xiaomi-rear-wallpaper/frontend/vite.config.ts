@@ -11,6 +11,8 @@ const hostDevSharedDependencies = [
   ["react-dom", "http://localhost:5174/src/module-system/shared-runtime/react-dom-dev.ts"],
   ["react", "http://localhost:5174/src/module-system/shared-runtime/react-dev.ts"],
   ["@base-ui/react/slider", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_slider.js"],
+  ["@base-ui/react/progress", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_progress.js"],
+  ["@base-ui/react/tooltip", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_tooltip.js"],
   ["@base-ui/react/button", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_button.js"],
   ["@base-ui/react/merge-props", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_merge-props.js"],
   ["@base-ui/react/use-render", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_use-render.js"],

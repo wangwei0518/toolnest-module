@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import multipart from "@fastify/multipart";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { randomUUID } from "node:crypto";
@@ -229,10 +229,14 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
       throw new WallpaperError(404, "没有找到请求的图片文件。");
     }
     const result = await service.asset(ownerId(request), objectParam(request, "id"), asset as WallpaperAsset);
+    const { size } = await stat(result.filename);
     const extension = asset === "preview" ? "webp" : asset === "export" ? (result.record.motionPhoto ? "jpg" : result.record.format === "gif" ? "gif" : "png") : result.record.format;
     const disposition = asset === "export" ? "attachment" : "inline";
     reply
       .type(result.contentType)
+      .header("Content-Length", size)
+      // The host strips Content-Length while proxying streams; retain decoded asset size separately.
+      .header("X-ToolNest-Asset-Size", size)
       .header("Content-Disposition", assetDisposition(disposition, result.record.title, extension))
       .header("Cache-Control", "private, no-store");
     return reply.send(createReadStream(result.filename));

@@ -1,12 +1,16 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useId, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   RiDownload2Line,
   RiImageAddLine,
+  RiInformationLine,
+  RiLoader4Line,
   RiSaveLine,
 } from "@remixicon/react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress, ProgressValue } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { deviceProfile } from "@/lib/device-profile";
 import type { WallpaperAssetProgress } from "../api";
 import { CropEditor } from "./crop-editor";
@@ -46,6 +50,7 @@ interface EditorViewProps {
 }
 
 function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.round(bytes)} B`;
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 }
 
@@ -71,6 +76,8 @@ export function EditorView({
 }: EditorViewProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const uploadHelpId = useId();
   const isProcessing = job?.state === "queued" || job?.state === "running";
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -96,13 +103,37 @@ export function EditorView({
           <div className="tn-xiaomi-rear-wallpaper__job-status" role="status" aria-live="polite">
             <span>正在读取原图，完成后即可调整取景…</span>
             {sourceProgress ? <span>已下载 {formatBytes(sourceProgress.loaded)}{sourceProgress.total ? ` / ${formatBytes(sourceProgress.total)}` : ""}</span> : null}
-            <progress aria-label="原图加载进度" max={sourceProgress?.total} value={sourceProgress?.total ? sourceProgress.loaded : undefined} />
+            {sourceProgress?.total ? (
+              <Progress aria-label="原图加载进度" max={sourceProgress.total} value={Math.min(sourceProgress.loaded, sourceProgress.total)}>
+                <ProgressValue />
+              </Progress>
+            ) : (
+              <span className="flex items-center gap-2">
+                <RiLoader4Line className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                {sourceProgress ? "正在下载，文件总大小暂不可用" : "正在连接…"}
+              </span>
+            )}
           </div>
         ) : null}
         <Card>
           <CardHeader>
-            <CardTitle>选择图片</CardTitle>
-            <CardDescription>支持 JPG、PNG、WebP、GIF、HEIC 和安卓 Live Photo（MVIMG）。苹果实况请同时选择同名的 HEIC/JPG + MOV，或将两个文件一起拖入；每个文件不超过 30 MB，视频最长 15 秒。动态内容统一转为安卓背屏动态照片。</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              选择图片
+              <TooltipProvider>
+                <Tooltip open={helpOpen} onOpenChange={setHelpOpen}>
+                  <TooltipTrigger
+                    aria-describedby={helpOpen ? uploadHelpId : undefined}
+                    onClick={() => setHelpOpen(true)}
+                    render={<Button type="button" variant="ghost" size="icon-sm" aria-label="查看支持格式与导入限制" />}
+                  >
+                    <RiInformationLine />
+                  </TooltipTrigger>
+                  <TooltipContent id={uploadHelpId} role="tooltip" side="bottom" align="start">
+                    支持 JPG、PNG、WebP、GIF、HEIC 和安卓 Live Photo（MVIMG）。苹果实况请同时选择同名的 HEIC/JPG + MOV，或将两个文件一起拖入；每个文件不超过 30 MB，视频最长 15 秒。动态内容统一转为安卓背屏动态照片。
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <input
@@ -172,7 +203,7 @@ export function EditorView({
               <span key={`${job.state}:${job.message}`} className="tn-wallpaper-motion-enter">{job.message}</span>
               <span>{job.progress}%</span>
             </div>
-            <progress max={100} value={job.progress} aria-label="壁纸生成进度" />
+            <Progress value={job.progress} aria-label="壁纸生成进度" />
             {job.error ? <p role="alert">{job.error}</p> : null}
           </div>
         ) : null}
@@ -182,7 +213,7 @@ export function EditorView({
               <span>{encodingMessage || "正在编码动态视频"}</span>
               <span>{encodingProgress}%</span>
             </div>
-            <progress max={100} value={encodingProgress} aria-label="Live Photo 视频编码进度" />
+            <Progress value={encodingProgress} aria-label="Live Photo 视频编码进度" />
           </div>
         ) : null}
         {error ? (
