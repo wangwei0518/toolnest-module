@@ -104,8 +104,13 @@ export function EditorView({
             <span>正在读取原图，完成后即可调整取景…</span>
             {sourceProgress ? <span>已下载 {formatBytes(sourceProgress.loaded)}{sourceProgress.total ? ` / ${formatBytes(sourceProgress.total)}` : ""}</span> : null}
             {sourceProgress?.total ? (
-              <Progress aria-label="原图加载进度" max={sourceProgress.total} value={Math.min(sourceProgress.loaded, sourceProgress.total)}>
-                <ProgressValue />
+              <Progress
+                className="flex-nowrap items-center [&>[data-slot=progress-track]]:order-first [&>[data-slot=progress-track]]:min-w-0 [&>[data-slot=progress-track]]:flex-1"
+                aria-label="原图加载进度"
+                max={sourceProgress.total}
+                value={Math.min(sourceProgress.loaded, sourceProgress.total)}
+              >
+                <ProgressValue className="shrink-0" />
               </Progress>
             ) : (
               <span className="flex items-center gap-2">
