@@ -5,81 +5,81 @@
     {
       "id": "anime-calendar-react",
       "name": "新番日历",
-      "version": "0.1.44",
+      "version": "0.1.45",
       "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-52-1-2979edc 发布。",
+      "release_notes": "由 module-release-53-1-036dde8 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-16T09:32:50.016Z",
+      "published_at": "2026-10-20T06:46:38.116Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-52-1-2979edc/anime-calendar-react-0.1.44.tnmod",
-        "sha256": "41f927c15f150852252da4a1443e15ae5b6daf4337f1dfcb829b464620958683",
-        "size_bytes": 781843
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-53-1-036dde8/anime-calendar-react-0.1.45.tnmod",
+        "sha256": "f94203a4bfc73e116a6b93191b03a48fe892c5121ff5195ce2d8838d4f077f77",
+        "size_bytes": 781841
       }
     },
     {
       "id": "python-runner",
       "name": "Python 工具",
-      "version": "2.0.15",
+      "version": "2.0.16",
       "description": "本地 Python 项目运行、调度和环境管理。",
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-52-1-2979edc 发布。",
+      "release_notes": "由 module-release-53-1-036dde8 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-16T09:32:50.018Z",
+      "published_at": "2026-10-20T06:46:38.118Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-52-1-2979edc/python-runner-2.0.15.tnmod",
-        "sha256": "43835cb8c5c834f6fcb0ead4f27c5f8856fa3a29bf0d43de9a8c8ebc120e9593",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-53-1-036dde8/python-runner-2.0.16.tnmod",
+        "sha256": "3340feaab9c3b1e6d7b8c3fb35f2c0bd49799ce43a5cc8a25aabe17949098af5",
         "size_bytes": 1419825
       }
     },
     {
       "id": "workflow-tickets-react",
       "name": "工单模板",
-      "version": "0.1.119",
+      "version": "0.1.120",
       "description": "工作流工单与项目协作",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-52-1-2979edc 发布。",
+      "release_notes": "由 module-release-53-1-036dde8 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-16T09:32:50.021Z",
+      "published_at": "2026-10-20T06:46:38.121Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-52-1-2979edc/workflow-tickets-react-0.1.119.tnmod",
-        "sha256": "2ec834791c6d8ad813ba10a5a27061989f043f5ae11a2a2160abf278f115b326",
-        "size_bytes": 788809
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-53-1-036dde8/workflow-tickets-react-0.1.120.tnmod",
+        "sha256": "ee5445668c0e44e217ef7f475861fdbb89b9a8f27c9f9e026bdfe8605e5ddd8e",
+        "size_bytes": 788808
       }
     },
     {
       "id": "xiaomi-rear-wallpaper",
       "name": "背屏壁纸",
-      "version": "0.1.9",
+      "version": "0.1.10",
       "description": "为小米手机背屏裁切、预览和管理壁纸。",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-52-1-2979edc 发布。",
+      "release_notes": "由 module-release-53-1-036dde8 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-10-16T09:32:50.022Z",
+      "published_at": "2026-10-20T06:46:38.122Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-52-1-2979edc/xiaomi-rear-wallpaper-0.1.9.tnmod",
-        "sha256": "0c745610d68a675e71c3f7f6d238aec61bb4766f2b4d4ea5fe0a67ad19eeceb9",
-        "size_bytes": 9925382
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-53-1-036dde8/xiaomi-rear-wallpaper-0.1.10.tnmod",
+        "sha256": "9ccf14d3469610de840cc2a38d802401be452a3d6ee7af03c4ea09e121783660",
+        "size_bytes": 10701749
       }
     }
   ]
