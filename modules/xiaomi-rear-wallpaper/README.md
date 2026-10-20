@@ -10,6 +10,8 @@ ToolNest React 运行时模块：上传静态图片或安卓 Live Photo，为小
 - 支持 JPG、PNG、WebP，以及内含 MP4 的安卓 Live Photo/MVIMG JPG；每个文件最大 30 MB。
 - 静态图片导出 PNG；安卓 Live Photo 在浏览器本地裁切并重新编码 H.264 视频，输出为包含 XMP 元数据和 MP4 的 JPG。动态编码需要支持 WebCodecs/H.264 的 Chrome 或 Edge。
 - 支持 GIF 转安卓动态照片 JPG（首帧 JPEG + H.264 MP4）；预览循环播放，手机图库中的播放方式由系统控制。预览图为 WebP。结果尺寸固定为 976 × 596。
+- 支持导入苹果 Live Photo：在上传区同时选择或拖入一组同名的 `HEIC/HEIF/JPG + MOV`（例如 `IMG_0001.HEIC` 和 `IMG_0001.MOV`）。每个文件最大 30 MB，视频最长 15 秒；只选择 HEIC 时按静态照片处理。
+- HEIC 在浏览器本地解码为 JPG，MOV 转为 H.264 MP4 并与照片封装为可再次编辑的动态照片源文件；导出为小米背屏使用的安卓动态照片，不生成 Apple Live Photo 文件对，也不保留声音。MOV 的 HEVC/H.265 解码取决于浏览器和系统支持；无法解码时会提示转换为 H.264 MOV。照片与视频比例不一致时，照片会按视频比例居中裁切并提示；旋转以各自原始文件的方向信息为准。
 - 模块只注册一个主菜单入口；通过 `@toolnest/react-module-sdk` 使用宿主 API 和确认框。
 - 原图、生成图、预览图和 JSON 索引写入 `TOOLNEST_PLUGIN_DATA_DIR`，按网关注入的用户 ID 隔离。
 - 上传和重新生成提供进度状态；进程重启后会续跑处理中任务。

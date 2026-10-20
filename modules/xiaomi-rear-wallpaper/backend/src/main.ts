@@ -42,6 +42,12 @@ function safeDownloadName(title: string, extension: string): string {
   return `${stem}.${extension}`;
 }
 
+function assetDisposition(disposition: "attachment" | "inline", title: string, extension: string): string {
+  const encodedName = encodeURIComponent(safeDownloadName(title, extension))
+    .replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${disposition}; filename="wallpaper.${extension}"; filename*=UTF-8''${encodedName}`;
+}
+
 async function readUpload(
   request: FastifyRequest,
   dataDir: string,
@@ -227,7 +233,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     const disposition = asset === "export" ? "attachment" : "inline";
     reply
       .type(result.contentType)
-      .header("Content-Disposition", `${disposition}; filename="${safeDownloadName(result.record.title, extension)}"`)
+      .header("Content-Disposition", assetDisposition(disposition, result.record.title, extension))
       .header("Cache-Control", "private, no-store");
     return reply.send(createReadStream(result.filename));
   });

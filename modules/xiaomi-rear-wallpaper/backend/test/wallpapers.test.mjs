@@ -170,6 +170,32 @@ test("静态图片可裁切、编辑、跨重启持久化且按用户隔离", as
   assert.equal((await restarted.inject({ method: "GET", url: "/wallpapers", headers: headers("1001") })).json().length, 0);
 });
 
+test("中文和特殊字符文件名的原图、预览和导出可通过真实 HTTP 读取", async (t) => {
+  const app = await makeApp(t);
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  const address = app.server.address();
+  assert.ok(address && typeof address === "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const image = await sharp({ create: { width: 160, height: 100, channels: 3, background: "blue" } }).png().toBuffer();
+  const title = "我的壁纸🌄 (1)'";
+  const { wallpaper, job } = await upload(app, "unicode-user", {
+    buffer: image, mime: "image/png", filename: `${title}.png`, crop: cropFor(160, 100),
+  });
+  assert.equal((await waitForJob(app, "unicode-user", job.id)).state, "completed");
+  for (const asset of ["source", "preview", "export"]) {
+    const response = await fetch(`${baseUrl}/wallpapers/${wallpaper.id}/${asset}`, { headers: headers("unicode-user") });
+    assert.equal(response.status, 200);
+    const disposition = response.headers.get("content-disposition");
+    const extension = asset === "preview" ? "webp" : "png";
+    assert.ok(disposition.startsWith(asset === "export" ? "attachment;" : "inline;"));
+    assert.match(disposition, /^[\x20-\x7e]+$/);
+    assert.equal(decodeURIComponent(disposition.split("filename*=UTF-8''")[1]), `${title}.${extension}`);
+    const content = Buffer.from(await response.arrayBuffer());
+    assert.ok(content.length > 0);
+    assert.equal((await sharp(content).metadata()).format, asset === "preview" ? "webp" : "png");
+  }
+});
+
 test("拒绝 GIF 导入，避免生成背屏不支持的动图格式", async (t) => {
   const app = await makeApp(t);
   const rejected = await app.inject({

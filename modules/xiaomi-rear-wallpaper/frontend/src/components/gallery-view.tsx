@@ -13,7 +13,7 @@ import type { WallpaperSummary } from "../types";
 interface GalleryViewProps {
   refreshKey: number;
   onRefresh: () => void;
-  onEdit: (wallpaper: WallpaperSummary) => void;
+  onEdit: (wallpaper: WallpaperSummary) => Promise<void>;
 }
 
 function outputLabel(item: WallpaperSummary): string {
@@ -36,6 +36,7 @@ export function GalleryView({ refreshKey, onRefresh, onEdit }: GalleryViewProps)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -70,6 +71,18 @@ export function GalleryView({ refreshKey, onRefresh, onEdit }: GalleryViewProps)
       urls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [refreshKey]);
+
+  const edit = async (item: WallpaperSummary) => {
+    setEditingId(item.id);
+    setError("");
+    try {
+      await onEdit(item);
+    } catch (reason) {
+      setError(errorMessage(reason, "原图读取失败，请稍后重试。"));
+    } finally {
+      setEditingId(null);
+    }
+  };
 
   const download = async (item: WallpaperSummary) => {
     setActionId(item.id);
@@ -166,8 +179,8 @@ export function GalleryView({ refreshKey, onRefresh, onEdit }: GalleryViewProps)
               {item.error ? <span className="text-destructive">{item.error}</span> : null}
             </CardContent>
             <CardFooter className="tn-xiaomi-rear-wallpaper__gallery-actions">
-              <Button type="button" size="sm" onClick={() => onEdit(item)} disabled={item.state === "processing" || actionId === item.id}>
-                <RiEditLine data-icon="inline-start" />编辑
+              <Button type="button" size="sm" onClick={() => void edit(item)} disabled={item.state === "processing" || actionId === item.id || editingId !== null}>
+                <RiEditLine data-icon="inline-start" />{editingId === item.id ? "正在打开…" : "编辑"}
               </Button>
               <Button type="button" size="icon-sm" variant="outline" aria-label={`下载${item.title}`} disabled={item.state !== "ready" || actionId === item.id} onClick={() => void download(item)}>
                 <RiDownload2Line />

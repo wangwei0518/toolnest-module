@@ -16,6 +16,7 @@ export interface WallpaperDraft {
   file: File;
   uploadFile?: File | undefined;
   convertedFromGif?: boolean | undefined;
+  importedFromApple?: boolean | undefined;
   url: string;
   motionUrl?: string | undefined;
   motionVideo?: Blob | undefined;
@@ -34,7 +35,7 @@ interface EditorViewProps {
   message: string;
   encodingProgress: number | null;
   encodingMessage: string;
-  onFileSelected: (file: File) => void;
+  onFilesSelected: (files: File[]) => void;
   onCropChange: (crop: CropRect) => void;
   onSave: () => void;
   onDownload: () => void;
@@ -56,7 +57,7 @@ export function EditorView({
   message,
   encodingProgress,
   encodingMessage,
-  onFileSelected,
+  onFilesSelected,
   onCropChange,
   onSave,
   onDownload,
@@ -66,15 +67,15 @@ export function EditorView({
   const isProcessing = job?.state === "queued" || job?.state === "running";
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    if (file) onFileSelected(file);
+    const files = Array.from(event.currentTarget.files ?? []);
+    if (files.length) onFilesSelected(files);
     event.currentTarget.value = "";
   };
   const dropFile = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragging(false);
-    const file = event.dataTransfer.files[0];
-    if (file) onFileSelected(file);
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length) onFilesSelected(files);
   };
 
   return (
@@ -87,14 +88,16 @@ export function EditorView({
         <Card>
           <CardHeader>
             <CardTitle>选择图片</CardTitle>
-            <CardDescription>支持 JPG、PNG、WebP、GIF 和安卓 Live Photo（MVIMG），单个文件不超过 30 MB。GIF 会转为 JPG + MP4 动态照片；手机图库决定播放与循环方式。</CardDescription>
+            <CardDescription>支持 JPG、PNG、WebP、GIF、HEIC 和安卓 Live Photo（MVIMG）。苹果实况请同时选择同名的 HEIC/JPG + MOV，或将两个文件一起拖入；每个文件不超过 30 MB，视频最长 15 秒。动态内容统一转为安卓背屏动态照片。</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
             <input
               ref={fileInputRef}
               className="tn-xiaomi-rear-wallpaper__file-input"
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/quicktime,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.mov"
+              multiple
+              disabled={busy || isProcessing}
               aria-label="选择壁纸图片"
               onChange={chooseFile}
             />
@@ -112,9 +115,9 @@ export function EditorView({
                   <div className="tn-xiaomi-rear-wallpaper__file-summary">
                     <strong title={draft.file.name}>{draft.file.name}</strong>
                     <span>{draft.width} × {draft.height} · {formatBytes(draft.file.size)}</span>
-                    <span>{draft.convertedFromGif ? "GIF 动图 → 安卓 Live Photo" : draft.motionVideo ? "安卓 Live Photo" : formatLabel(draft.file)}</span>
+                    <span>{draft.importedFromApple ? "苹果 Live Photo → 安卓背屏动态照片" : draft.convertedFromGif ? "GIF 动图 → 安卓 Live Photo" : draft.motionVideo ? "安卓 Live Photo" : formatLabel(draft.file)}</span>
                   </div>
-                  <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                  <Button type="button" size="sm" variant="outline" disabled={busy || isProcessing} onClick={() => fileInputRef.current?.click()}>
                     更换图片
                   </Button>
                 </>
@@ -122,8 +125,8 @@ export function EditorView({
                 <>
                   <span className="tn-xiaomi-rear-wallpaper__upload-icon" aria-hidden="true"><RiImageAddLine /></span>
                   <strong>点击上传图片</strong>
-                  <span>或将图片拖到这里</span>
-                  <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                  <span>或拖入图片 / 苹果实况照片与 MOV 文件</span>
+                  <Button type="button" variant="outline" size="sm" disabled={busy || isProcessing} onClick={() => fileInputRef.current?.click()}>
                     选择图片
                   </Button>
                 </>

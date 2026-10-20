@@ -53,11 +53,12 @@ export interface GifMotionPhotoConversion {
   frameCount: number;
 }
 
-function createMotionPhotoXmp(videoLength: number): Uint8Array<ArrayBuffer> {
+function createMotionPhotoXmp(videoLength: number, presentationTimestampUs: number | null): Uint8Array<ArrayBuffer> {
+  const timestamp = presentationTimestampUs === null ? "" : ` GCamera:MotionPhotoPresentationTimestampUs="${presentationTimestampUs}"`;
   const xmp = `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
     `<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="ToolNest">` +
     `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
-    `<rdf:Description rdf:about="" xmlns:GCamera="${cameraNamespace}" xmlns:Container="${containerNamespace}" xmlns:Item="${itemNamespace}" GCamera:MotionPhoto="1" GCamera:MotionPhotoVersion="1" GCamera:MotionPhotoPresentationTimestampUs="0">` +
+    `<rdf:Description rdf:about="" xmlns:GCamera="${cameraNamespace}" xmlns:Container="${containerNamespace}" xmlns:Item="${itemNamespace}" GCamera:MotionPhoto="1" GCamera:MotionPhotoVersion="1"${timestamp}>` +
     `<Container:Directory><rdf:Seq>` +
     `<rdf:li rdf:parseType="Resource"><Container:Item Item:Mime="image/jpeg" Item:Semantic="Primary" Item:Length="0"/></rdf:li>` +
     `<rdf:li rdf:parseType="Resource"><Container:Item Item:Mime="video/mp4" Item:Semantic="MotionPhoto" Item:Length="${videoLength}"/></rdf:li>` +
@@ -75,8 +76,8 @@ function createMotionPhotoXmp(videoLength: number): Uint8Array<ArrayBuffer> {
   return segment;
 }
 
-function packageMotionPhoto(jpeg: Blob, video: Blob, name: string): File {
-  const xmpSegment = createMotionPhotoXmp(video.size);
+export function packageMotionPhoto(jpeg: Blob, video: Blob, name: string, presentationTimestampUs: number | null = 0): File {
+  const xmpSegment = createMotionPhotoXmp(video.size, presentationTimestampUs);
   const stem = name.replace(/\.[^.]+$/, "") || "背屏动态壁纸";
   return new File([
     jpeg.slice(0, 2),

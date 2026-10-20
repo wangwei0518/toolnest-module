@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
 
 import { getWallpaper, getWallpaperAsset, getWallpaperJob, updateWallpaperCrop, uploadWallpaper } from "./api";
@@ -8,20 +8,8 @@ import { ModuleLayout, type ModuleView } from "./components/module-layout";
 import { errorMessage } from "./lib/error-message";
 import { initialCrop } from "./lib/crop";
 import { convertGifToMotionPhoto, createCroppedMotionVideo, extractEmbeddedMotionPhoto } from "./lib/motion-photo";
+import { convertAppleLivePhoto, convertHeicPhoto, isHeicPhoto, selectPhotoFiles } from "./lib/apple-live-photo";
 import type { CropRect, ProcessingJob, WallpaperFormat, WallpaperSummary } from "./types";
-
-const maximumUploadSize = 30 * 1024 * 1024;
-const acceptedTypes: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  png: "image/png",
-  webp: "image/webp",
-};
-
-function extensionOf(filename: string): string {
-  return filename.split(".").at(-1)?.toLowerCase() ?? "";
-}
 
 function formatOf(record: WallpaperSummary): WallpaperFormat {
   return record.format;
@@ -50,6 +38,7 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
+  const importing = useRef(false);
   const [view, setView] = useState<ModuleView>("editor");
   const [draft, setDraft] = useState<WallpaperDraft | null>(null);
   const [job, setJob] = useState<ProcessingJob | null>(null);
@@ -107,31 +96,42 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
     };
   }, [job?.id]);
 
-  const onFileSelected = async (selected: File) => {
+  const onFilesSelected = async (selected: File[]) => {
+    if (importing.current || busy || job?.state === "queued" || job?.state === "running") return;
+    importing.current = true;
     setError("");
     setMessage("");
     setJob(null);
-    if (selected.size > maximumUploadSize) {
-      setError("图片文件不能超过 30 MB。");
-      return;
-    }
-    const extension = extensionOf(selected.name);
-    const mime = selected.type || acceptedTypes[extension] || "";
-    if (!Object.values(acceptedTypes).includes(mime) || !acceptedTypes[extension]) {
-      setError("请选择 JPG、PNG、WebP、GIF，或包含 MP4 视频的安卓 Live Photo JPG。");
-      return;
-    }
-    const file = selected.type ? selected : new File([selected], selected.name, { type: mime });
-    const url = URL.createObjectURL(file);
+    let url: string | undefined;
     let motionUrl: string | undefined;
     setBusy(true);
     try {
+      const selection = selectPhotoFiles(selected);
+      let file = selection.image;
       let uploadFile = file;
       let motionVideo: Blob | undefined;
       let presentationTimestampUs: number | null | undefined;
       let size: { width: number; height: number };
-      const convertedFromGif = mime === "image/gif";
-      if (convertedFromGif) {
+      const convertedFromGif = file.type === "image/gif";
+      const importedFromApple = Boolean(selection.video);
+      const heic = isHeicPhoto(file);
+      let photoCropped = false;
+      if (selection.video) {
+        setEncodingMessage("正在将苹果 Live Photo 转换为背屏动态照片");
+        setEncodingProgress(0);
+        const conversion = await convertAppleLivePhoto(file, selection.video, (progress) => {
+          setEncodingProgress(Math.round(progress * 100));
+        });
+        file = conversion.sourceFile;
+        uploadFile = file;
+        motionVideo = conversion.video;
+        presentationTimestampUs = null;
+        size = { width: conversion.width, height: conversion.height };
+        photoCropped = conversion.photoCropped;
+        url = URL.createObjectURL(file);
+        motionUrl = URL.createObjectURL(conversion.video);
+      } else if (convertedFromGif) {
+        url = URL.createObjectURL(file);
         setEncodingMessage("正在将 GIF 转换为安卓 Live Photo");
         setEncodingProgress(0);
         const conversion = await convertGifToMotionPhoto(file, (progress) => {
@@ -143,7 +143,14 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
         size = { width: conversion.width, height: conversion.height };
         motionUrl = URL.createObjectURL(conversion.video);
       } else {
-        const motion = mime === "image/jpeg" ? await extractEmbeddedMotionPhoto(file) : null;
+        if (heic) {
+          setEncodingMessage("正在将 HEIC 照片转换为 JPG");
+          setEncodingProgress(0);
+          file = await convertHeicPhoto(file);
+          uploadFile = file;
+        }
+        url = URL.createObjectURL(file);
+        const motion = file.type === "image/jpeg" ? await extractEmbeddedMotionPhoto(file) : null;
         size = await readImageSize(url);
         motionVideo = motion?.video;
         presentationTimestampUs = motion?.presentationTimestampUs;
@@ -154,6 +161,7 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
         file,
         uploadFile,
         convertedFromGif,
+        importedFromApple,
         url,
         motionUrl,
         motionVideo,
@@ -163,11 +171,14 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
         crop,
       });
       if (convertedFromGif) setMessage("GIF 已转换为动态照片。预览会循环播放；手机图库中的播放与循环方式由系统控制。");
+      if (importedFromApple) setMessage(`${photoCropped ? "照片已按视频比例居中裁切。" : ""}苹果 Live Photo 已转换，可调整取景并保存为安卓背屏动态照片；导出不包含声音。`);
+      else if (heic) setMessage("HEIC 已转为静态图片；如需保留实况，请同时选择同名照片和 MOV 视频。");
     } catch (reason) {
-      URL.revokeObjectURL(url);
+      if (url) URL.revokeObjectURL(url);
       if (motionUrl) URL.revokeObjectURL(motionUrl);
       setError(errorMessage(reason, "无法打开这张图片。"));
     } finally {
+      importing.current = false;
       setBusy(false);
       setEncodingProgress(null);
       setEncodingMessage("");
@@ -251,7 +262,7 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
     } catch (reason) {
       if (sourceUrl) URL.revokeObjectURL(sourceUrl);
       if (motionUrl) URL.revokeObjectURL(motionUrl);
-      setError(errorMessage(reason, "原图读取失败，请稍后重试。"));
+      throw reason;
     } finally {
       setBusy(false);
     }
@@ -270,13 +281,13 @@ export function ModuleApp(_props: ToolNestModuleRouteRenderProps) {
           message={message}
           encodingProgress={encodingProgress}
           encodingMessage={encodingMessage}
-          onFileSelected={(file) => void onFileSelected(file)}
+          onFilesSelected={(files) => void onFilesSelected(files)}
           onCropChange={(crop: CropRect) => setDraft((current) => current ? { ...current, crop } : current)}
           onSave={() => void onSave()}
           onDownload={() => void onDownload()}
         />
       ) : (
-        <GalleryView refreshKey={galleryRefreshKey} onRefresh={refreshGallery} onEdit={(wallpaper) => void onEdit(wallpaper)} />
+        <GalleryView refreshKey={galleryRefreshKey} onRefresh={refreshGallery} onEdit={onEdit} />
       )}
     </ModuleLayout>
   );
