@@ -21,8 +21,9 @@ const moduleBudgets = {
   'anime-calendar-react': { totalJsGzip: 160 * kib, largestAsyncJsGzip: 120 * kib, packageBytes: 3 * mib, unpackedBytes: 6 * mib },
   'python-runner': { totalJsGzip: 1_050 * kib, largestAsyncJsGzip: 800 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
   'workflow-tickets-react': { totalJsGzip: 600 * kib, largestAsyncJsGzip: 200 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
-  'xiaomi-rear-wallpaper': { packageBytes: 12 * mib, unpackedBytes: 24 * mib },
 }
+// This module deliberately embeds its full-resolution phone frame in the entry bundle.
+const budgetExemptModules = new Set(['xiaomi-rear-wallpaper'])
 
 let failed = false
 const moduleDirs = readdirSync(modulesDir)
@@ -73,6 +74,10 @@ for (const moduleDir of moduleDirs) {
   }
 
   console.log(`[budget] ${manifest.id}@${manifest.version}`)
+  if (budgetExemptModules.has(manifest.id)) {
+    console.log(`  包体预算已豁免：入口 ${formatKib(initialJsGzip)}，全部 JS ${formatKib(totalJsGzip)}，ZIP ${formatMib(metrics.packageBytes)}，解包 ${formatMib(unpackedBytes)}`)
+    continue
+  }
   checkMetric('initial JS gzip', metrics.initialJsGzip, budget.initialJsGzip, formatKib)
   checkMetric('all reachable JS gzip', metrics.totalJsGzip, budget.totalJsGzip, formatKib)
   checkMetric('CSS gzip', metrics.cssGzip, budget.cssGzip, formatKib)

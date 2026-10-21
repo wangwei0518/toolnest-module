@@ -405,10 +405,6 @@
   pointer-events: none;
 }
 
-.tn-xiaomi-rear-wallpaper__device-overlay[data-ready="false"] {
-  opacity: 0;
-}
-
 .tn-xiaomi-rear-wallpaper__gallery {
   display: grid;
   min-width: 0;

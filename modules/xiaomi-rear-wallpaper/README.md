@@ -6,6 +6,7 @@ ToolNest React 运行时模块：上传静态图片或安卓 Live Photo，为小
 
 ## 功能与数据
 
+- 手机预览框已预先生成透明遮罩，并作为 data URL 内嵌在模块入口 JS 中；打开页面不再单独下载手机图或执行 Canvas 像素处理。背屏壁纸模块豁免包体预算，其他模块预算与产物完整性检查保持有效。
 - 制作与我的作品两个视图；支持拖动、缩放取景。
 - 支持 JPG、PNG、WebP，以及内含 MP4 的安卓 Live Photo/MVIMG JPG；每个文件最大 30 MB。
 - 静态图片导出 PNG；安卓 Live Photo 在浏览器本地裁切并重新编码 H.264 视频，输出为包含 XMP 元数据和 MP4 的 JPG。动态编码需要支持 WebCodecs/H.264 的 Chrome 或 Edge。
@@ -32,6 +33,14 @@ pnpm --filter @toolnest/xiaomi-rear-wallpaper-react-backend build
 ```bash
 pnpm react:dev:xiaomi-rear-wallpaper
 ```
+
+替换手机参考原图或调整遮罩区域后，在模块仓库根目录重新生成透明框，再构建前端：
+
+```bash
+node modules/xiaomi-rear-wallpaper/scripts/prepare-device-frame.mjs
+```
+
+原始参考图位于 `frontend/assets/xiaomi-rear-display-reference.png`，生成的框图位于 `frontend/src/assets/xiaomi-rear-display-frame.png`。
 
 正式打包：
 
