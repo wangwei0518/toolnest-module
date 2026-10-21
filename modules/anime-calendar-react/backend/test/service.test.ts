@@ -89,6 +89,25 @@ describe("service cache and marks", () => {
     expect(items.find((entry) => entry.id === "bangumi:long-running")?.cour_relation).toBe("long_running");
   });
 
+  it("keeps a followed long-running series in the next cour when search omits its cached episode count", async () => {
+    const id = "bangumi:followed-long-running";
+    const detailed = item({ id, provider_id: "followed-long-running", title_cn: "跨季长期番", air_date: "2026-07-03", episode_count: 36, estimated_end_date: "2027-03-05" });
+    const searchResult = { ...detailed, episode_count: null, estimated_end_date: "2026-09-18" };
+    await store.update((state) => {
+      state.items = [searchResult];
+      state.marks[id] = "watching";
+      state.detailCache[id] = { cached_at: new Date().toISOString(), item: { ...detailed, mark_type: null } };
+    });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [searchResult], fetchWeekly: async () => [], fetchDetail: async () => detailed } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+
+    const refreshed = await service.refresh(2026, 10, true);
+    const items = (await service.listItems({ year: 2026, cour_month: 10 })).items;
+
+    expect(refreshed).toMatchObject({ total: 1, long_running_count: 1 });
+    expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ id, episode_count: 36, cour_relation: "long_running", mark_type: "watching" })]));
+  });
+
   it("coalesces concurrent weekly requests and derives the today cache", async () => {
     let calls = 0;
     const weekday = new Date().getDay() || 7;

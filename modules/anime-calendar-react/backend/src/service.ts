@@ -302,10 +302,28 @@ export class AnimeCalendarService {
     await this.store.update((state) => { state.courCaches[key] = { ...emptyCourCache(year, courMonth), candidate_start: dateKey(new Date(Date.UTC(year, courMonth - 7, 1))), candidate_end: range.end_date, refresh_status: "refreshing" }; });
     try {
       const fetched = await this.provider.fetchCour(year, courMonth);
-      const normalized = fetched.map((item) => withCourRelation(item, year, courMonth));
+      const currentState = this.store.read();
+      const knownItems = new Map<string, AnimeItem>();
+      for (const candidate of [
+        ...currentState.items,
+        ...(currentState.weeklyCache?.items ?? []),
+        ...(currentState.longRunningCache?.items ?? []),
+        ...Object.values(currentState.detailCache).map((entry) => entry.item),
+      ]) {
+        const previous = knownItems.get(candidate.id);
+        knownItems.set(candidate.id, previous ? mergePreservingEpisodeCount(previous, candidate) : candidate);
+      }
+      // Bangumi's search response often omits total_episodes. Keep a previously
+      // fetched detail count before recalculating the relation for the new cour,
+      // otherwise a followed long-running series is mistaken for a one-cour show.
+      const enrichedFetched = fetched.map((item) => {
+        const previous = knownItems.get(item.id);
+        return previous ? mergePreservingEpisodeCount(previous, item) : item;
+      });
+      const normalized = enrichedFetched.map((item) => withCourRelation(item, year, courMonth));
       const included = normalized.filter((item) => item.cour_relation !== "unknown" && !isSingleEpisodeNonMovie(item));
       const longRunning = updateLongRunning
-        ? fetched.filter((item) => !isSingleEpisodeNonMovie(item)).filter(isLongRunningActive).map((item) => ({ ...item, cour_relation: "long_running" as const, cour_relation_label: "长期" }))
+        ? enrichedFetched.filter((item) => !isSingleEpisodeNonMovie(item)).filter(isLongRunningActive).map((item) => ({ ...item, cour_relation: "long_running" as const, cour_relation_label: "长期" }))
         : null;
       const counts = relationCounts(included);
       const previousIds = new Set(this.store.read().items.map((item) => item.id));
@@ -314,7 +332,11 @@ export class AnimeCalendarService {
       await this.store.update((state) => {
         const map = new Map(state.items.map((item) => [item.id, item]));
         for (const [id, item] of map) if (isSingleEpisodeNonMovie(item)) map.delete(id);
-        for (const item of included) { if (map.has(item.id)) updated += 1; else inserted += 1; map.set(item.id, clearMark(item)); }
+        for (const item of included) {
+          const previous = map.get(item.id);
+          if (previous) updated += 1; else inserted += 1;
+          map.set(item.id, clearMark(previous ? mergePreservingEpisodeCount(previous, item) : item));
+        }
         state.items = [...map.values()];
         state.courCaches[key] = {
           year, cour_month: courMonth, candidate_start: dateKey(new Date(Date.UTC(year, courMonth - 4, 1))), candidate_end: range.end_date,
