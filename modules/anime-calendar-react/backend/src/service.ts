@@ -46,7 +46,7 @@ export class AnimeCalendarService {
   }) {
     const resolved = this.resolveCour(query.year, query.cour_month);
     const state = this.store.read();
-    const items = this.itemsForCour(this.withMarks(this.catalogItems(state), state.marks), resolved.year, resolved.cour_month);
+    const items = this.itemsForCour(this.withMarks(this.catalogItems(state), state.marks), resolved.year, resolved.cour_month, this.activeWeeklyIds(state));
     const keyword = query.keyword?.trim().toLocaleLowerCase() ?? "";
     const filtered = items.filter((item) => {
       if (query.weekday !== undefined && item.weekday !== query.weekday) return false;
@@ -167,7 +167,7 @@ export class AnimeCalendarService {
   stats(year?: number, courMonth?: number) {
     const resolved = this.resolveCour(year, courMonth);
     const state = this.store.read();
-    const items = this.itemsForCour(this.withMarks(this.catalogItems(state), state.marks), resolved.year, resolved.cour_month);
+    const items = this.itemsForCour(this.withMarks(this.catalogItems(state), state.marks), resolved.year, resolved.cour_month, this.activeWeeklyIds(state));
     const today = platformDateKey();
     const todayWeekday = weekdayForDate(today);
     return {
@@ -419,7 +419,12 @@ export class AnimeCalendarService {
     return { source: "bangumi_calendar", date, updated_at: updatedAt, total: visible.length, items: visible };
   }
 
-  private itemsForCour(items: AnimeItem[], year: number, month: number) { return items.map((item) => withCourRelation(item, year, month)).filter((item) => item.cour_relation !== "unknown" && !isSingleEpisodeNonMovie(item)); }
+  private itemsForCour(items: AnimeItem[], year: number, month: number, activeWeeklyIds: ReadonlySet<string> = new Set()) {
+    const current = this.currentCour();
+    const useActiveWeeklyFallback = year * 12 + month >= current.year * 12 + current.cour_month;
+    return items.map((item) => withCourRelation(item, year, month, useActiveWeeklyFallback && activeWeeklyIds.has(item.id))).filter((item) => item.cour_relation !== "unknown" && !isSingleEpisodeNonMovie(item));
+  }
+  private activeWeeklyIds(state: ReturnType<AnimeStoreRepository["read"]>) { return new Set((state.weeklyCache?.items ?? []).filter((item) => item.status === "airing").map((item) => item.id)); }
   private catalogItems(state: ReturnType<AnimeStoreRepository["read"]>) {
     const items = new Map<string, AnimeItem>();
     const sources = [...state.items, ...this.enrichWeeklyItems(state.weeklyCache?.items ?? [], state), ...(state.longRunningCache?.items ?? [])];
@@ -533,16 +538,19 @@ function mergeDetail(base: AnimeItem, detail: AnimeItem, mark: AnimeMarkType | n
 function displayTitle(item: AnimeItem) { return item.title_cn || item.title_original; }
 function cacheMessage(status: AnimeCacheStatus, error: string) { if (status === "fresh") return "缓存已是最新"; if (status === "stale") return "正在使用可能过期的缓存"; if (status === "refreshing") return "正在刷新档期数据"; if (status === "failed") return error || "刷新失败，已保留现有数据"; return "当前档期暂无缓存"; }
 function emptyCourCache(year: number, month: number): CourCache { return { year, cour_month: month, candidate_start: null, candidate_end: null, last_refreshed_at: null, refresh_status: "empty", fetched_count: 0, unique_count: 0, included_count: 0, new_this_cour_count: 0, continuing_count: 0, long_running_count: 0, unknown_count: 0, skipped_count: 0, error_message: "" }; }
-function withCourRelation(item: AnimeItem, year: number, month: number): AnimeItem {
+function withCourRelation(item: AnimeItem, year: number, month: number, activeWeekly = false): AnimeItem {
   const range = courRange(year, month);
   const start = item.air_date ? new Date(`${item.air_date}T00:00:00Z`) : null;
   const estimatedEndDate = effectiveEstimatedEndDate(item);
   const endedBeforeCour = Boolean(estimatedEndDate && estimatedEndDate < range.start_date);
+  // The weekly calendar is evidence that an uncounted TV series is still airing.
+  // Do not let the generic 12-episode estimate hide it from the current/upcoming cour.
+  const activeUncountedTv = activeWeekly && item.status === "airing" && item.media_type === "tv" && item.episode_count === null;
   let relation: AnimeItem["cour_relation"] = "unknown";
   if (start && start >= range.start && start <= range.end) relation = "new_this_cour";
-  else if (start && start < range.start && !endedBeforeCour) {
+  else if (start && start < range.start && (!endedBeforeCour || activeUncountedTv)) {
     const span = episodeSpan(item);
-    if (span === "long_running") relation = "long_running";
+    if (activeUncountedTv || span === "long_running") relation = "long_running";
     else if (span === "half_year") relation = "continuing";
   }
   return { ...item, estimated_end_date: estimatedEndDate, year, cour_month: month, cour_label: courLabel(year, month), cour_relation: relation, cour_relation_label: relation === "new_this_cour" ? "新番" : relation === "continuing" ? "续播" : relation === "long_running" ? "长期" : "未定" };
