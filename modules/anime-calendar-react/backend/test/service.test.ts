@@ -201,6 +201,28 @@ describe("service cache and marks", () => {
     expect(upcomingResult.items).toEqual(expected);
   });
 
+  it("keeps a followed active long-running series when its cumulative episode count implies a past end date", async () => {
+    const id = "bangumi:one-piece-cumulative-count";
+    const weeklyOnly = item({ id, provider_id: "one-piece-cumulative-count", title_cn: "航海王", title_original: "ONE PIECE", air_date: "1999-10-20", estimated_end_date: null, episode_count: 1191, status: "airing" });
+    await store.update((state) => {
+      state.weeklyCache = { cache_date: new Date().toISOString().slice(0, 10), updated_at: new Date().toISOString(), items: [clearMarkForTest(weeklyOnly)] };
+    });
+    const provider = { setProxyUrl() {}, fetchCour: async () => [], fetchWeekly: async () => [], fetchDetail: async () => weeklyOnly } as unknown as BangumiProvider;
+    const service = new AnimeCalendarService(store, provider, "anime-calendar-react", "", "token");
+    await service.setMark(id, "watching");
+    const current = service.currentCour();
+
+    const upcoming = current.cour_month === 10 ? { year: current.year + 1, cour_month: 1 } : { year: current.year, cour_month: current.cour_month + 3 };
+    const [currentResult, upcomingResult] = await Promise.all([
+      service.listItems({ year: current.year, cour_month: current.cour_month }),
+      service.listItems({ year: upcoming.year, cour_month: upcoming.cour_month }),
+    ]);
+    const expected = expect.arrayContaining([expect.objectContaining({ id, episode_count: 1191, mark_type: "watching", cour_relation: "long_running" })]);
+
+    expect(currentResult.items).toEqual(expected);
+    expect(upcomingResult.items).toEqual(expected);
+  });
+
   it("does not use the active-weekly fallback when cached details provide an episode count", async () => {
     const id = "bangumi:known-one-cour";
     const current = currentCour();

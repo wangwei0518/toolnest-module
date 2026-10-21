@@ -543,14 +543,18 @@ function withCourRelation(item: AnimeItem, year: number, month: number, activeWe
   const start = item.air_date ? new Date(`${item.air_date}T00:00:00Z`) : null;
   const estimatedEndDate = effectiveEstimatedEndDate(item);
   const endedBeforeCour = Boolean(estimatedEndDate && estimatedEndDate < range.start_date);
-  // The weekly calendar is evidence that an uncounted TV series is still airing.
-  // Do not let the generic 12-episode estimate hide it from the current/upcoming cour.
-  const activeUncountedTv = activeWeekly && item.status === "airing" && item.media_type === "tv" && item.episode_count === null;
+  // The weekly calendar is evidence that a long-running TV series is still airing.
+  // For ongoing series, Bangumi's total_episodes may be the cumulative aired count;
+  // using it as a planned total can produce an estimated end date years in the past.
+  // Keep the existing fallback for active TV entries whose episode count is unknown,
+  // but do not promote known one- or two-cour shows just because they air this week.
+  const activeWeeklyLongRunningTv = activeWeekly && item.status === "airing" && item.media_type === "tv"
+    && (item.episode_count === null || episodeSpan(item) === "long_running");
   let relation: AnimeItem["cour_relation"] = "unknown";
   if (start && start >= range.start && start <= range.end) relation = "new_this_cour";
-  else if (start && start < range.start && (!endedBeforeCour || activeUncountedTv)) {
+  else if (start && start < range.start && (!endedBeforeCour || activeWeeklyLongRunningTv)) {
     const span = episodeSpan(item);
-    if (activeUncountedTv || span === "long_running") relation = "long_running";
+    if (activeWeeklyLongRunningTv || span === "long_running") relation = "long_running";
     else if (span === "half_year") relation = "continuing";
   }
   return { ...item, estimated_end_date: estimatedEndDate, year, cour_month: month, cour_label: courLabel(year, month), cour_relation: relation, cour_relation_label: relation === "new_this_cour" ? "新番" : relation === "continuing" ? "续播" : relation === "long_running" ? "长期" : "未定" };
