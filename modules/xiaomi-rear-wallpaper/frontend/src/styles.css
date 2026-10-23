@@ -595,3 +595,11 @@
 .tn-xiaomi-rear-wallpaper__feedback:not(.is-error) { animation: tn-wallpaper-motion-section var(--motion-confirm, 500ms) var(--motion-ease, ease-out); }
 .tn-xiaomi-rear-wallpaper__header { animation: tn-wallpaper-motion-section var(--motion-scene, 420ms) var(--motion-ease, ease-out); }
 @media (prefers-reduced-motion: reduce) { .tn-xiaomi-rear-wallpaper__feedback:not(.is-error), .tn-xiaomi-rear-wallpaper__header { animation: none; } }
+
+@media (width < 64rem) {
+  .tn-xiaomi-rear-wallpaper__preview-stage { display: none; }
+  .tn-xiaomi-rear-wallpaper__editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .tn-xiaomi-rear-wallpaper__identity { display: none; }
+  .tn-xiaomi-rear-wallpaper__editor-actions { position: sticky; bottom: calc(var(--spacing) * 17 + env(safe-area-inset-bottom)); background: var(--background); border-top: 1px solid var(--border); padding-block: calc(var(--spacing) * 3); z-index: 10; }
+  .tn-xiaomi-rear-wallpaper__editor-actions > button { flex: 1 1 0; }
+}

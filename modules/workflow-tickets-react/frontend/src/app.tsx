@@ -363,7 +363,14 @@ function SchedulePage({ api, router }: PageProps) {
   return <PageFrame title="定时任务" description="按计划从已发布模板自动创建工单。" extra={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}><RiAddLine data-icon="inline-start" />新建定时任务</Button>}>
     {error ? <ErrorState message={error} retry={() => void load()} /> : null}
     <Card><CardContent>
-      {loading ? <LoadingState /> : schedules.length ? <TableContainer><Table>
+      {loading ? <LoadingState /> : schedules.length ? <><div className="grid gap-3 lg:hidden">{schedules.map((schedule) => <Card key={schedule.id} size="sm"><CardHeader><div className="flex items-start justify-between gap-3"><CardTitle className="break-words">{schedule.name}</CardTitle><StatusBadge value={schedule.enabled ? "active" : "disabled"} /></div><CardDescription>{schedule.workflow_name}</CardDescription></CardHeader><CardContent className="grid gap-2"><p className="text-sm">{schedulePlanLabel(schedule)}</p><p className="text-xs text-muted-foreground">下次执行：{formatDate(schedule.next_run_at)}</p></CardContent><CardFooter className="justify-end"><div className="flex justify-end gap-2">
+            <Button size="sm" onClick={async () => { await api.runScheduleNow(schedule.workflow_id, schedule.id); await load(); }}><RiPlayLine data-icon="inline-start" />立即执行</Button>
+            <DropdownMenu><DropdownMenuTrigger render={<Button size="sm" variant="outline">更多</Button>} /><DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void router.push("/modules/workflow-tickets-react/schedules/" + schedule.id + "?workflow_id=" + schedule.workflow_id)}>编辑</DropdownMenuItem>
+              <ScheduleRunsAction api={api} schedule={schedule} />
+              <DropdownMenuItem variant="destructive" onClick={() => { setDeleteError(""); setDeleteTarget(schedule); }}>删除定时任务</DropdownMenuItem>
+            </DropdownMenuContent></DropdownMenu>
+          </div></CardFooter></Card>)}</div><div className="hidden lg:block"><TableContainer><Table>
         <TableHeader><TableRow><TableHead className="w-64">任务</TableHead><TableHead className="w-32">计划</TableHead><TableHead className="w-28">状态</TableHead><TableHead className="w-44">下次执行</TableHead><TableHead className="w-48 text-right">操作</TableHead></TableRow></TableHeader>
         <TableBody>{schedules.map((schedule) => <TableRow key={schedule.id}>
           <TableCell><div className="grid gap-1"><span className="font-medium">{schedule.name}</span><span className="text-xs text-muted-foreground">{schedule.workflow_name}</span></div></TableCell>
@@ -379,7 +386,7 @@ function SchedulePage({ api, router }: PageProps) {
             </DropdownMenuContent></DropdownMenu>
           </div></TableCell>
         </TableRow>)}</TableBody>
-      </Table></TableContainer> : <EmptyState description="暂无定时任务。" action={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}>创建定时任务</Button>} />}
+      </Table></TableContainer></div></> : <EmptyState description="暂无定时任务。" action={<Button onClick={() => void router.push("/modules/workflow-tickets-react/schedules/new")}>创建定时任务</Button>} />}
     </CardContent></Card>
     <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => {
       if (!open && !deleting) {
@@ -644,13 +651,7 @@ function AttachmentList({ api, ticket, nodeId, fieldId, reload, readOnly }: { ap
     const file = event.target.files?.[0];
     if (!file || !fieldId) return;
     try {
-      const content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-        reader.onerror = () => reject(reader.error ?? new Error("文件读取失败"));
-        reader.readAsDataURL(file);
-      });
-      await api.uploadAttachment(ticket.id, nodeId, { field_id: fieldId, filename: file.name, mime_type: file.type, content_base64: content });
+      await api.uploadAttachment(ticket.id, nodeId, fieldId, file);
       event.target.value = "";
       await reload();
     } catch (err) {

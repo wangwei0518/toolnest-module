@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 const yearOffsets = [-2, -1, 0, 1, 2] as const;
@@ -114,7 +115,7 @@ export function YearSlider({
   };
 
   return (
-    <div
+    <><div className="lg:hidden"><Select value={String(value)} onValueChange={(year) => { if (year) commit(Number(year)); }}><SelectTrigger aria-label={ariaLabel}><SelectValue>{value}年</SelectValue></SelectTrigger><SelectContent><SelectGroup>{Array.from({length: 201}, (_, i) => 1900+i).map((year) => <SelectItem key={year} value={String(year)}>{year}年</SelectItem>)}</SelectGroup></SelectContent></Select></div><div className="hidden lg:contents"><div
       ref={pickerRef}
       className={cn(
         "tn-anime-year-slider__picker",
@@ -147,6 +148,6 @@ export function YearSlider({
           </button>
         );
       })}
-    </div>
+    </div></div></>
   );
 }

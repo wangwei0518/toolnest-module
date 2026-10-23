@@ -12,6 +12,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -399,6 +400,7 @@ function InspectorHelp({ label, hint }: { label: string; hint: string }) {
 export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const { setPageMeta } = useModulePageMeta();
   const workflowId = params.id || params.workflowId;
+  const [mobilePanel, setMobilePanel] = useState("nodes");
   const [workflow, setWorkflow] = useState<Workflow>();
   const [versionId, setVersionId] = useState(query.versionId || "");
   const [selectedId, setSelectedId] = useState("");
@@ -475,11 +477,14 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
     const minY = Math.min(...layoutNodes.map((node) => node.position.y));
     const maxX = Math.max(...layoutNodes.map((node) => node.position.x + nodeWidth));
     const maxY = Math.max(...layoutNodes.map((node) => node.position.y + nodeHeight));
-    const availableWidth = Math.max(260, canvas.clientWidth - 520);
-    const availableHeight = Math.max(260, canvas.clientHeight - 150);
+    const mobile = window.matchMedia("(width < 64rem)").matches;
+    const horizontalInset = mobile ? 24 : 260;
+    const verticalInset = mobile ? 24 : 120;
+    const availableWidth = Math.max(260, canvas.clientWidth - horizontalInset * 2);
+    const availableHeight = Math.max(260, canvas.clientHeight - (mobile ? 120 : 150));
     const nextZoom = Math.min(1, Math.max(0.35, Math.min(availableWidth / Math.max(1, maxX - minX), availableHeight / Math.max(1, maxY - minY))));
     setZoom(Math.round(nextZoom * 100) / 100);
-    setPan({ x: 260 + (availableWidth - (maxX - minX) * nextZoom) / 2 - minX * nextZoom, y: 120 + (availableHeight - (maxY - minY) * nextZoom) / 2 - minY * nextZoom });
+    setPan({ x: horizontalInset + (availableWidth - (maxX - minX) * nextZoom) / 2 - minX * nextZoom, y: verticalInset + (availableHeight - (maxY - minY) * nextZoom) / 2 - minY * nextZoom });
   };
 
   const load = async () => {
@@ -1011,7 +1016,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   };
 
   return (
-    <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page">
+    <section className="tn-workflow-tickets-page tn-workflow-tickets-workflow-designer-page" data-mobile-panel={mobilePanel}>
       <header className="tn-workflow-tickets-designer-commandbar">
         <div className="tn-workflow-tickets-designer-commandbar-main">
           <Button className="tn-workflow-tickets-designer-back" variant="ghost" aria-label="返回模板列表" title="返回模板列表" onClick={() => void router.push("/modules/workflow-tickets-react/workflows")}><RiArrowLeftLine data-icon="inline-start" /><span className="tn-workflow-tickets-designer-button-label">模板列表</span></Button>
@@ -1031,6 +1036,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
         </div>
       </header>
 
+      <Tabs className="mx-3 lg:hidden" value={mobilePanel} onValueChange={(value) => { if (!value) return; setMobilePanel(value); if (value === "canvas") window.requestAnimationFrame(() => fitCanvas()); }} aria-label="手机流程设计器"><TabsList className="w-full"><TabsTrigger value="nodes">节点列表</TabsTrigger><TabsTrigger value="canvas">流程画布</TabsTrigger><TabsTrigger value="inspector">节点配置</TabsTrigger></TabsList></Tabs>
       <div className="tn-workflow-tickets-designer">
         <aside className="tn-workflow-tickets-designer-panel tn-workflow-tickets-designer-left" onDragOver={(event) => event.preventDefault()}>
           <div className="tn-workflow-tickets-section-header">
@@ -1042,7 +1048,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
             {nodeSearch ? <Button className="tn-workflow-tickets-designer-search-clear" size="icon-sm" variant="ghost" aria-label="清空节点搜索" onClick={() => setNodeSearch("")}><RiCloseLine /></Button> : null}
           </div>
           <div className="tn-workflow-tickets-designer-list">
-            {filteredNodes.map((node) => <button key={node.id} type="button" className={`tn-workflow-tickets-designer-list-item${node.id === selected.id ? " is-active" : ""}`} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); }}>
+            {filteredNodes.map((node) => <button key={node.id} type="button" className={`tn-workflow-tickets-designer-list-item${node.id === selected.id ? " is-active" : ""}`} onClick={() => { setSelectedId(node.id); setSelectedEdgeId(""); if (window.matchMedia("(width < 64rem)").matches) setMobilePanel("inspector"); }}>
               <RiDraggable className="tn-workflow-tickets-designer-list-handle" aria-hidden="true" />
               <span className="tn-workflow-tickets-designer-list-copy"><strong>{node.name}</strong><small>{node.key}</small></span>
             </button>)}

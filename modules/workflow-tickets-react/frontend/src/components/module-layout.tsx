@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { ToolNestModuleRouteRenderProps } from "@toolnest/react-module-sdk";
 import { RiArrowLeftSLine, RiBarChartLine, RiCalendarLine, RiCalendarScheduleLine, RiFileTextLine, RiFlagLine, RiFolderLine, RiGitBranchLine, RiLayoutGridLine, RiLinkM, RiSettings3Line, RiTimeLine } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { navigation } from "../menu";
@@ -132,6 +133,17 @@ function ModulePageContent({ relativePath, query, activeKey, router, children }:
               </div>
               {pageMeta.description ? <span className="tn-workflow-tickets-react__description">{pageMeta.description}</span> : null}
             </div>
+          </div>
+          <div className="w-full lg:hidden">
+            <Select value={projectContext?.activeKey ?? activeKey} onValueChange={(value) => {
+              if (!value) return;
+              if (projectContext) { void router.push(`/modules/workflow-tickets-react/projects/${projectContext.projectId}${value === "overview" ? "" : `?tab=${value}`}`); return; }
+              const target = navigation.find((item) => item.key === value);
+              if (target) void router.push(`/modules/workflow-tickets-react${target.path ? `/${target.path}` : ""}`);
+            }}>
+              <SelectTrigger className="w-full" aria-label={projectContext ? "项目页面" : "工单页面"}><span className="shrink-0 text-sm text-muted-foreground">当前页面</span><SelectValue>{(projectContext ? projectNavigation : navigation).find((item) => item.key === (projectContext?.activeKey ?? activeKey))?.label}</SelectValue></SelectTrigger>
+              <SelectContent><SelectGroup><SelectLabel>{projectContext ? "项目页面" : "工单页面"}</SelectLabel>{(projectContext ? projectNavigation : navigation).map((item) => <SelectItem key={item.key} value={item.key}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+            </Select>
           </div>
           <nav aria-label={projectContext ? "项目导航" : "工单模块导航"} className="tn-workflow-tickets-react__navigation">
             {projectContext ? <ProjectNavigation projectId={projectContext.projectId} activeKey={projectContext.activeKey} router={router} /> : <Tabs value={activeKey} onValueChange={(value) => { if (value === null) return; const target = navigation.find((item) => item.key === value); if (!target) return; void router.push(`/modules/workflow-tickets-react${target.path ? `/${target.path}` : ""}`); }} className="max-w-full min-w-0"><TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">{navigation.map((item) => <TabsTrigger key={item.key} value={item.key}><ModuleNavigationIcon itemKey={item.key} />{item.label}</TabsTrigger>)}</TabsList></Tabs>}

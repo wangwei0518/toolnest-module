@@ -2430,7 +2430,7 @@
   height: calc(var(--spacing) * 5);
 }
 
-@media (max-width: 1100px) and (min-width: 768px) {
+@media (max-width: 1100px) and (min-width: 1024px) {
   .tn-workflow-tickets-designer-left {
     width: 11.25rem;
   }
@@ -2444,7 +2444,7 @@
   }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .tn-workflow-tickets-workflow-designer-page .tn-workflow-tickets-designer-left,
   .tn-workflow-tickets-workflow-designer-page .tn-workflow-tickets-designer-inspector {
     top: calc(var(--spacing) * 3 + 3.25rem + var(--spacing) * 3);
@@ -2467,7 +2467,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .tn-workflow-tickets-react:has(.tn-workflow-tickets-workflow-designer-page) {
     height: auto;
     min-height: 0;
@@ -2590,3 +2590,35 @@
 .tn-workflow-tickets-branch-node.is-completed .tn-workflow-tickets-branch-node-icon { background: var(--primary); color: var(--primary-foreground); }
 .tn-workflow-tickets-branch-node.is-in_progress .tn-workflow-tickets-branch-node-icon { animation: tn-workflow-motion-working calc(var(--motion-scene, 420ms) * 3) ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .tn-workflow-tickets-react > .tn-workflow-tickets-react__header, .tn-workflow-tickets-branch-node.is-in_progress .tn-workflow-tickets-branch-node-icon { animation: none; } .tn-workflow-tickets-branch-node-icon { transition: none; } }
+
+/* Mobile task navigation. Desktop layout remains on its existing rules. */
+@media (width < 64rem) {
+  .tn-workflow-tickets-react { gap: calc(var(--spacing) * 4); }
+  .tn-workflow-tickets-react__header { padding: 0 0 calc(var(--spacing) * 3); gap: calc(var(--spacing) * 3); }
+  .tn-workflow-tickets-react__identity { flex: 0 1 auto; }
+  .tn-workflow-tickets-react__mark, .tn-workflow-tickets-react__description { display: none; }
+  .tn-workflow-tickets-react__navigation { display: none; }
+  .tn-workflow-tickets-react__title { font-size: 1rem; overflow-wrap: anywhere; }
+}
+
+@media (width < 64rem) {
+  .tn-workflow-tickets-workflow-designer-page[data-mobile-panel="nodes"] :is(.tn-workflow-tickets-designer-canvas, .tn-workflow-tickets-designer-inspector),
+  .tn-workflow-tickets-workflow-designer-page[data-mobile-panel="canvas"] :is(.tn-workflow-tickets-designer-left, .tn-workflow-tickets-designer-inspector),
+  .tn-workflow-tickets-workflow-designer-page[data-mobile-panel="inspector"] :is(.tn-workflow-tickets-designer-left, .tn-workflow-tickets-designer-canvas) { display: none; }
+  .tn-workflow-tickets-designer-left { max-height: none; }
+  .tn-workflow-tickets-designer-list-item { min-height: calc(var(--spacing) * 16); }
+  .tn-workflow-tickets-designer-commandbar { flex-wrap: wrap; gap: calc(var(--spacing) * 2); }
+  .tn-workflow-tickets-designer-commandbar-main { min-width: 0; flex-basis: 100%; }
+  .tn-workflow-tickets-designer-heading .tn-workflow-tickets-page-title { white-space: normal; overflow-wrap: anywhere; }
+  .tn-workflow-tickets-designer-commandbar-actions { margin-inline-start: auto; }
+  .tn-workflow-tickets-designer-inspector { min-height: calc(var(--spacing) * 80); }
+}
+
+@media (width < 64rem) { .tn-workflow-tickets-workflow-group-locator { display: none; } }
+
+@media (width < 64rem) {
+  .tn-workflow-tickets-form-dialog-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .tn-workflow-tickets-form-dialog-grid[data-mobile-form-panel="fields"] > :not(:first-child),
+  .tn-workflow-tickets-form-dialog-grid[data-mobile-form-panel="preview"] > :not(:nth-child(2)),
+  .tn-workflow-tickets-form-dialog-grid[data-mobile-form-panel="configuration"] > :not(:last-child) { display: none; }
+}

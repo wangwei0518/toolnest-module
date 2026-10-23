@@ -1,6 +1,6 @@
 {
   "name": "@toolnest/xiaomi-rear-wallpaper-react-frontend",
-  "version": "0.1.14",
+  "version": "0.1.17",
   "private": true,
   "type": "module",
   "scripts": {

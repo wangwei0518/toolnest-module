@@ -10,6 +10,7 @@ const hostDevSharedDependencies = [
   ["react-dom/client", "http://localhost:5174/src/module-system/shared-runtime/react-dom-client.ts"],
   ["react-dom", "http://localhost:5174/src/module-system/shared-runtime/react-dom-dev.ts"],
   ["react", "http://localhost:5174/src/module-system/shared-runtime/react-dev.ts"],
+  ["@base-ui/react/dialog", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_dialog.js"],
   ["@base-ui/react/slider", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_slider.js"],
   ["@base-ui/react/progress", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_progress.js"],
   ["@base-ui/react/tooltip", "http://localhost:5174/node_modules/.vite/deps/@base-ui_react_tooltip.js"],

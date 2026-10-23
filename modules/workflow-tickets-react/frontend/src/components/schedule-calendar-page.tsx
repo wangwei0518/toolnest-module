@@ -141,7 +141,7 @@ function ScheduleCalendarEvent({ item, onOpen }: { item: ScheduleItem; onOpen: (
   return (
     <button
       type="button"
-      className="flex min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex max-lg:min-h-11 max-lg:items-center max-lg:text-sm min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       aria-label={`${itemTime(item)} ${item.title}${completed ? "，已完成" : ""}`}
       onClick={() => onOpen(item)}
     >
@@ -172,7 +172,7 @@ function TicketCalendarEvent({ event, onOpen }: { event: Extract<CalendarEvent, 
         render={
           <button
             type="button"
-            className={cn("flex min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", completed ? "text-muted-foreground" : "text-foreground")}
+            className={cn("flex max-lg:min-h-11 max-lg:items-center max-lg:text-sm min-w-0 items-start gap-1 rounded-sm px-1 py-0.5 text-left text-xs leading-4 transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", completed ? "text-muted-foreground" : "text-foreground")}
             aria-label={`${ticket.title}，工单编号 ${ticket.number}，${statusLabel}，${accessibleDateLabel}`}
             onClick={() => onOpen(ticket)}
           />
@@ -232,7 +232,7 @@ function ScheduleCalendarCell({
       <div className="flex min-w-0 items-start justify-between gap-1">
         <button
           type="button"
-          className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-7 sm:text-sm ${today ? "bg-primary text-primary-foreground hover:bg-primary/90" : inDisplayedMonth ? "text-foreground" : "text-muted-foreground"}`}
+          className={`grid max-lg:min-h-11 max-lg:min-w-11 size-6 shrink-0 place-items-center rounded-full text-xs font-medium transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-7 sm:text-sm ${today ? "bg-primary text-primary-foreground hover:bg-primary/90" : inDisplayedMonth ? "text-foreground" : "text-muted-foreground"}`}
           aria-label={`选择${format(date, "yyyy年M月d日", { locale: zhCN })}`}
           aria-pressed={selected}
           onClick={() => onSelectDate(date)}
@@ -262,7 +262,7 @@ export function ScheduleCalendarContent({ api, router, quick = false }: { api: W
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [view, setView] = useState<CalendarView>("month");
+  const [view, setView] = useState<CalendarView>(() => typeof window !== "undefined" && window.matchMedia("(width < 64rem)").matches ? "day" : "month");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [ticketLoadError, setTicketLoadError] = useState("");

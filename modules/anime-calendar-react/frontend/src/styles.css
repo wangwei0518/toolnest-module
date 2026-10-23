@@ -550,3 +550,15 @@
 .tn-anime-grid.tn-anime-motion-enter > :nth-child(2n) { animation-delay: var(--motion-step, 55ms); }
 .tn-anime-grid.tn-anime-motion-enter > :nth-child(3n) { animation-delay: calc(var(--motion-step, 55ms) * 2); }
 @media (prefers-reduced-motion: reduce) { .tn-anime-grid.tn-anime-motion-enter > :nth-child(-n+8) { animation: none; } }
+
+@media (width < 64rem) {
+  .tn-anime-calendar-react { padding: calc(var(--spacing) * 4); gap: calc(var(--spacing) * 4); }
+  .tn-anime-calendar-react__identity { display: none; }
+  .tn-anime-calendar-react__header { gap: 0; }
+}
+
+@media (width < 64rem) {
+  .tn-anime-week-item { min-height: calc(var(--spacing) * 22); }
+  .tn-anime-week-item strong { font-size: 0.9375rem; line-height: 1.5; }
+  .tn-anime-week-item small { font-size: 0.75rem; }
+}

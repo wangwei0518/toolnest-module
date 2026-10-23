@@ -1449,3 +1449,25 @@
 .tn-python-motion-control[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; background: linear-gradient(90deg, transparent, color-mix(in oklch, currentColor 18%, transparent), transparent); background-size: 200% 100%; animation: tn-python-request calc(var(--motion-scene, 420ms) * 3) linear infinite; }
 @media (prefers-reduced-motion: reduce) { .tn-python-motion-control[aria-busy="true"]::after { animation: none; background: none; } }
 @media (prefers-reduced-motion: reduce) { .tn-python-module__page > :is(header, .tn-python-module__toolbar, [data-slot="card"]), .tn-python-motion-status .tn-python-module__status-dot { animation: none; } }
+
+@media (width < 64rem) {
+  .tn-python-module { padding: calc(var(--spacing) * 4); gap: calc(var(--spacing) * 4); }
+  .tn-python-module__brand { display: none; }
+  .tn-python-module__nav { padding-bottom: calc(var(--spacing) * 3); }
+  .tn-python-module__navigation { width: 100%; }
+  .tn-python-module__table-subtitle { white-space: normal; overflow-wrap: anywhere; }
+}
+@media (width < 64rem) {
+  .tn-python-module[data-mobile-project-active="overview"] [data-mobile-project-section]:not([data-mobile-project-section="overview"]),
+  .tn-python-module[data-mobile-project-active="files"] [data-mobile-project-section]:not([data-mobile-project-section="files"]),
+  .tn-python-module[data-mobile-project-active="configuration"] [data-mobile-project-section]:not([data-mobile-project-section="configuration"]),
+  .tn-python-module[data-mobile-project-active="environment"] [data-mobile-project-section]:not([data-mobile-project-section="environment"]),
+  .tn-python-module[data-mobile-project-active="maintenance"] [data-mobile-project-section]:not([data-mobile-project-section="maintenance"]) { display: none; }
+  .tn-python-module__page-toolbar > [data-slot="button-group"] { flex-wrap: wrap; gap: calc(var(--spacing) * 2); }
+}
+
+@media (width < 64rem) {
+  .tn-python-module [data-mobile-project-section="overview"].tn-python-module__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(var(--spacing) * 3); }
+}
+
+@media (width < 64rem) { .tn-python-module__link { display: inline-flex; align-items: center; min-height: calc(var(--spacing) * 11); } }

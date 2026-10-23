@@ -1063,10 +1063,12 @@ function ModuleShell({
   title,
   description,
   children,
+  mobileSection,
 }: {
   title: string;
   description: string;
   children: ReactNode;
+  mobileSection?: string;
 }) {
   const pathname =
     typeof window === "undefined" ? moduleBase : window.location.pathname;
@@ -1077,7 +1079,7 @@ function ModuleShell({
   const activeTab = activePath === "services" ? "persistent" : activePath;
   return (
     <TooltipProvider>
-      <main className="tn-python-module">
+      <main className="tn-python-module" data-mobile-project-active={mobileSection}>
         <div className="tn-python-module__nav">
           <div className="tn-python-module__brand">
             <span className="tn-python-module__brand-mark">
@@ -1096,6 +1098,12 @@ function ModuleShell({
             className="tn-python-module__navigation"
             aria-label="Python 工具导航"
           >
+            <div className="w-full lg:hidden">
+              <Select value={activeTab} onValueChange={(value) => { if (value !== null && runtime) void runtime.router.push(`${moduleBase}${value ? `/${value}` : ""}`); }}>
+                <SelectTrigger className="w-full" aria-label="Python 页面"><span className="shrink-0 text-sm text-muted-foreground">当前页面</span><SelectValue>{navigation.find((item) => item.path === activeTab)?.label ?? "项目仓库"}</SelectValue></SelectTrigger>
+                <SelectContent><SelectGroup><SelectLabel>Python 页面</SelectLabel>{navigation.map((item) => <SelectItem key={item.path} value={item.path}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+              </Select>
+            </div>
             <Tabs
               value={activeTab}
               onValueChange={(value) => {
@@ -1106,7 +1114,7 @@ function ModuleShell({
                   `${moduleBase}${target.path ? `/${target.path}` : ""}`,
                 );
               }}
-              className="max-w-full min-w-0"
+              className="hidden max-w-full min-w-0 md:flex"
             >
               <TabsList className="w-full max-w-full overflow-x-auto overflow-y-hidden sm:w-fit">
                 {navigation.map((item) => {
@@ -3454,6 +3462,9 @@ function ProjectDetailPage({
   projectId: string;
   initialEntryFile?: string | undefined;
 }) {
+  const [mobileSection, setMobileSection] = useState("overview");
+  const mobileSections = [{value:"overview",label:"项目概览"},{value:"files",label:"文件与源码"},{value:"configuration",label:"安全与配置"},{value:"environment",label:"运行环境"},{value:"maintenance",label:"版本与维护"}];
+
   const project = useQuery({
     queryKey: ["python-runner", "project", projectId],
     queryFn: () => getUpload(projectId),
@@ -3692,7 +3703,7 @@ function ProjectDetailPage({
     <ModuleShell
       title={item.name}
       description={`${item.filename} · 最近更新 ${formatTime(item.updated_at)}`}
-    >
+     mobileSection={mobileSection}>
       <div className="tn-python-module__page-toolbar">
         <ButtonGroup aria-label="项目操作">
           <ButtonGroup aria-label="项目导航">
@@ -3730,7 +3741,9 @@ function ProjectDetailPage({
           </ButtonGroup>
         </ButtonGroup>
       </div>
-      <div className="tn-python-module__grid">
+      <div className="lg:hidden"><Select value={mobileSection} onValueChange={(value) => { if (value) setMobileSection(value); }}><SelectTrigger className="w-full" aria-label="项目内容"><SelectValue>{mobileSections.find((section) => section.value === mobileSection)?.label}</SelectValue></SelectTrigger><SelectContent><SelectGroup><SelectLabel>项目内容</SelectLabel>{mobileSections.map((section) => <SelectItem key={section.value} value={section.value}>{section.label}</SelectItem>)}</SelectGroup></SelectContent></Select></div>
+
+      <div data-mobile-project-section="overview" className="tn-python-module__grid">
         <StatCard
           label="源码文件"
           value={item.file_count}
@@ -3778,7 +3791,7 @@ function ProjectDetailPage({
           tooltip="源码、虚拟环境、数据和备份的占用总量。"
         />
       </div>
-      <Card>
+      <Card data-mobile-project-section="overview">
         <CardHeader>
           <div>
             <CardTitle>项目概览</CardTitle>
@@ -3833,7 +3846,7 @@ function ProjectDetailPage({
           </div>
         </CardContent>
       </Card>
-      <div className="tn-python-module__workspace">
+      <div data-mobile-project-section="files" className="tn-python-module__workspace">
         <Card>
           <CardHeader className="tn-python-module__file-card-header">
             <div className="tn-python-module__file-card-copy">
@@ -3939,7 +3952,7 @@ function ProjectDetailPage({
           </CardContent>
         </Card>
       </div>
-      <div className="tn-python-module__columns">
+      <div data-mobile-project-section="configuration" className="tn-python-module__columns">
         <Card>
           <CardHeader>
             <div>
@@ -4219,7 +4232,7 @@ function ProjectDetailPage({
           void config.refetch();
         }}
       />
-      <Card>
+      <Card data-mobile-project-section="environment">
         <CardHeader>
           <div>
             <CardTitle>运行环境</CardTitle>
@@ -4391,7 +4404,7 @@ function ProjectDetailPage({
           </div>
         </CardContent>
       </Card>
-      <Card>
+      <Card data-mobile-project-section="maintenance">
         <CardHeader>
           <div>
             <CardTitle>版本与存储</CardTitle>
@@ -4421,7 +4434,7 @@ function ProjectDetailPage({
           ) : null}
         </CardContent>
       </Card>
-      <div className="tn-python-module__columns">
+      <div data-mobile-project-section="maintenance" className="tn-python-module__columns">
         <Card>
           <CardHeader>
             <div>
@@ -4670,7 +4683,9 @@ function ExecutionTable({
       />
     );
   return (
-    <Table>
+    <>
+      <div className="grid gap-3 lg:hidden" aria-label="手机执行记录">{items.map((item) => <Card key={item.id} size="sm"><CardHeader><div className="flex items-start justify-between gap-3"><InternalLink href={`${moduleBase}/executions/${item.id}`} className="min-w-0 break-words text-sm font-medium">{item.name}</InternalLink><StatusBadge value={item.status} /></div><CardDescription>{triggerText(item.trigger_type || item.task_mode)} · {formatShortTime(item.started_at ?? item.created_at)} · {formatDuration(item.duration_ms)}</CardDescription></CardHeader><CardFooter className="justify-between gap-2"><span className="min-w-0 truncate text-xs text-muted-foreground">{item.entry_file || "自动入口"}</span><div className="flex items-center gap-2"><ActionLinkButton href={`${moduleBase}/executions/${item.id}`}>查看</ActionLinkButton>{item.status !== "running" ? <TableActionMenu items={[{ key: "rerun", label: "重跑", disabled: Boolean(rerunning) }, { key: "copy", label: "复制代码", disabled: !item.code_snapshot }, { key: "delete", label: "删除记录", destructive: true, disabled: Boolean(deleting) }]} onClick={(key) => { if (key === "rerun") onRerun(item.id); if (key === "copy") onCopy(item); if (key === "delete") onDelete(item); }} /> : null}</div></CardFooter></Card>)}</div>
+      <div className="hidden lg:block"><Table>
       <TableHeader>
         <TableRow>
           <TableHead style={{ width: "28%" }}>任务</TableHead>
@@ -4749,7 +4764,8 @@ function ExecutionTable({
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </Table></div>
+    </>
   );
 }
 
@@ -6306,7 +6322,9 @@ function ScheduleTable({
 }) {
   if (!items.length) return <EmptyState text="还没有定时任务。" />;
   return (
-    <Table>
+    <>
+      <div className="grid gap-3 lg:hidden" aria-label="手机定时任务">{items.map((task) => <Card key={task.id} size="sm"><CardHeader><div className="flex items-start justify-between gap-3"><InternalLink href={`${moduleBase}/schedules/${task.id}`} className="min-w-0 break-words text-sm font-medium">{task.name}</InternalLink><StatusBadge value={task.last_status ?? (task.enabled ? "enabled" : "disabled")} /></div><CardDescription>{task.schedule_type === "cron" ? task.cron_expression : formatTime(task.run_at)} · {task.timezone}</CardDescription></CardHeader><CardContent><p className="text-sm">下次运行：{formatTime(task.next_run_at)}</p><p className="mt-1 text-xs text-muted-foreground">最近执行：{task.last_run_at ? formatShortTime(task.last_run_at) : "尚未执行"}</p></CardContent><CardFooter className="justify-end gap-2"><BusyButton variant="outline" pending={pending === `${task.id}:toggle`} onClick={() => onToggle(task)}>{task.enabled ? "停用" : "启用"}</BusyButton><TableActionMenu items={[{ key: "run", label: "立即运行", disabled: Boolean(pending) }, { key: "detail", label: "查看详情" }, { key: "edit", label: "编辑" }, { key: "delete", label: "删除任务", destructive: true }]} onClick={(key) => { if (key === "run") onRun(task); if (key === "detail") onDetail(task); if (key === "edit") onEdit(task); if (key === "delete") onDelete(task); }} /></CardFooter></Card>)}</div>
+      <div className="hidden lg:block"><Table>
       <TableHeader>
         <TableRow>
           <TableHead style={{ width: "20%" }}>任务</TableHead>
@@ -6392,7 +6410,8 @@ function ScheduleTable({
           </TableRow>
         ))}
       </TableBody>
-    </Table>
+    </Table></div>
+    </>
   );
 }
 
@@ -6740,6 +6759,16 @@ function ScheduleDetailPage({ scheduleId }: { scheduleId: string }) {
   );
 }
 
+
+function MobileAdvancedFields({title, expand, children}: {title:string; expand:boolean; children:ReactNode}) {
+  const [mobile, setMobile] = useState(() => window.matchMedia("(width < 64rem)").matches);
+  const [open, setOpen] = useState(false);
+  useEffect(() => { const query = window.matchMedia("(width < 64rem)"); const update = () => setMobile(query.matches); query.addEventListener("change", update); return () => query.removeEventListener("change", update); }, []);
+  useEffect(() => { if (expand) setOpen(true); }, [expand]);
+  if (!mobile) return <>{children}</>;
+  return <Collapsible open={open} onOpenChange={setOpen} className="grid gap-3"><CollapsibleTrigger render={<Button variant="outline" className="w-full justify-between" />}><span>{title}</span><ChevronDown className={open ? "rotate-180" : undefined} aria-hidden="true" /></CollapsibleTrigger><CollapsibleContent className="grid gap-4">{children}</CollapsibleContent></Collapsible>;
+}
+
 function SchedulesPage({
   initialScheduleId,
   initialProjectId,
@@ -6926,7 +6955,7 @@ function SchedulesPage({
       enabled: task.enabled,
       riskConfirmed: false,
       notificationConfig:
-        task.notification_config ?? defaultNotificationConfig(),
+        { ...defaultNotificationConfig(), ...task.notification_config, custom_channels: task.notification_config?.custom_channels ?? [] },
     });
     setSecurity(null);
   };
@@ -7399,7 +7428,7 @@ function SchedulesPage({
                 </div>
               </CardContent>
             </Card>
-            <Field label="命令行参数">
+            <MobileAdvancedFields title="命令行参数" expand={Boolean(validationError)}><Field label="命令行参数">
               <Textarea
                 className="tn-python-module__code--compact"
                 value={form.args}
@@ -7410,7 +7439,7 @@ function SchedulesPage({
                   }))
                 }
               />
-            </Field>
+            </Field></MobileAdvancedFields>
             {activeSecurity ? (
               <SecurityConfirmation
                 scan={activeSecurity}
@@ -7669,7 +7698,14 @@ function PersistentTable({
   if (!items.length)
     return <EmptyState text="还没有常驻任务，请先从项目创建。" />;
   return (
-    <Table>
+    <>
+      <div className="grid gap-3 lg:hidden" aria-label="手机常驻任务">{items.map((task) => {
+ const active = ["running", "starting", "restarting", "stopping"].includes(task.status);
+ const transitioning = ["starting", "restarting", "stopping"].includes(task.status);
+ const project = projects.find((item) => item.id === sourceProjectId(task.source.type === "archive" ? task.source : undefined));
+ return <Card key={task.id} size="sm"><CardHeader><div className="flex items-start justify-between gap-3"><Button variant="link" className="h-auto min-w-0 justify-start whitespace-normal p-0 text-left" onClick={() => onSelect(task)}>{task.name}</Button><StatusBadge value={task.status} /></div><CardDescription>{project?.name || "项目包"}</CardDescription></CardHeader><CardContent><p className="text-sm">{active && task.started_at ? formatElapsed(Date.now() - new Date(task.started_at).getTime()) : "未运行"}</p></CardContent><CardFooter className="justify-end gap-2"><BusyButton variant="outline" pending={pending === `${task.id}:${active ? "stop" : "start"}`} disabled={transitioning} onClick={() => active ? onStop(task) : onStart(task)}>{active ? "停止" : "启动"}</BusyButton><TableActionMenu items={[{ key: "restart", label: "重启", disabled: !active || transitioning }, { key: "detail", label: "查看详情" }, { key: "edit", label: "编辑", disabled: active || transitioning }, { key: "delete", label: "删除任务", destructive: true, disabled: active || transitioning }]} onClick={(key) => { if (key === "restart") onRestart(task); if (key === "detail") onSelect(task); if (key === "edit") onEdit(task); if (key === "delete") onDelete(task); }} /></CardFooter></Card>;
+})}</div>
+      <div className="hidden lg:block"><Table>
       <TableHeader>
         <TableRow>
           <TableHead style={{ width: "23%" }}>任务</TableHead>
@@ -7799,7 +7835,8 @@ function PersistentTable({
           );
         })}
       </TableBody>
-    </Table>
+    </Table></div>
+    </>
   );
 }
 
@@ -8299,7 +8336,7 @@ function PersistentPage({
       restartDelay: task.restart_delay_seconds,
       maxRestart: task.max_restart_count,
       notificationConfig:
-        task.notification_config ?? defaultNotificationConfig(),
+        { ...defaultNotificationConfig(), ...task.notification_config, custom_channels: task.notification_config?.custom_channels ?? [] },
       riskConfirmed: false,
     });
     setSecurity(null);
@@ -8461,7 +8498,7 @@ function PersistentPage({
                 项目虚拟环境用于隔离依赖，但不是安全沙箱。请确认项目来源可信。
               </AlertDescription>
             </Alert>
-            <Field
+            <MobileAdvancedFields title="工作目录" expand={Boolean(validationError)}><Field
               label="工作目录（可选）"
               help="相对于项目根目录，例如 scripts；留空时使用项目根目录。"
             >
@@ -8475,8 +8512,8 @@ function PersistentPage({
                 }
                 placeholder="例如：scripts"
               />
-            </Field>
-            <Field label="命令行参数">
+            </Field></MobileAdvancedFields>
+            <MobileAdvancedFields title="命令行参数" expand={Boolean(validationError)}><Field label="命令行参数">
               <Textarea
                 className="tn-python-module__code--compact"
                 value={form.args}
@@ -8487,7 +8524,7 @@ function PersistentPage({
                   }))
                 }
               />
-            </Field>
+            </Field></MobileAdvancedFields>
             <FieldGroup className="tn-python-module__form-grid">
               <SelectField
                 label="运行环境"
@@ -8560,7 +8597,7 @@ function PersistentPage({
                 <AlertDescription>{validationError}</AlertDescription>
               </Alert>
             ) : null}
-            <FieldGroup className="tn-python-module__form-grid">
+            <MobileAdvancedFields title="重启与启动选项" expand={Boolean(validationError)}><FieldGroup className="tn-python-module__form-grid">
               <Field label="重启间隔（秒）">
                 <Input
                   type="number"
@@ -8589,7 +8626,7 @@ function PersistentPage({
                   }
                 />
               </Field>
-            </FieldGroup>
+            </FieldGroup></MobileAdvancedFields>
             <SwitchField
               checked={form.autoStart}
               onCheckedChange={(autoStart) =>

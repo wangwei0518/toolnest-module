@@ -10,6 +10,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { FormField, WorkflowEdge, WorkflowNode } from "../api";
@@ -58,6 +59,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   const [activeId, setActiveId] = useState(initialFieldId && initialFields.some((field) => field.id === initialFieldId) ? initialFieldId : initialFields[0]?.id ?? "");
   const [originIds, setOriginIds] = useState<Record<string, string>>(() => Object.fromEntries(initialFields.map((field) => [field.id, field.id])));
   const [selectedType, setSelectedType] = useState("text");
+  const [mobileFormPanel, setMobileFormPanel] = useState(initialFieldId ? "configuration" : "fields");
   const [preview, setPreview] = useState(false);
   const [previewValues, setPreviewValues] = useState<Record<string, unknown>>({});
   const [fieldIdDraft, setFieldIdDraft] = useState<{ fieldId: string; value: string }>();
@@ -75,6 +77,7 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   const active = activeField?.reference?.path ? activeField : activeField ? (() => { const next = { ...activeField }; delete next.reference; return next; })() : undefined;
   useEffect(() => {
     if (open) return;
+    setMobileFormPanel(initialFieldId ? "configuration" : "fields");
     setFields(initialFields);
     setActiveId(initialFieldId && initialFields.some((field) => field.id === initialFieldId) ? initialFieldId : initialFields[0]?.id ?? "");
     setOriginIds(Object.fromEntries(initialFields.map((field) => [field.id, field.id])));
@@ -149,7 +152,16 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
     setFields((current) => [...current, createField(selectedType, id)]);
     setOriginIds((current) => ({ ...current, [id]: id }));
     setActiveId(id);
+    setMobileFormPanel("configuration");
   };
+  const moveField = (id: string, direction: number) => setFields((current) => {
+    const index = current.findIndex((field) => field.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= current.length) return current;
+    const next = [...current];
+    [next[index], next[target]] = [next[target]!, next[index]!];
+    return next;
+  });
   const removeField = (id: string) => {
     const index = fields.findIndex((field) => field.id === id);
     if (index < 0) return;
@@ -222,17 +234,19 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
     <DialogContent className="flex h-[min(54rem,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[min(90rem,calc(100vw-2rem))] flex-col gap-0 overflow-hidden p-0">
       <DialogHeader className="flex-row items-center justify-between border-b px-5 py-4 pr-12">
         <div><p className="text-xs text-muted-foreground">节点表单</p><DialogTitle className="mt-1">{node.name}</DialogTitle><DialogDescription className="mt-1">{fields.length} 个字段 · 修改会在应用后写入当前节点</DialogDescription></div>
-        <Button variant="secondary" onClick={() => setPreview((value) => !value)}>{preview ? <RiPencilLine data-icon="inline-start" /> : <RiEyeLine data-icon="inline-start" />}{preview ? "继续设计" : "预览表单"}</Button>
+        <Button variant="secondary" onClick={() => { setPreview((value) => !value); setMobileFormPanel("preview"); }}>{preview ? <RiPencilLine data-icon="inline-start" /> : <RiEyeLine data-icon="inline-start" />}{preview ? "继续设计" : "预览表单"}</Button>
       </DialogHeader>
-      <div className="tn-workflow-tickets-form-dialog-grid grid min-h-0 flex-1 overflow-hidden">
+      <Tabs className="shrink-0 px-4 pt-3 lg:hidden" value={mobileFormPanel} onValueChange={(value) => { if (value) setMobileFormPanel(value); }} aria-label="手机表单设计器"><TabsList className="w-full"><TabsTrigger value="fields">字段列表</TabsTrigger><TabsTrigger value="preview">表单预览</TabsTrigger><TabsTrigger value="configuration">字段配置</TabsTrigger></TabsList></Tabs>
+      <div data-mobile-form-panel={mobileFormPanel} className="tn-workflow-tickets-form-dialog-grid grid min-h-0 flex-1 overflow-hidden">
         <aside className="tn-workflow-tickets-form-dialog-fields flex min-h-0 flex-col border-b p-4">
-          <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold">字段结构</h3><p className="text-xs text-muted-foreground">拖动调整顺序</p></div><Badge variant="secondary">{fields.length}</Badge></div>
+          <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-semibold">字段结构</h3><p className="text-xs text-muted-foreground"><span className="lg:hidden">选择字段配置，用箭头调整顺序</span><span className="hidden lg:inline">拖动调整顺序</span></p></div><Badge variant="secondary">{fields.length}</Badge></div>
           <div className="mb-3 flex gap-2"><Select value={selectedType} onValueChange={(value) => value && setSelectedType(value)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{["基础字段", "选择字段", "高级字段", "执行字段", "附件字段"].map((group) => <SelectGroup key={group}><SelectLabel>{group}</SelectLabel>{fieldTypes.filter((field) => field.group === group).map((field) => <SelectItem key={field.value} value={field.value}>{field.label}</SelectItem>)}</SelectGroup>)}</SelectContent></Select><Button size="icon" aria-label="新增字段" onClick={addField}><RiAddLine /></Button></div>
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto" onDragOver={(event) => event.preventDefault()} onDrop={dropField}>
-            {fields.map((field) => <div key={field.id} onDragOver={(event) => { event.preventDefault(); setDropId(field.id); }} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 transition-colors ${field.id === activeId ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/60"} ${dropId === field.id ? "border-primary" : ""}`}>
-              <button type="button" draggable onDragStart={() => { setDraggingId(field.id); setActiveId(field.id); }} onDragEnd={() => { setDraggingId(""); setDropId(""); }} onClick={() => setActiveId(field.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+            {fields.map((field, fieldIndex) => <div key={field.id} onDragOver={(event) => { event.preventDefault(); setDropId(field.id); }} className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 transition-colors ${field.id === activeId ? "border-primary bg-primary/5" : "border-transparent hover:bg-muted/60"} ${dropId === field.id ? "border-primary" : ""}`}>
+              <button type="button" draggable onDragStart={() => { setDraggingId(field.id); setActiveId(field.id); }} onDragEnd={() => { setDraggingId(""); setDropId(""); }} onClick={() => { setActiveId(field.id); setMobileFormPanel("configuration"); }} className="flex max-lg:min-h-11 min-w-0 flex-1 items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 <RiDraggable className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm font-medium">{field.label || "未命名字段"}</strong><small className="block truncate text-xs text-muted-foreground">{fieldTypeLabel(field.type)}</small></span>
               </button>
+              <div className="flex lg:hidden"><Button type="button" size="icon-sm" variant="ghost" aria-label={`上移字段 ${field.label || "未命名字段"}`} disabled={fieldIndex === 0} onClick={() => moveField(field.id, -1)}><RiArrowUpLine /></Button><Button type="button" size="icon-sm" variant="ghost" aria-label={`下移字段 ${field.label || "未命名字段"}`} disabled={fieldIndex === fields.length - 1} onClick={() => moveField(field.id, 1)}><RiArrowDownLine /></Button></div>
               <Button type="button" variant="destructiveSolid" size="icon-sm" aria-label={`删除字段 ${field.label || "未命名字段"}`} onClick={() => requestFieldDelete(field.id)}><RiDeleteBinLine /></Button>
             </div>)}
             {!fields.length ? <p className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">选择字段类型并新增。</p> : null}

@@ -9,6 +9,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress, ProgressValue } from "@/components/ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { deviceProfile } from "@/lib/device-profile";
@@ -74,6 +75,7 @@ export function EditorView({
   onSave,
   onDownload,
 }: EditorViewProps) {
+  const [previewOpen, setPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -202,6 +204,7 @@ export function EditorView({
           </CardContent>
         </Card>
 
+        <div className="lg:hidden"><Button className="w-full" variant="outline" onClick={() => setPreviewOpen(true)}>查看背屏效果</Button><Dialog open={previewOpen} onOpenChange={setPreviewOpen}><DialogContent className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>背屏效果预览</DialogTitle><DialogDescription>预览当前裁剪在手机背屏上的效果，关闭后继续编辑。</DialogDescription></DialogHeader><div className="mx-auto w-full max-w-56"><DevicePreview sourceUrl={draft?.url} motionUrl={draft?.motionUrl} crop={draft?.crop} /></div></DialogContent></Dialog></div>
         {job ? (
           <div className="tn-xiaomi-rear-wallpaper__job-status" role="status" aria-live="polite">
             <div className="tn-xiaomi-rear-wallpaper__job-copy">
