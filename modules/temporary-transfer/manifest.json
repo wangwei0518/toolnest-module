@@ -1,0 +1,56 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "temporary-transfer",
+  "name": "临时投递",
+  "version": "0.1.0",
+  "description": "跨设备临时文件与文字投递",
+  "author": "ToolNest",
+  "icon": "box",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "node",
+    "entry": "backend/dist/main.js",
+    "transport": "http",
+    "startup": "eager",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 30000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": ["/public"]
+  },
+  "api": {
+    "base_path": "/api/v1/modules/temporary-transfer"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@toolnest/react-module-sdk"
+    ]
+  },
+  "permissions": [
+    "temporary.transfer.read",
+    "temporary.transfer.create",
+    "temporary.transfer.update",
+    "temporary.transfer.delete"
+  ],
+  "capabilities": [
+    "temporary.transfer.basic"
+  ],
+  "menus": [
+    {
+      "key": "temporary-transfer",
+      "label": "临时投递",
+      "path": "",
+      "icon": "box",
+      "order": 100
+    }
+  ],
+  "settings": []
+}

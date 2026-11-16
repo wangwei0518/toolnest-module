@@ -1,0 +1,9 @@
+:root, .tn-dev {
+  --radius: .625rem; --background: oklch(1 0 0); --foreground: oklch(.145 0 0);
+  --card: oklch(1 0 0); --card-foreground: oklch(.145 0 0); --popover: oklch(1 0 0); --popover-foreground: oklch(.145 0 0);
+  --primary: oklch(.527 .154 150.069); --primary-foreground: oklch(.982 .018 155.826);
+  --secondary: oklch(.967 .001 286.375); --secondary-foreground: oklch(.21 .006 285.885);
+  --muted: oklch(.97 0 0); --muted-foreground: oklch(.556 0 0); --accent: oklch(.97 0 0); --accent-foreground: oklch(.205 0 0);
+  --destructive: oklch(.577 .245 27.325); --border: oklch(.922 0 0); --input: oklch(.922 0 0); --ring: oklch(.708 0 0);
+}
+.tn-dev { min-height: 100dvh; background: var(--background); color: var(--foreground); font-family: system-ui, sans-serif; }

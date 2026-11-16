@@ -7,3 +7,7 @@ dist/
 .env
 .env.*
 !.env.example
+/tmp/temporary-transfer-dev/
+/tmp/temporary-transfer-logs/
+/tmp/temporary-transfer-dev-fixtures/
+/tmp/temporary-transfer-browser/
