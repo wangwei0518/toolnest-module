@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import { R2Storage } from "./r2.js";
+import { disposition } from "./r2.js";
+import { LocalStorage } from "./local-storage.js";
+import { selectStorage } from "./storage.js";
 import { SettingsStore } from "./settings.js";
-import { TransferStore } from "./store.js";
+import { TransferStore, type StorageBackend } from "./store.js";
 import { VerificationLimiter } from "./rate-limit.js";
 
 const PART_SIZE = 5 * 1024 * 1024;
@@ -23,6 +25,7 @@ function body(request: FastifyRequest): Record<string, unknown> {
 }
 
 function params(request: FastifyRequest) { return request.params as Record<string, string>; }
+function localToken(request: FastifyRequest) { const token = (request.query as { token?: unknown }).token; return typeof token === "string" ? token : ""; }
 function text(value: unknown, max: number) {
   if (typeof value !== "string" || value.length > max) throw new Error("输入内容无效");
   return value;
@@ -32,12 +35,51 @@ function integer(value: unknown, min: number, max: number) {
   return value;
 }
 
-export function registerRoutes(app: FastifyInstance, store: TransferStore, settings: SettingsStore, initializing: Set<string>, platform?: { apiUrl: string; moduleId: string; token: string }) {
-  const storage = () => {
-    const config = settings.get().r2;
-    if (!config) throw new Error("尚未配置 R2 存储");
-    return new R2Storage(config);
-  };
+export function registerRoutes(app: FastifyInstance, store: TransferStore, settings: SettingsStore, initializing: Set<string>, platform?: { apiUrl: string; moduleId: string; token: string }, localStorage?: LocalStorage) {
+  const local = localStorage ?? new LocalStorage(store.dataDir);
+  const storage = (backend: StorageBackend) => selectStorage(backend, settings, local);
+  const settingsValue = (request: FastifyRequest) => ({ ...settings.publicValue(),
+    adminContextAvailable: request.headers["x-toolnest-user-is-admin"] !== undefined,
+    canManageSettings: request.headers["x-toolnest-user-is-admin"] === "true" });
+  let activeLocalUploads = 0;
+  const localUploads = new WeakSet<FastifyRequest>();
+  const releaseUpload = (request: FastifyRequest) => { if (localUploads.delete(request)) activeLocalUploads -= 1; };
+  app.addHook("onResponse", async (request) => releaseUpload(request));
+  app.addHook("onRequestAbort", async (request) => releaseUpload(request));
+
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer", bodyLimit: PART_SIZE }, (_request, bytes, done) => done(null, bytes));
+  app.put("/public/local-upload", { bodyLimit: PART_SIZE, onRequest: async (request, reply) => {
+    const claim = local.verify(localToken(request));
+    if (!claim || claim.op !== "upload" || !store.localUploadActive(claim.key, claim.uploadId)) return reply.code(403).send({ message: "上传授权无效或投递已失效" });
+    if (request.headers["content-length"] !== undefined && Number(request.headers["content-length"]) !== claim.size) return reply.code(400).send({ message: "上传分片大小不匹配" });
+    if (activeLocalUploads >= 8) return reply.code(429).send({ message: "上传请求过多，请稍后重试" });
+    activeLocalUploads += 1; localUploads.add(request);
+  } }, async (request, reply) => {
+    const claim = local.verify(localToken(request));
+    if (!claim || claim.op !== "upload" || !Buffer.isBuffer(request.body)) return reply.code(400).send({ message: "上传分片格式无效" });
+    const etag = await local.putPart(claim, request.body, () => store.localUploadActive(claim.key, claim.uploadId));
+    return reply.header("etag", etag).code(204).send();
+  });
+  app.get("/public/local-download", async (request, reply) => {
+    const claim = local.verify(localToken(request));
+    if (!claim || claim.op !== "download") return reply.code(403).send({ message: "下载授权无效或已过期" });
+    const file = store.localDownloadFile(claim.key);
+    if (!file || !await local.hasCompletedObject(claim.key, file.size)) return reply.code(404).send({ message: "文件不存在或投递已失效" });
+    reply.type("application/octet-stream").header("content-disposition", disposition(file.filename))
+      .header("cache-control", "private, no-store").header("x-content-type-options", "nosniff").header("accept-ranges", "bytes");
+    const range = request.headers.range;
+    let start = 0; let end = file.size - 1;
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!match || !(match[1] || match[2]) || file.size === 0) return reply.header("content-range", `bytes */${file.size}`).code(416).send();
+      if (!match[1]) start = Math.max(0, file.size - Number(match[2]));
+      else { start = Number(match[1]); if (match[2]) end = Math.min(end, Number(match[2])); }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= file.size) return reply.header("content-range", `bytes */${file.size}`).code(416).send();
+      reply.code(206).header("content-range", `bytes ${start}-${end}/${file.size}`);
+    }
+    reply.header("content-length", file.size ? end - start + 1 : 0);
+    return file.size ? reply.send(createReadStream(local.objectPath(claim.key), { start, end })) : reply.send(Buffer.alloc(0));
+  });
 
   app.get("/public/assets/:asset", async (request, reply) => {
     const asset = params(request).asset;
@@ -57,6 +99,8 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
   app.setErrorHandler((error, _request, reply) => {
     const message = error instanceof Error ? error.message : "请求失败";
     if (message === "无法识别登录用户") return reply.code(401).send({ message });
+    if (["上传分片大小不匹配", "上传分片不完整或大小不匹配", "上传完成后的文件大小不匹配"].includes(message)) return reply.code(400).send({ message });
+    if ((error as NodeJS.ErrnoException).code === "ENOSPC") return reply.code(507).send({ message: "服务器磁盘空间不足，请联系管理员清理。" });
     // Remote errors can include request metadata; do not expose signed URLs or credentials.
     if (["请求格式无效", "尚未配置 R2 存储", "输入内容无效", "输入数值超出允许范围", "输入内容不能为空", "输入类型无效", "输入文件名无效", "上传文件信息不一致", "投递不存在或已失效", "投递文件不存在或已失效", "投递已失效", "暂存空间不足", "有效投递数量已达上限", "单次投递最多包含 20 个文件", "暂存空间中仍有文件，请先清理后再更换存储桶", "配置格式无效", "默认期限不能超过最大期限", "单文件上限不能超过总容量", "R2 配置无效", "R2 凭证或存储桶配置无效"].includes(message) || /^[a-zA-Z]+ 超出允许范围$/.test(message)) {
       return reply.code(400).send({ message });
@@ -86,10 +130,11 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
         }
       } catch { /* Use the browser origin when the platform has no public address. */ }
     }
-    return { ...settings.publicValue(), publicBaseUrl };
+    return { ...settingsValue(request), publicBaseUrl };
   });
   app.put("/transfer-settings", async (request, reply) => {
     owner(request);
+    if (request.headers["x-toolnest-user-is-admin"] === undefined) return reply.code(403).send({ message: "宿主未传递管理员身份，请升级或重启 ToolNest 宿主后端。" });
     if (request.headers["x-toolnest-user-is-admin"] !== "true") return reply.code(403).send({ message: "仅管理员可以修改配置" });
     const input = body(request);
     const existing = settings.get();
@@ -100,11 +145,11 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
       accessKeyId: incoming.accessKeyId || existing.r2?.accessKeyId,
       secretAccessKey: incoming.secretAccessKey || existing.r2?.secretAccessKey,
     };
-    if (store.hasFiles() && (!r2 || r2.accountId !== existing.r2?.accountId || r2.bucket !== existing.r2?.bucket)) {
+    if (store.hasR2Files() && (!r2 || r2.accountId !== existing.r2?.accountId || r2.bucket !== existing.r2?.bucket)) {
       throw new Error("暂存空间中仍有文件，请先清理后再更换存储桶");
     }
     await settings.save({ ...existing, ...input, r2 });
-    return settings.publicValue();
+    return settingsValue(request);
   });
 
   app.get("/transfers", async (request) => {
@@ -125,7 +170,6 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
       return reply.code(201).send(store.createText(user, title, content, expiresAt, maxGrants, settings.get().maxTotalBytes));
     }
     if (input.kind === "files") {
-      storage();
       return reply.code(201).send(store.createFiles(user, title, expiresAt, maxGrants));
     }
     throw new Error("输入类型无效");
@@ -150,8 +194,8 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
     const clientId = text(input.clientId, 36);
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) throw new Error("输入内容无效");
     const size = integer(input.size, 0, settings.get().maxFileBytes);
-    const r2 = storage();
-    const file = store.addFile(user, id, clientId, filename, size, settings.get().maxTotalBytes);
+    const file = store.addFile(user, id, clientId, filename, size, settings.get().maxTotalBytes, settings.get().r2 ? "r2" : "local");
+    const r2 = storage(file.backend);
     if (file.existing) {
       if (file.state !== "pending" || file.uploadId) return { id: file.id, partSize: PART_SIZE, partCount: Math.max(1, Math.ceil(size / PART_SIZE)) };
       if (initializing.has(file.id)) return reply.code(409).send({ message: "上传初始化中，请稍后重试" });
@@ -189,7 +233,7 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
     if (!file) throw new Error("投递文件不存在或已失效");
     if (file.state === "ready") return { parts: [], completed: true };
     if (!file.upload_id) throw new Error("投递文件不存在或已失效");
-    const r2 = storage();
+    const r2 = storage(file.storage_backend);
     if (file.upload_id === EMPTY_UPLOAD) {
       if (await r2.hasCompletedObject(file.object_key, 0)) {
         if (!store.markFileReady(file.id)) { await r2.remove(file.object_key); throw new Error("投递已失效"); }
@@ -228,13 +272,13 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
     const part = integer(Number(params(request).part), 1, Math.max(1, Math.ceil(file.size / PART_SIZE)));
     if (file.upload_id === EMPTY_UPLOAD) throw new Error("投递文件不存在或已失效");
     const size = Math.min(PART_SIZE, file.size - (part - 1) * PART_SIZE);
-    return { url: await storage().signPart(file.object_key, file.upload_id, part, size) };
+    return { url: await storage(file.storage_backend).signPart(file.object_key, file.upload_id, part, size) };
   });
   app.post("/transfers/:id/files/:file/complete", async (request) => {
     const file = store.ownedFile(owner(request), params(request).id ?? "", params(request).file ?? "");
     if (file?.state === "ready") return { ok: true };
     if (!file?.upload_id || file.state !== "pending") throw new Error("投递文件不存在或已失效");
-    const r2 = storage();
+    const r2 = storage(file.storage_backend);
     if (file.upload_id === EMPTY_UPLOAD) {
       if (!await r2.hasCompletedObject(file.object_key, 0)) throw new Error("投递文件不存在或已失效");
     } else await r2.complete(file.object_key, file.upload_id, file.size, PART_SIZE);
@@ -268,7 +312,7 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
     const fileId = params(request).file ?? "";
     const file = store.fileGrantCandidate(transferId, fileId);
     if (!file) return reply.code(404).send({ message: "文件不可用或已达到授权次数限制" });
-    const url = await storage().download(file.object_key);
+    const url = await storage(file.storage_backend).download(file.object_key);
     if (typeof code !== "string" || !store.claimFileGrant(transferId, fileId, code)) return reply.code(404).send({ message: "文件不可用或已达到授权次数限制" });
     return reply.header("cache-control", "no-store").send({ url });
   });

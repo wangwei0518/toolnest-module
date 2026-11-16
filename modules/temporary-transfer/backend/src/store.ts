@@ -3,12 +3,15 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 
-/** Metadata lives outside the immutable module release. Object bytes live in R2. */
+export type StorageBackend = "r2" | "local";
+export type StoredFile = { id: string; object_key: string; filename: string; size: number; upload_id: string | null; state: string; storage_backend: StorageBackend };
+
+/** Metadata and local objects live outside the immutable module release. */
 export class TransferStore {
   private readonly db: DatabaseSync;
   private readonly shareKey: Buffer;
 
-  constructor(dataDir: string) {
+  constructor(readonly dataDir: string) {
     const keyPath = path.join(dataDir, "share-key");
     try { this.shareKey = readFileSync(keyPath); }
     catch (error) {
@@ -39,7 +42,8 @@ export class TransferStore {
         id TEXT PRIMARY KEY, transfer_id TEXT NOT NULL REFERENCES transfers(id),
         object_key TEXT NOT NULL UNIQUE, filename TEXT NOT NULL, size INTEGER NOT NULL,
         upload_id TEXT, state TEXT NOT NULL DEFAULT 'pending',
-        cleanup_attempts INTEGER NOT NULL DEFAULT 0, cleanup_last_at INTEGER
+        cleanup_attempts INTEGER NOT NULL DEFAULT 0, cleanup_last_at INTEGER,
+        storage_backend TEXT NOT NULL DEFAULT 'r2'
       );
       CREATE INDEX IF NOT EXISTS files_transfer ON files(transfer_id);
     `);
@@ -60,6 +64,7 @@ export class TransferStore {
     const fileColumns = this.db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
     if (!fileColumns.some((column) => column.name === "cleanup_attempts")) this.db.exec("ALTER TABLE files ADD COLUMN cleanup_attempts INTEGER NOT NULL DEFAULT 0");
     if (!fileColumns.some((column) => column.name === "cleanup_last_at")) this.db.exec("ALTER TABLE files ADD COLUMN cleanup_last_at INTEGER");
+    if (!fileColumns.some((column) => column.name === "storage_backend")) this.db.exec("ALTER TABLE files ADD COLUMN storage_backend TEXT NOT NULL DEFAULT 'r2'");
   }
 
   createText(ownerId: string, title: string, content: string, expiresAt: number, maxGrants: number | null, maxTotalBytes: number) {
@@ -122,28 +127,27 @@ export class TransferStore {
   }
 
   /** Reserve declared bytes transactionally before initiating a remote upload. */
-  addFile(ownerId: string, transferId: string, id: string, filename: string, size: number, maxTotalBytes: number) {
+  addFile(ownerId: string, transferId: string, id: string, filename: string, size: number, maxTotalBytes: number, backend: StorageBackend = "r2") {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const transfer = this.db.prepare("SELECT id FROM transfers WHERE id = ? AND owner_id = ? AND state = 'uploading' AND revoked_at IS NULL AND expires_at > ?")
         .get(transferId, ownerId, Date.now());
       if (!transfer) throw new Error("投递不存在或已失效");
-      const existing = this.db.prepare("SELECT id, object_key, filename, size, upload_id, state FROM files WHERE id = ? AND transfer_id = ?").get(id, transferId) as
-        | { id: string; object_key: string; filename: string; size: number; upload_id: string | null; state: string } | undefined;
+      const existing = this.db.prepare("SELECT * FROM files WHERE id = ? AND transfer_id = ?").get(id, transferId) as StoredFile | undefined;
       if (existing) {
         if (existing.filename !== filename || existing.size !== size) throw new Error("上传文件信息不一致");
         this.db.exec("COMMIT");
-        return { id, key: existing.object_key, existing: true, uploadId: existing.upload_id, state: existing.state };
+        return { id, key: existing.object_key, existing: true, uploadId: existing.upload_id, state: existing.state, backend: existing.storage_backend };
       }
       const count = this.db.prepare("SELECT COUNT(*) AS total FROM files WHERE transfer_id = ?").get(transferId) as { total: number };
       if (count.total >= 20) throw new Error("单次投递最多包含 20 个文件");
       if (this.usage() + size > maxTotalBytes) throw new Error("暂存空间不足");
       const key = `transfers/${transferId}/${id}`;
-      this.db.prepare("INSERT INTO files (id, transfer_id, object_key, filename, size) VALUES (?, ?, ?, ?, ?)")
-        .run(id, transferId, key, filename, size);
+      this.db.prepare("INSERT INTO files (id, transfer_id, object_key, filename, size, storage_backend) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(id, transferId, key, filename, size, backend);
       this.db.prepare("UPDATE transfers SET file_total = file_total + 1, size_bytes = size_bytes + ? WHERE id = ?").run(size, transferId);
       this.db.exec("COMMIT");
-      return { id, key, existing: false, uploadId: null, state: "pending" };
+      return { id, key, existing: false, uploadId: null, state: "pending", backend };
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
@@ -164,7 +168,7 @@ export class TransferStore {
     return this.db.prepare(`SELECT f.* FROM files f JOIN transfers t ON t.id = f.transfer_id
       WHERE f.id = ? AND t.id = ? AND t.owner_id = ? AND t.revoked_at IS NULL AND t.expires_at > ?`)
       .get(fileId, transferId, ownerId, Date.now()) as
-      | { id: string; object_key: string; filename: string; size: number; upload_id: string | null; state: string }
+      | StoredFile
       | undefined;
   }
 
@@ -186,10 +190,10 @@ export class TransferStore {
   }
 
   cleanupCandidates() {
-    return this.db.prepare(`SELECT f.id, f.object_key, f.upload_id, f.state FROM files f JOIN transfers t ON t.id = f.transfer_id
+    return this.db.prepare(`SELECT f.id, f.object_key, f.upload_id, f.state, f.storage_backend FROM files f JOIN transfers t ON t.id = f.transfer_id
       WHERE t.revoked_at IS NOT NULL OR t.expires_at <= ? OR (t.exhausted_at IS NOT NULL AND t.exhausted_at <= ?)
       ORDER BY COALESCE(f.cleanup_last_at, 0), f.rowid LIMIT 100`).all(Date.now(), Date.now() - 120_000) as
-      Array<{ id: string; object_key: string; upload_id: string | null; state: string }>;
+      Array<{ id: string; object_key: string; upload_id: string | null; state: string; storage_backend: StorageBackend }>;
   }
 
   markCleanupFailure(fileId: string) {
@@ -208,7 +212,7 @@ export class TransferStore {
   }
 
   files(transferId: string) {
-    return this.db.prepare("SELECT id, filename, size FROM files WHERE transfer_id = ? AND state = 'ready' ORDER BY rowid").all(transferId);
+    return this.db.prepare("SELECT id, filename, size, storage_backend FROM files WHERE transfer_id = ? AND state = 'ready' ORDER BY rowid").all(transferId);
   }
 
   usage() {
@@ -218,13 +222,26 @@ export class TransferStore {
 
   fileUsage() { return (this.db.prepare("SELECT COALESCE(SUM(size), 0) AS total FROM files").get() as { total: number }).total; }
   hasFiles() { return Boolean(this.db.prepare("SELECT 1 FROM files LIMIT 1").get()); }
+  hasR2Files() { return Boolean(this.db.prepare("SELECT 1 FROM files WHERE storage_backend = 'r2' LIMIT 1").get()); }
+
+  localUploadActive(key: string, uploadId: string) {
+    return Boolean(this.db.prepare(`SELECT 1 FROM files f JOIN transfers t ON t.id = f.transfer_id
+      WHERE f.object_key = ? AND f.upload_id = ? AND f.storage_backend = 'local' AND f.state = 'pending'
+      AND t.state = 'uploading' AND t.revoked_at IS NULL AND t.expires_at > ?`).get(key, uploadId, Date.now()));
+  }
+
+  localDownloadFile(key: string) {
+    return this.db.prepare(`SELECT f.filename, f.size FROM files f JOIN transfers t ON t.id = f.transfer_id
+      WHERE f.object_key = ? AND f.storage_backend = 'local' AND f.state = 'ready' AND t.state = 'ready'
+      AND t.revoked_at IS NULL AND t.expires_at > ?`).get(key, Date.now()) as { filename: string; size: number } | undefined;
+  }
 
   /** One grant counts one issued download URL, not a completed download. */
   fileGrantCandidate(transferId: string, fileId: string) {
-    return this.db.prepare(`SELECT f.object_key, f.filename FROM files f JOIN transfers t ON t.id = f.transfer_id
+    return this.db.prepare(`SELECT f.object_key, f.filename, f.storage_backend FROM files f JOIN transfers t ON t.id = f.transfer_id
       WHERE t.id = ? AND f.id = ? AND f.state = 'ready' AND t.state = 'ready' AND t.revoked_at IS NULL AND t.expires_at > ?
       AND (t.max_grants IS NULL OR t.grant_count < t.max_grants)`)
-      .get(transferId, fileId, Date.now()) as { object_key: string; filename: string } | undefined;
+      .get(transferId, fileId, Date.now()) as { object_key: string; filename: string; storage_backend: StorageBackend } | undefined;
   }
 
   claimFileGrant(transferId: string, fileId: string, code: string) {
@@ -245,7 +262,8 @@ export class TransferStore {
 
   list(ownerId: string, offset = 0) {
     const rows = this.db.prepare(`SELECT t.id, t.title, t.created_at, t.expires_at, t.revoked_at, t.exhausted_at, t.max_grants, t.grant_count, t.state,
-      t.content_kind, t.file_total AS file_count, t.size_bytes AS size
+      t.content_kind, t.file_total AS file_count, t.size_bytes AS size,
+      (SELECT GROUP_CONCAT(DISTINCT f.storage_backend) FROM files f WHERE f.transfer_id = t.id) AS storage_backend
       FROM transfers t WHERE t.owner_id = ? ORDER BY t.created_at DESC, t.id DESC LIMIT 101 OFFSET ?`).all(ownerId, offset);
     return { items: rows.slice(0, 100), nextOffset: rows.length > 100 ? offset + 100 : null };
   }

@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { api, uploadPart, type CreatedTransfer, type Settings, type Transfer, type UploadFile } from "./api/transfer";
+import { getTransferErrorMessage } from "./api/errors";
 
 type UploadJob = { transfer: CreatedTransfer; files: Array<{ file: File; clientId: string; remote?: UploadFile; completed: boolean }> };
 type ResumeJob = { transfer: Omit<CreatedTransfer, "code">; files: Array<{ name: string; size: number; modified: number; clientId?: string; remote?: UploadFile; completed: boolean }> };
@@ -38,12 +39,15 @@ function readResume(): ResumeJob | null {
 }
 const bytes = (size: number) => size < 1048576 ? `${(size / 1024).toFixed(1)} KiB` : `${(size / 1048576).toFixed(1)} MiB`;
 
-function StatusTag({ item }: { item: Transfer }) {
-  const status = item.revoked_at ? "已撤销" : item.expires_at <= Date.now() ? "已过期" : item.exhausted_at ? "授权次数已用完" : item.state === "uploading" ? "上传未完成" : "可接收";
+function StatusTag({ item, now }: { item: Transfer; now: number }) {
+  const status = item.revoked_at ? "已撤销" : item.expires_at <= now ? "已过期" : item.exhausted_at ? "授权次数已用完" : item.state === "uploading" ? "上传未完成" : "可接收";
   return <Badge variant={status === "可接收" ? "default" : "secondary"}>{status}</Badge>;
 }
 
 export function Inbox() {
+  const [now, setNow] = useState(Date.now);
+  const [hasJob, setHasJob] = useState(false);
+  const [completedFiles, setCompletedFiles] = useState<boolean[]>([]);
   const [items, setItems] = useState<Transfer[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [used, setUsed] = useState(0);
@@ -74,10 +78,11 @@ export function Inbox() {
 
   async function refresh() {
     try { const [list, config] = await Promise.all([api.list(), api.settings()]); setItems(list.items); setNextOffset(list.nextOffset ?? null); setUsed(list.usedBytes); setCleanupFailures(list.cleanupFailures ?? 0); setSettings(config); setHours(config.defaultHours); setMaxGrants(config.defaultMaxGrants == null ? "" : String(config.defaultMaxGrants)); setError(""); }
-    catch { setError("读取投递箱失败，请重试。"); }
+    catch (reason) { setError(getTransferErrorMessage(reason, "读取投递箱失败，请重试。")); }
     finally { setLoading(false); }
   }
   useEffect(() => { void refresh(); return () => abortUpload.current?.abort(); }, []);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer); }, []);
 
   async function loadMore() {
     if (nextOffset === null || loadingMore) return;
@@ -114,7 +119,7 @@ export function Inbox() {
       remember(current);
       const remote = item.remote;
       const prior = await api.parts(current.transfer.id, remote.id);
-      if (prior.completed) { item.completed = true; completed += item.file.size; remember(current); setProgress(total ? Math.min(100, (completed / total) * 100) : 100); continue; }
+      if (prior.completed) { item.completed = true; setCompletedFiles(current.files.map((entry) => entry.completed)); completed += item.file.size; remember(current); setProgress(total ? Math.min(100, (completed / total) * 100) : 100); continue; }
       const done = new Map(prior.parts.map((part) => [part.PartNumber, part]));
       const pending: number[] = [];
       for (let part = 1; part <= remote.partCount; part += 1) {
@@ -146,6 +151,7 @@ export function Inbox() {
       if (failed?.status === "rejected") throw failed.reason;
       await api.completeFile(current.transfer.id, remote.id);
       item.completed = true;
+      setCompletedFiles(current.files.map((entry) => entry.completed));
       remember(current);
     }
     await api.publish(current.transfer.id);
@@ -155,7 +161,7 @@ export function Inbox() {
     }
     try { localStorage.removeItem(resumeKey); } catch { /* No local persistence available. */ }
     setResume(null);
-    setShare(current.transfer); job.current = null; setFiles([]); setProgress(0); setFileProgress(0); setCurrentIndex(-1); setRate(0); setEta(null); setCurrentFile("");
+    setShare(current.transfer); job.current = null; setHasJob(false); setCompletedFiles([]); setFiles([]); setProgress(0); setFileProgress(0); setCurrentIndex(-1); setRate(0); setEta(null); setCurrentFile("");
     await refresh();
   }
 
@@ -165,14 +171,15 @@ export function Inbox() {
     setBusy(true); setError(""); setNotice("");
     try {
       if (job.current) { const controller = new AbortController(); abortUpload.current = controller; await finishUpload(job.current, controller.signal); return; }
+      if (!settings) throw new Error("尚未读取到模块配置，请刷新页面后重试。");
       if (mode === "files" && files.length === 0) throw new Error("请选择要发送的文件。");
       if (mode === "files" && (files.length > 20 || files.some((file) => file.size > (settings?.maxFileBytes ?? 0)))) throw new Error("文件数量过多或超过单文件大小限制。");
-      if (mode === "files" && files.some((file) => !file.name.trim() || file.name.trim().length > 180 || /[\u0000-\u001f\u007f]/.test(file.name))) throw new Error("文件名为空、过长或包含不支持的字符。");
+      if (mode === "files" && files.some((file) => !file.name.trim() || file.name.trim().length > 180 || Array.from(file.name).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))) throw new Error("文件名为空、过长或包含不支持的字符。");
       if (mode === "text" && !content.trim()) throw new Error("请输入要发送的文字或链接。");
       const transfer = await api.create({ kind: mode, title: mode === "files" ? files[0]?.name ?? "文件投递" : "文字投递", content, hours, maxGrants: mode === "files" && maxGrants ? Number(maxGrants) : null });
       if (mode === "text") { setContent(""); setShare(transfer); await refresh(); }
-      else { job.current = { transfer, files: files.map((file) => ({ file, clientId: crypto.randomUUID(), completed: false })) }; remember(job.current); const controller = new AbortController(); abortUpload.current = controller; await finishUpload(job.current, controller.signal); }
-    } catch (reason) { setError(reason instanceof Error && !reason.message.includes("status code") ? reason.message : "创建或上传失败，请检查设置和网络后重试。"); }
+      else { job.current = { transfer, files: files.map((file) => ({ file, clientId: crypto.randomUUID(), completed: false })) }; setHasJob(true); setCompletedFiles(files.map(() => false)); remember(job.current); const controller = new AbortController(); abortUpload.current = controller; await finishUpload(job.current, controller.signal); }
+    } catch (reason) { setError(getTransferErrorMessage(reason, "创建或上传失败，请检查设置和网络后重试。")); }
     finally { abortUpload.current = null; setBusy(false); }
   }
 
@@ -213,13 +220,14 @@ export function Inbox() {
     }
     if (remaining.length) { setError("所选文件与待续传任务不一致。"); return; }
     job.current = { transfer: { ...resume.transfer, code: "" }, files: restored };
+    setHasJob(true); setCompletedFiles(restored.map((entry) => entry.completed));
     setFiles(restored.map((item) => item.file)); setError(""); setNotice("已找到待续传文件，请点击继续上传。");
   }
   async function discardResume() {
     const id = job.current?.transfer.id ?? resume?.transfer.id;
     if (!id) return;
     setBusy(true);
-    try { await api.revoke(id); localStorage.removeItem(resumeKey); setResume(null); job.current = null; setFiles([]); setCurrentFile(""); setDiscardOpen(false); setNotice("已撤销待续传任务。"); await refresh(); }
+    try { await api.revoke(id); localStorage.removeItem(resumeKey); setResume(null); job.current = null; setHasJob(false); setCompletedFiles([]); setFiles([]); setCurrentFile(""); setDiscardOpen(false); setNotice("已撤销待续传任务。"); await refresh(); }
     catch { setError("撤销待续传任务失败，请重试。"); }
     finally { setBusy(false); }
   }
@@ -228,25 +236,26 @@ export function Inbox() {
     <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(15rem,1fr)]">
       <Card><CardHeader><CardTitle>快速投递</CardTitle><CardDescription>文件、文字和链接可在设备之间限期分享。</CardDescription></CardHeader><CardContent>
         <form onSubmit={(event) => void create(event)} className="flex flex-col gap-4">
-          {resume && !job.current && <p role="status">发现未完成的上传，请重新选择原来的 {resume.files.length} 个文件。<Button type="button" variant="ghost" size="sm" onClick={() => setDiscardOpen(true)}>撤销任务</Button></p>}
-          <Tabs value={mode} onValueChange={(value) => { if (value) setMode(value); }}><TabsList><TabsTrigger value="files" disabled={busy || Boolean(job.current)}>文件</TabsTrigger><TabsTrigger value="text" disabled={busy || Boolean(job.current) || Boolean(resume)}>文字 / 链接</TabsTrigger></TabsList>
-            <TabsContent value="files"><Field><FieldLabel htmlFor="transfer-files" className="tn-transfer-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!busy && !job.current) selectFiles(Array.from(event.dataTransfer.files)); }}><RiUploadCloud2Line aria-hidden="true" /><span>选择文件或拖入这里</span><span className="text-muted-foreground">支持多个文件，单次最多 20 个</span><Input id="transfer-files" className="sr-only" type="file" multiple disabled={busy || Boolean(job.current)} onChange={(event) => selectFiles(Array.from(event.target.files ?? []))} /></FieldLabel></Field>
-              {files.length > 0 && <ul className="mt-3 flex flex-col gap-2">{files.map((file, index) => <li key={`${file.name}-${index}`} className="flex min-w-0 items-center justify-between gap-3"><span className="min-w-0 truncate" title={file.name}>{file.name} · {bytes(file.size)}</span>{job.current ? <span className="shrink-0 text-muted-foreground">{job.current.files[index]?.completed ? "已完成" : index === currentIndex ? busy ? `上传中 ${Math.round(fileProgress)}%` : "已暂停或失败" : "等待中"}</span> : <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setFiles((previous) => previous.filter((_, i) => i !== index))}>移除</Button>}</li>)}</ul>}
+          {resume && !hasJob && <p role="status">发现未完成的上传，请重新选择原来的 {resume.files.length} 个文件。<Button type="button" variant="ghost" size="sm" onClick={() => setDiscardOpen(true)}>撤销任务</Button></p>}
+          {settings && <p role="status" className="text-muted-foreground">{settings.r2.configured ? "新文件直传 R2，不经过服务器中转。" : "当前使用服务器本地存储，上传和下载速度受服务器带宽限制。"}</p>}
+          <Tabs value={mode} onValueChange={(value) => { if (value) setMode(value); }}><TabsList><TabsTrigger value="files" disabled={busy || hasJob}>文件</TabsTrigger><TabsTrigger value="text" disabled={busy || hasJob || Boolean(resume)}>文字 / 链接</TabsTrigger></TabsList>
+            <TabsContent value="files"><Field><FieldLabel htmlFor="transfer-files" className="tn-transfer-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!busy && !hasJob) selectFiles(Array.from(event.dataTransfer.files)); }}><RiUploadCloud2Line aria-hidden="true" /><span>选择文件或拖入这里</span><span className="text-muted-foreground">支持多个文件，单次最多 20 个</span><Input id="transfer-files" className="sr-only" type="file" multiple disabled={busy || hasJob} onChange={(event) => selectFiles(Array.from(event.target.files ?? []))} /></FieldLabel></Field>
+              {files.length > 0 && <ul className="mt-3 flex flex-col gap-2">{files.map((file, index) => <li key={`${file.name}-${index}`} className="flex min-w-0 items-center justify-between gap-3"><span className="min-w-0 truncate" title={file.name}>{file.name} · {bytes(file.size)}</span>{hasJob ? <span className="shrink-0 text-muted-foreground">{completedFiles[index] ? "已完成" : index === currentIndex ? busy ? `上传中 ${Math.round(fileProgress)}%` : "已暂停或失败" : "等待中"}</span> : <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setFiles((previous) => previous.filter((_, i) => i !== index))}>移除</Button>}</li>)}</ul>}
             </TabsContent>
             <TabsContent value="text"><Field><FieldLabel htmlFor="transfer-text">文字或链接</FieldLabel><Textarea id="transfer-text" value={content} onChange={(event) => setContent(event.target.value)} placeholder="粘贴要传递的内容" rows={5} disabled={busy} /></Field></TabsContent>
           </Tabs>
-          <FieldGroup className="sm:flex-row"><Field><FieldLabel htmlFor="transfer-hours">有效期（小时）</FieldLabel><Input id="transfer-hours" type="number" min="1" max={settings?.maxHours ?? 168} value={hours} onChange={(event) => setHours(Number(event.target.value))} disabled={busy || Boolean(job.current)} /></Field><Field><FieldLabel htmlFor="transfer-limit">下载授权次数（可选）</FieldLabel><Input id="transfer-limit" type="number" min="1" max={settings?.maxGrantsAllowed ?? 10000} value={maxGrants} onChange={(event) => setMaxGrants(event.target.value)} disabled={busy || Boolean(job.current) || mode === "text"} /></Field></FieldGroup>
+          <FieldGroup className="sm:flex-row"><Field><FieldLabel htmlFor="transfer-hours">有效期（小时）</FieldLabel><Input id="transfer-hours" type="number" min="1" max={settings?.maxHours ?? 168} value={hours} onChange={(event) => setHours(Number(event.target.value))} disabled={busy || hasJob} /></Field><Field><FieldLabel htmlFor="transfer-limit">下载授权次数（可选）</FieldLabel><Input id="transfer-limit" type="number" min="1" max={settings?.maxGrantsAllowed ?? 10000} value={maxGrants} onChange={(event) => setMaxGrants(event.target.value)} disabled={busy || hasJob || mode === "text"} /></Field></FieldGroup>
           {currentFile && <div aria-live="polite"><p className="truncate" title={currentFile}>{busy ? "正在上传" : "等待继续"}：{currentFile}</p><div className="flex items-center gap-3"><Progress className="flex-1" value={progress} aria-label="上传进度" /><span>{Math.round(progress)}%</span></div>{busy && rate > 0 && <p className="text-muted-foreground">{bytes(rate)}/s{eta !== null ? ` · 预计剩余 ${eta} 秒` : ""}</p>}</div>}
-          <Button type="submit" className="w-fit" disabled={busy}>{busy ? "处理中…" : job.current ? "继续上传" : <><RiFileUploadLine data-icon="inline-start" />创建投递</>}</Button>
-          {busy && job.current && <Button type="button" variant="outline" className="w-fit" onClick={() => abortUpload.current?.abort()}>暂停上传</Button>}
-          {!busy && job.current && <Button type="button" variant="ghost" className="w-fit" onClick={() => setDiscardOpen(true)}>撤销上传任务</Button>}
+          <Button type="submit" className="w-fit" disabled={busy}>{busy ? "处理中…" : hasJob ? "继续上传" : <><RiFileUploadLine data-icon="inline-start" />创建投递</>}</Button>
+          {busy && hasJob && <Button type="button" variant="outline" className="w-fit" onClick={() => abortUpload.current?.abort()}>暂停上传</Button>}
+          {!busy && hasJob && <Button type="button" variant="ghost" className="w-fit" onClick={() => setDiscardOpen(true)}>撤销上传任务</Button>}
         </form>
       </CardContent></Card>
       <Card><CardHeader><CardTitle>存储使用</CardTitle><CardDescription>包含尚待清理的文件。</CardDescription></CardHeader><CardContent><p>{bytes(used)} / {settings ? bytes(settings.maxTotalBytes) : "—"}</p><Progress className="mt-3" value={settings ? Math.min(100, used / settings.maxTotalBytes * 100) : 0} aria-label="存储使用量" /></CardContent></Card>
     </div>
     {error && <p role="alert" className="text-destructive">{error}</p>}{cleanupFailures > 0 && <p role="alert" className="text-destructive">{cleanupFailures} 个过期或撤销文件清理失败，系统会继续重试；请检查 R2 配置和运行日志。</p>}{notice && <p role="status">{notice}</p>}
     <Card><CardHeader><CardTitle>最近投递</CardTitle><CardDescription>查看状态、分享或撤销已有投递。</CardDescription></CardHeader><CardContent>
-      {loading ? <p role="status">正在读取投递…</p> : items.length === 0 ? <p className="text-muted-foreground">还没有投递，选择文件或输入文字即可开始。</p> : <ul className="divide-y">{items.map((item) => { const expired = item.expires_at <= Date.now(); const active = !item.revoked_at && !item.exhausted_at && !expired && item.state === "ready"; return <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate font-medium" title={item.title}>{item.title}</p><p className="text-muted-foreground">{item.content_kind === "files" ? `${item.file_count} 个文件` : "文字"} · {bytes(item.size ?? 0)} · 创建于 {new Date(item.created_at).toLocaleString()}</p><div className="flex flex-wrap items-center gap-2"><StatusTag item={item} />{active && <span className="text-muted-foreground">有效至 {new Date(item.expires_at).toLocaleString()}</span>}</div></div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={!active || busy} onClick={() => void openShare(item)}><RiLink data-icon="inline-start" />分享</Button><DropdownMenu><DropdownMenuTrigger render={<Button type="button" variant="ghost" size="sm" aria-label={`${item.title}的更多操作`}>更多</Button>} /><DropdownMenuContent><DropdownMenuGroup><DropdownMenuItem disabled={!!item.revoked_at || busy} onClick={() => setConfirm({ kind: "revoke", item })}>撤销投递</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu></div></li>; })}</ul>}
+      {loading ? <p role="status">正在读取投递…</p> : items.length === 0 ? <p className="text-muted-foreground">还没有投递，选择文件或输入文字即可开始。</p> : <ul className="divide-y">{items.map((item) => { const expired = item.expires_at <= now; const active = !item.revoked_at && !item.exhausted_at && !expired && item.state === "ready"; return <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate font-medium" title={item.title}>{item.title}</p>{item.storage_backend && <p className="text-muted-foreground">{item.storage_backend.includes(",") ? "混合存储" : item.storage_backend === "local" ? "服务器本地存储" : "R2 对象存储"}</p>}<p className="text-muted-foreground">{item.content_kind === "files" ? `${item.file_count} 个文件` : "文字"} · {bytes(item.size ?? 0)} · 创建于 {new Date(item.created_at).toLocaleString()}</p><div className="flex flex-wrap items-center gap-2"><StatusTag item={item} now={now} />{active && <span className="text-muted-foreground">有效至 {new Date(item.expires_at).toLocaleString()}</span>}</div></div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={!active || busy} onClick={() => void openShare(item)}><RiLink data-icon="inline-start" />分享</Button><DropdownMenu><DropdownMenuTrigger render={<Button type="button" variant="ghost" size="sm" aria-label={`${item.title}的更多操作`}>更多</Button>} /><DropdownMenuContent><DropdownMenuGroup><DropdownMenuItem disabled={!!item.revoked_at || busy} onClick={() => setConfirm({ kind: "revoke", item })}>撤销投递</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu></div></li>; })}</ul>}
       {nextOffset !== null && <Button type="button" variant="outline" className="mt-4" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "加载中…" : "查看更多"}</Button>}
     </CardContent></Card>
     <Dialog open={Boolean(share)} onOpenChange={(open) => { if (!open) setShare(null); }}><DialogContent className="max-h-[calc(100dvh-var(--spacing)*8)] overflow-y-auto"><DialogHeader><DialogTitle>分享投递</DialogTitle><DialogDescription>接收方通过链接和提取码获取内容；建议分开发送。</DialogDescription></DialogHeader>{share && <div className="flex flex-col items-start gap-3"><QRCodeSVG value={shareUrl} size={144} /><Field><FieldLabel htmlFor="share-url">分享链接</FieldLabel><Input id="share-url" readOnly value={shareUrl} /></Field>{!settings?.publicBaseUrl && ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname) && <p className="text-muted-foreground">当前链接仅能在本机访问。请在平台设置中配置其他设备可访问的公开地址。</p>}<Button type="button" variant="outline" size="sm" onClick={() => void copy(shareUrl)}>复制链接</Button><Field><FieldLabel htmlFor="share-code">提取码</FieldLabel><Input id="share-code" readOnly value={share.code} /></Field><Button type="button" variant="outline" size="sm" onClick={() => void copy(share.code)}>复制提取码</Button><p>有效至 {new Date(share.expiresAt).toLocaleString()}</p><Button type="button" onClick={() => void copy(`${shareUrl}\n提取码：${share.code}`)}>复制分享信息</Button></div>}</DialogContent></Dialog>

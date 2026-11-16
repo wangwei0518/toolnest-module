@@ -8,7 +8,7 @@ import "./styles.css";
 
 const module: ToolNestReactFrontendModule = {
   id: "temporary-transfer",
-  version: "0.1.1",
+  version: "0.1.2",
   layout: { content: "padded" },
   install(context) {
     setModuleApiClient(context.apiClient);

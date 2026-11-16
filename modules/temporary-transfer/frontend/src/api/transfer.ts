@@ -2,8 +2,8 @@ import { getModuleApiClient } from "./client";
 
 // The host API client already supplies the /api/v1 prefix.
 const base = "/modules/temporary-transfer";
-export interface Transfer { id: string; title: string; created_at: number; expires_at: number; revoked_at: number | null; exhausted_at: number | null; state: string; max_grants: number | null; grant_count: number; content_kind: "text" | "files"; file_count: number; size: number }
-export interface Settings { defaultHours: number; maxHours: number; maxFileBytes: number; maxTotalBytes: number; maxConcurrentUploads: number; defaultMaxGrants: number | null; maxGrantsAllowed: number; publicBaseUrl?: string; r2: { configured: boolean; accountId?: string; bucket?: string } }
+export interface Transfer { id: string; title: string; created_at: number; expires_at: number; revoked_at: number | null; exhausted_at: number | null; state: string; max_grants: number | null; grant_count: number; content_kind: "text" | "files"; file_count: number; size: number; storage_backend?: string | null }
+export interface Settings { defaultHours: number; maxHours: number; maxFileBytes: number; maxTotalBytes: number; maxConcurrentUploads: number; defaultMaxGrants: number | null; maxGrantsAllowed: number; publicBaseUrl?: string; canManageSettings?: boolean; adminContextAvailable?: boolean; r2: { configured: boolean; accountId?: string; bucket?: string } }
 export interface CreatedTransfer { id: string; code: string; createdAt: number; expiresAt: number }
 export interface UploadFile { id: string; partSize: number; partCount: number }
 
@@ -30,6 +30,7 @@ export function uploadPart(url: string, bytes: Blob, onProgress: (loaded: number
     signal.addEventListener("abort", abort, { once: true });
     request.onloadend = () => signal.removeEventListener("abort", abort);
     request.open("PUT", url);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
     request.upload.onprogress = (event) => onProgress(event.loaded);
     request.onerror = () => reject(new Error("网络连接中断，请重试"));
     request.onabort = () => reject(new Error("上传已暂停"));

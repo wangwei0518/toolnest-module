@@ -11,3 +11,4 @@ dist/
 /tmp/temporary-transfer-logs/
 /tmp/temporary-transfer-dev-fixtures/
 /tmp/temporary-transfer-browser/
+/tmp/temporary-transfer-local-dev/

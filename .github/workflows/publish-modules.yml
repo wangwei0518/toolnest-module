@@ -51,6 +51,9 @@ jobs:
       - name: Test bundle budget validation
         run: node --test test/module-budgets.test.mjs
 
+      - name: Test temporary transfer storage and access
+        run: pnpm --dir modules/temporary-transfer/backend exec node --import tsx --test test/transfer.test.ts test/local-transfer.test.ts ../frontend/test/errors.test.ts
+
       - name: Validate module bundle budgets
         run: pnpm budget:check
 

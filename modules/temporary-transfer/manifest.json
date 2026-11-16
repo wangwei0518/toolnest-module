@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "temporary-transfer",
   "name": "临时投递",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "跨设备临时文件与文字投递",
   "author": "ToolNest",
   "icon": "box",
@@ -15,7 +15,7 @@
     "startup": "eager",
     "startup_timeout_ms": 15000,
     "shutdown_timeout_ms": 20000,
-    "request_timeout_ms": 30000,
+    "request_timeout_ms": 180000,
     "restart_policy": "on-failure",
     "max_restart_count": 3,
     "public_paths": ["/public"]

@@ -12,7 +12,7 @@ export interface R2Config {
   secretAccessKey: string;
 }
 
-function disposition(filename: string) {
+export function disposition(filename: string) {
   const safeName = filename.replace(/[\u0000-\u001f\u007f]/g, "_").slice(0, 180) || "download";
   const encoded = encodeURIComponent(safeName).replace(/['()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
   return `attachment; filename="download"; filename*=UTF-8''${encoded}`;

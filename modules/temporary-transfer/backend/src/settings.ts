@@ -37,7 +37,7 @@ export class SettingsStore {
 
   publicValue() {
     const { r2, ...limits } = this.value;
-    return { ...limits, r2: r2 ? { accountId: r2.accountId, bucket: r2.bucket, configured: true } : { configured: false } };
+    return { ...limits, storageBackend: r2 ? "r2" : "local", r2: r2 ? { accountId: r2.accountId, bucket: r2.bucket, configured: true } : { configured: false } };
   }
 
   async save(value: unknown) {

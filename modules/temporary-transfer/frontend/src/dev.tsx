@@ -23,7 +23,7 @@ const live = new URLSearchParams(location.search).get("live") === "1";
 async function request(method: string, url: string, data?: unknown) {
   const response = await fetch(`/api/v1${url}`, { method, ...(data === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(data) }) });
   const value: unknown = await response.json();
-  if (!response.ok) throw new Error(typeof value === "object" && value && "message" in value ? String(value.message) : "请求失败");
+  if (!response.ok) throw Object.assign(new Error("请求失败"), { response: { status: response.status, data: value } });
   return value;
 }
 const liveClient = {
