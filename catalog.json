@@ -5,80 +5,100 @@
     {
       "id": "anime-calendar-react",
       "name": "新番日历",
-      "version": "0.1.53",
+      "version": "0.1.54",
       "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-62-1-91dd880 发布。",
+      "release_notes": "由 module-release-64-1-323eb1e 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-02T10:20:56.583Z",
+      "published_at": "2026-11-16T08:16:51.596Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-62-1-91dd880/anime-calendar-react-0.1.53.tnmod",
-        "sha256": "41e02886f93efb97ca36cc97bc0a81e0ebf1164bbf3a1aa00b6a95f5b31a22ef",
-        "size_bytes": 781624
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-64-1-323eb1e/anime-calendar-react-0.1.54.tnmod",
+        "sha256": "300ed5a21c8e752a9f7a27b13a0d2abd92bc31236e4b99b48aef90bf590d89c4",
+        "size_bytes": 781623
       }
     },
     {
       "id": "python-runner",
       "name": "Python 工具",
-      "version": "2.0.21",
+      "version": "2.0.22",
       "description": "本地 Python 项目运行、调度和环境管理。",
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-62-1-91dd880 发布。",
+      "release_notes": "由 module-release-64-1-323eb1e 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-02T10:20:56.585Z",
+      "published_at": "2026-11-16T08:16:51.597Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-62-1-91dd880/python-runner-2.0.21.tnmod",
-        "sha256": "f68d9ebed2c87702e0c4e48ce3900275142fe22770fae7966d9135202a8a82d4",
-        "size_bytes": 1422815
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-64-1-323eb1e/python-runner-2.0.22.tnmod",
+        "sha256": "8f8f89c6d577a57da5f291102ac6e8296d33f923c764b7167b2dc82ee5ebbd6a",
+        "size_bytes": 1422814
+      }
+    },
+    {
+      "id": "temporary-transfer",
+      "name": "临时投递",
+      "version": "0.1.1",
+      "description": "跨设备临时文件与文字投递",
+      "author": "ToolNest",
+      "icon": "box",
+      "minimum_core_version": ">=0.1.0",
+      "release_notes": "由 module-release-64-1-323eb1e 发布。",
+      "tags": [
+        "ToolNest",
+        "模块"
+      ],
+      "published_at": "2026-11-16T08:16:51.599Z",
+      "package": {
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-64-1-323eb1e/temporary-transfer-0.1.1.tnmod",
+        "sha256": "ac75a29cefa998b76f4de8bdce2d47972367969247743cfc89965842f7c2c476",
+        "size_bytes": 561598
       }
     },
     {
       "id": "workflow-tickets-react",
       "name": "工单模板",
-      "version": "0.1.132",
+      "version": "0.1.133",
       "description": "工作流工单与项目协作",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-62-1-91dd880 发布。",
+      "release_notes": "由 module-release-64-1-323eb1e 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-02T10:20:56.587Z",
+      "published_at": "2026-11-16T08:16:51.600Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-62-1-91dd880/workflow-tickets-react-0.1.132.tnmod",
-        "sha256": "7f3f9716a42c4c6e5e085048f2f40043cacd5f3ea1edd21aaa848028ed6b73be",
-        "size_bytes": 787383
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-64-1-323eb1e/workflow-tickets-react-0.1.133.tnmod",
+        "sha256": "c6e3058788cd6bf078597e77d70b0d62443c9038af26a26eaa610e27fef7d50c",
+        "size_bytes": 787382
       }
     },
     {
       "id": "xiaomi-rear-wallpaper",
       "name": "背屏壁纸",
-      "version": "0.1.17",
+      "version": "0.1.18",
       "description": "为小米手机背屏裁切、预览和管理壁纸。",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-62-1-91dd880 发布。",
+      "release_notes": "由 module-release-64-1-323eb1e 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-02T10:20:56.589Z",
+      "published_at": "2026-11-16T08:16:51.601Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-62-1-91dd880/xiaomi-rear-wallpaper-0.1.17.tnmod",
-        "sha256": "21f0ec201c55640585947e7dc2ed59883a8e3cfb8732dad21d4cba4a00e291be",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-64-1-323eb1e/xiaomi-rear-wallpaper-0.1.18.tnmod",
+        "sha256": "dda067e84771053a7e645972610ad973606c26759d34c1340a0c34f550d33263",
         "size_bytes": 9874847
       }
     }
