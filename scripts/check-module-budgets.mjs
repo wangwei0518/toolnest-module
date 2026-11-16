@@ -24,20 +24,28 @@ const moduleBudgets = {
 }
 // This module deliberately embeds its full-resolution phone frame in the entry bundle.
 const budgetExemptModules = new Set(['xiaomi-rear-wallpaper'])
+// Served directly by the module backend, independently of the React Host entry.
+const additionalFrontendEntries = { 'temporary-transfer': ['guest.js'] }
+const selectedIdIndex = process.argv.indexOf('--id')
+const selectedId = selectedIdIndex === -1 ? undefined : process.argv[selectedIdIndex + 1]
+if (selectedIdIndex !== -1 && (!selectedId || selectedId.startsWith('--'))) throw new Error('--id 需要模块 ID')
 
 let failed = false
 const moduleDirs = readdirSync(modulesDir)
   .map((name) => path.join(modulesDir, name))
   .filter((directory) => statSync(directory).isDirectory() && existsSync(path.join(directory, 'manifest.json')))
+  .filter((directory) => !selectedId || JSON.parse(readFileSync(path.join(directory, 'manifest.json'), 'utf8')).id === selectedId)
   .sort()
+if (selectedId && !moduleDirs.length) throw new Error(`模块不存在：${selectedId}`)
 
 for (const moduleDir of moduleDirs) {
   const manifest = JSON.parse(readFileSync(path.join(moduleDir, 'manifest.json'), 'utf8'))
   const budget = { ...defaultBudget, ...(moduleBudgets[manifest.id] ?? {}) }
   const frontendDir = path.join(moduleDir, 'frontend', 'dist')
   const entryPath = path.join(frontendDir, 'index.js')
+  const entryPaths = [entryPath, ...(additionalFrontendEntries[manifest.id] ?? []).map((entry) => path.join(frontendDir, entry))]
   const packagePath = path.join(moduleDir, 'dist', `${manifest.id}-${manifest.version}.tnmod`)
-  if (!existsSync(entryPath) || !existsSync(packagePath)) {
+  if (entryPaths.some((entry) => !existsSync(entry)) || !existsSync(packagePath)) {
     console.error(`[budget] ${manifest.id}: 缺少当前版本构建产物或 tnmod`)
     failed = true
     continue
@@ -46,8 +54,9 @@ for (const moduleDir of moduleDirs) {
   const allFiles = walk(frontendDir)
   const jsFiles = allFiles.filter((file) => file.endsWith('.js'))
   const cssFiles = allFiles.filter((file) => file.endsWith('.css'))
-  const reachable = dependencyClosure(entryPath, frontendDir, true)
-  const initial = dependencyClosure(entryPath, frontendDir, false)
+  const reachable = new Set(entryPaths.flatMap((entry) => [...dependencyClosure(entry, frontendDir, true)]))
+  const entryInitials = entryPaths.map((entry) => dependencyClosure(entry, frontendDir, false))
+  const initial = new Set(entryInitials.flatMap((files) => [...files]))
   const unreachable = jsFiles.filter((file) => !reachable.has(file))
   if (unreachable.length) {
     console.error(`[budget] ${manifest.id}: ${unreachable.length} 个 JS chunk 未进入入口依赖图`)
@@ -55,13 +64,21 @@ for (const moduleDir of moduleDirs) {
     failed = true
   }
 
-  const initialJsGzip = sumGzip([...initial])
+  // Each page loads separately; enforce the initial budget on the largest page.
+  const initialJsGzip = Math.max(...entryInitials.map((files) => sumGzip([...files])))
   const totalJsGzip = sumGzip([...reachable])
   const cssGzip = sumGzip(cssFiles)
   const asyncFiles = [...reachable].filter((file) => !initial.has(file))
   const largestAsyncJsGzip = Math.max(0, ...asyncFiles.map(gzipSize))
   const archive = new AdmZip(packagePath)
   const packageEntries = archive.getEntries().filter((entry) => !entry.isDirectory)
+  for (const entry of entryPaths) {
+    const packageEntry = `frontend/dist/${path.relative(frontendDir, entry).replaceAll('\\', '/')}`
+    if (!packageEntries.some((file) => file.entryName === packageEntry)) {
+      console.error(`[budget] ${manifest.id}: tnmod 缺少入口 ${packageEntry}`)
+      failed = true
+    }
+  }
   const unpackedBytes = packageEntries.reduce((total, entry) => total + Number(entry.header.size), 0)
   const metrics = {
     initialJsGzip,
@@ -74,6 +91,7 @@ for (const moduleDir of moduleDirs) {
   }
 
   console.log(`[budget] ${manifest.id}@${manifest.version}`)
+  if (entryPaths.length > 1) console.log(`  独立页面入口：${entryPaths.map((entry) => path.relative(frontendDir, entry)).join(', ')}；initial 按最大页面，total 按依赖并集计量`)
   if (budgetExemptModules.has(manifest.id)) {
     console.log(`  包体预算已豁免：入口 ${formatKib(initialJsGzip)}，全部 JS ${formatKib(totalJsGzip)}，ZIP ${formatMib(metrics.packageBytes)}，解包 ${formatMib(unpackedBytes)}`)
     continue

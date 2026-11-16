@@ -48,6 +48,9 @@ jobs:
           RELEASE_HEAD_SHA: ${{ github.sha }}
         run: pnpm release:package
 
+      - name: Test bundle budget validation
+        run: node --test test/module-budgets.test.mjs
+
       - name: Validate module bundle budgets
         run: pnpm budget:check
 

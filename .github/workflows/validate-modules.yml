@@ -30,5 +30,8 @@ jobs:
       - name: Build and package modules
         run: pnpm package:all
 
+      - name: Test bundle budget validation
+        run: node --test test/module-budgets.test.mjs
+
       - name: Validate module bundle budgets
         run: pnpm budget:check
