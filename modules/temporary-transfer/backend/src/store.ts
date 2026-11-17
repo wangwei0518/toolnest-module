@@ -61,6 +61,17 @@ export class TransferStore {
           size_bytes = (SELECT COALESCE(SUM(f.size), 0) FROM files f WHERE f.transfer_id = transfers.id) + COALESCE(length(CAST(text_content AS BLOB)), 0);
         COMMIT`);
     }
+    if (!columns.some(column => column.name === "pickup_hash")) this.db.exec("ALTER TABLE transfers ADD COLUMN pickup_hash TEXT");
+    if (!columns.some(column => column.name === "pickup_counter")) this.db.exec("ALTER TABLE transfers ADD COLUMN pickup_counter INTEGER NOT NULL DEFAULT 0");
+    this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS transfers_pickup_hash ON transfers(pickup_hash)");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const row of this.db.prepare("SELECT id, code_salt FROM transfers WHERE pickup_hash IS NULL").all() as Array<{id:string; code_salt:string}>) {
+        const pickup = this.allocatePickup(row.id, row.code_salt);
+        this.db.prepare("UPDATE transfers SET pickup_hash = ?, pickup_counter = ? WHERE id = ?").run(pickup.hash, pickup.counter, row.id);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
     const fileColumns = this.db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
     if (!fileColumns.some((column) => column.name === "cleanup_attempts")) this.db.exec("ALTER TABLE files ADD COLUMN cleanup_attempts INTEGER NOT NULL DEFAULT 0");
     if (!fileColumns.some((column) => column.name === "cleanup_last_at")) this.db.exec("ALTER TABLE files ADD COLUMN cleanup_last_at INTEGER");
@@ -88,7 +99,9 @@ export class TransferStore {
       (id, owner_id, title, text_content, code_salt, code_hash, created_at, expires_at, max_grants, state, content_kind, size_bytes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, ownerId, title, content, salt, hash, createdAt, expiresAt, maxGrants, state, state === "uploading" ? "files" : "text", content === null ? 0 : Buffer.byteLength(content, "utf8"));
-    return { id, code, createdAt, expiresAt };
+    const pickup = this.allocatePickup(id, salt);
+    this.db.prepare("UPDATE transfers SET pickup_hash = ?, pickup_counter = ? WHERE id = ?").run(pickup.hash, pickup.counter, id);
+    return { id, code, pickupCode: pickup.code, createdAt, expiresAt };
   }
 
   publish(ownerId: string, transferId: string) {
@@ -102,8 +115,9 @@ export class TransferStore {
     const salt = randomBytes(16).toString("hex");
     const code = this.deriveCode(transferId, salt);
     const hash = scryptSync(code, salt, 32).toString("hex");
-    const result = this.db.prepare(`UPDATE transfers SET code_salt = ?, code_hash = ?
-      WHERE id = ? AND owner_id = ? AND revoked_at IS NULL AND expires_at > ?`).run(salt, hash, transferId, ownerId, Date.now());
+    const pickup = this.allocatePickup(transferId, salt);
+    const result = this.db.prepare(`UPDATE transfers SET code_salt = ?, code_hash = ?, pickup_hash = ?, pickup_counter = ?
+      WHERE id = ? AND owner_id = ? AND revoked_at IS NULL AND expires_at > ?`).run(salt, hash, pickup.hash, pickup.counter, transferId, ownerId, Date.now());
     return result.changes ? code : null;
   }
 
@@ -117,6 +131,33 @@ export class TransferStore {
     const actual = scryptSync(code, row.code_salt, 32);
     const expected = Buffer.from(row.code_hash, "hex");
     return expected.length === actual.length && timingSafeEqual(expected, actual) ? code : null;
+  }
+
+  private pickupHash(code: string) { return createHmac("sha256", this.shareKey).update(`pickup-index:${code}`).digest("hex"); }
+  private pickupCode(id: string, salt: string, counter: number) {
+    return createHmac("sha256", this.shareKey).update(`pickup:${id}:${salt}:${counter}`).digest().readUIntBE(0, 5).toString(32).padStart(8, "0").toUpperCase();
+  }
+  private allocatePickup(id: string, salt: string) {
+    for (let counter = 0; ; counter++) {
+      const code = this.pickupCode(id, salt, counter); const hash = this.pickupHash(code);
+      if (!this.db.prepare("SELECT 1 FROM transfers WHERE pickup_hash = ?").get(hash)) return { code, hash, counter };
+    }
+  }
+  sharePickupCode(owner: string, id: string) {
+    if (!this.shareCode(owner, id)) return null;
+    const row = this.db.prepare("SELECT code_salt, pickup_counter FROM transfers WHERE id = ?").get(id) as {code_salt:string; pickup_counter:number};
+    return this.pickupCode(id, row.code_salt, row.pickup_counter);
+  }
+  resolvePickup(code: string) {
+    const row = this.db.prepare("SELECT id, owner_id FROM transfers WHERE pickup_hash = ?").get(this.pickupHash(code)) as {id:string; owner_id:string} | undefined;
+    if (!row) return null;
+    const pin = this.shareCode(row.owner_id, row.id);
+    const content = pin && this.verify(row.id, pin);
+    return content ? { ...content, id: row.id, pin } : null;
+  }
+  ownedContent(owner: string, id: string) {
+    const code = this.shareCode(owner, id);
+    return code ? this.verify(id, code) : null;
   }
 
   private deriveCode(id: string, salt: string) {

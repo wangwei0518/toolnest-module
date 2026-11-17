@@ -26,3 +26,9 @@ test("client validation and paused uploads keep their specific messages", () => 
   assert.equal(getTransferErrorMessage(new Error("上传已暂停"), fallback), "上传已暂停");
   assert.match(getTransferErrorMessage(new Error("尚未配置 R2 存储"), fallback), /文字和链接投递不受影响/);
 });
+
+test("pickup and unavailable transfer errors do not misleadingly ask for administrator permissions", () => {
+  for (const [status,message] of [[403,"取件码无效或投递已失效"],[404,"投递不存在或已失效"],[404,"文件不可用或已达到授权次数限制"]] as const) {
+    assert.equal(getTransferErrorMessage({response:{status,data:{message}}},fallback),message);
+  }
+});

@@ -3,6 +3,7 @@ export function getTransferErrorMessage(error: unknown, fallback: string): strin
   const response = error && typeof error === "object" && "response" in error
     ? (error as { response?: { status?: number; data?: { message?: unknown } } }).response : undefined;
   if (response?.status === 401) return "登录状态已失效，请重新登录后重试。";
+  if ([403,404].includes(response?.status ?? 0) && typeof response?.data?.message === "string" && ["取件码无效或投递已失效", "提取码无效或投递已失效", "投递不存在或已失效", "文件不可用或已达到授权次数限制"].includes(response.data.message)) return response.data.message;
   if (response?.status === 403) return response.data?.message === "宿主未传递管理员身份，请升级或重启 ToolNest 宿主后端。"
     ? response.data.message : "当前账号无权执行此操作；修改存储设置需要管理员权限。";
   if (response?.status === 429) return "请求过于频繁，请稍后重试。";

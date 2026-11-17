@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "temporary-transfer",
   "name": "临时投递",
-  "version": "0.1.2",
+  "version": "0.1.7",
   "description": "跨设备临时文件与文字投递",
   "author": "ToolNest",
   "icon": "box",

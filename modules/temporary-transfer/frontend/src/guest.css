@@ -1,7 +1,9 @@
-@layer theme, utilities;
+@layer theme, base, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "./guest.tsx";
+@source "./receiver.tsx";
+@source "./file-previews.tsx";
 @source "./components/ui";
 @theme inline {
   --color-background: var(--background); --color-foreground: var(--foreground);
@@ -10,6 +12,9 @@
   --color-muted: var(--muted); --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border); --color-input: var(--input); --color-ring: var(--ring);
   --color-destructive: var(--destructive);
+  --color-secondary: var(--muted); --color-secondary-foreground: var(--foreground);
+  --color-accent: var(--muted); --color-accent-foreground: var(--foreground);
+  --color-popover: var(--card); --color-popover-foreground: var(--foreground);
   --radius-sm: calc(var(--radius) - 4px); --radius-md: calc(var(--radius) - 2px); --radius-lg: var(--radius); --radius-xl: calc(var(--radius) + 4px);
 }
 .tn-guest {
@@ -32,4 +37,13 @@
 .tn-guest__error { color: var(--destructive); }
 @media (prefers-color-scheme: dark) {
   .tn-guest { --background: oklch(.145 0 0); --foreground: oklch(.985 0 0); --card: oklch(.205 0 0); --card-foreground: oklch(.985 0 0); --primary: oklch(.448 .119 151.328); --muted: oklch(.269 0 0); --muted-foreground: oklch(.708 0 0); --border: oklch(1 0 0 / 10%); --input: oklch(1 0 0 / 15%); --ring: oklch(.556 0 0); --destructive: oklch(.704 .191 22.216); }
+}
+
+.tn-guest [data-slot="input-otp-slot"] { border-style: solid; border-color: var(--border); }
+
+/* Standalone public page has no Host reset. Keep the reset inside its scope. */
+@layer base {
+  .tn-guest *, .tn-guest *::before, .tn-guest *::after { border-width: 0; border-style: solid; border-color: var(--border); }
+  .tn-guest :is(h1,h2,h3,p) { margin: 0; }
+  .tn-guest :is(button,input,textarea) { font: inherit; }
 }

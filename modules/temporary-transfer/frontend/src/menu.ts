@@ -11,10 +11,4 @@ export const menu: ToolNestModuleMenuItem = {
   path: "",
   icon: "box",
   order: 100,
-  children: navigation.map((item) => ({
-    key: `temporary-transfer-${item.key}`,
-    label: item.label,
-    path: item.path,
-    icon: "box",
-  })),
 };

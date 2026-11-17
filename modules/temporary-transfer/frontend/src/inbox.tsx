@@ -1,17 +1,12 @@
+import { DeliveryView } from "./delivery-view";
+import { Modal } from "./components/modal";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { RiFileUploadLine, RiLink, RiUploadCloud2Line } from "@remixicon/react";
 import { QRCodeSVG } from "qrcode.react";
 import SparkMD5 from "spark-md5";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { api, uploadPart, type CreatedTransfer, type Settings, type Transfer, type UploadFile } from "./api/transfer";
 import { getTransferErrorMessage } from "./api/errors";
 
@@ -36,12 +31,6 @@ function readResume(): ResumeJob | null {
             !Number.isSafeInteger(file.remote.partCount) || file.remote.partCount < 1 || file.remote.partCount > 10_000)))) return null;
     return value;
   } catch { return null; }
-}
-const bytes = (size: number) => size < 1048576 ? `${(size / 1024).toFixed(1)} KiB` : `${(size / 1048576).toFixed(1)} MiB`;
-
-function StatusTag({ item, now }: { item: Transfer; now: number }) {
-  const status = item.revoked_at ? "已撤销" : item.expires_at <= now ? "已过期" : item.exhausted_at ? "授权次数已用完" : item.state === "uploading" ? "上传未完成" : "可接收";
-  return <Badge variant={status === "可接收" ? "default" : "secondary"}>{status}</Badge>;
 }
 
 export function Inbox() {
@@ -156,8 +145,8 @@ export function Inbox() {
     }
     await api.publish(current.transfer.id);
     if (!current.transfer.code) {
-      try { current.transfer.code = (await api.shareCode(current.transfer.id)).code; }
-      catch { current.transfer.code = (await api.rotateCode(current.transfer.id)).code; }
+      try { Object.assign(current.transfer, await api.shareCode(current.transfer.id)); }
+      catch { Object.assign(current.transfer, await api.rotateCode(current.transfer.id)); }
     }
     try { localStorage.removeItem(resumeKey); } catch { /* No local persistence available. */ }
     setResume(null);
@@ -176,6 +165,7 @@ export function Inbox() {
       if (mode === "files" && (files.length > 20 || files.some((file) => file.size > (settings?.maxFileBytes ?? 0)))) throw new Error("文件数量过多或超过单文件大小限制。");
       if (mode === "files" && files.some((file) => !file.name.trim() || file.name.trim().length > 180 || Array.from(file.name).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))) throw new Error("文件名为空、过长或包含不支持的字符。");
       if (mode === "text" && !content.trim()) throw new Error("请输入要发送的文字或链接。");
+      if (mode === "files" && maxGrants && (!Number.isSafeInteger(Number(maxGrants)) || Number(maxGrants) < 1 || Number(maxGrants) > settings.maxGrantsAllowed)) throw new Error("请输入允许范围内的整数下载授权次数，或留空表示不限。");
       const transfer = await api.create({ kind: mode, title: mode === "files" ? files[0]?.name ?? "文件投递" : "文字投递", content, hours, maxGrants: mode === "files" && maxGrants ? Number(maxGrants) : null });
       if (mode === "text") { setContent(""); setShare(transfer); await refresh(); }
       else { job.current = { transfer, files: files.map((file) => ({ file, clientId: crypto.randomUUID(), completed: false })) }; setHasJob(true); setCompletedFiles(files.map(() => false)); remember(job.current); const controller = new AbortController(); abortUpload.current = controller; await finishUpload(job.current, controller.signal); }
@@ -188,7 +178,7 @@ export function Inbox() {
     setBusy(true); setError("");
     try {
       if (confirm.kind === "revoke") { await api.revoke(confirm.item.id); setNotice("投递已撤销。"); await refresh(); }
-      else { const { code } = await api.rotateCode(confirm.item.id); setShare({ id: confirm.item.id, code, createdAt: confirm.item.created_at, expiresAt: confirm.item.expires_at }); }
+      else { const { code, pickupCode } = await api.rotateCode(confirm.item.id); setShare({ id: confirm.item.id, code, pickupCode, createdAt: confirm.item.created_at, expiresAt: confirm.item.expires_at }); }
       setConfirm(null);
     } catch { setError("操作失败，请重试。"); }
     finally { setBusy(false); }
@@ -197,8 +187,8 @@ export function Inbox() {
   async function openShare(item: Transfer) {
     setBusy(true); setError("");
     try {
-      const { code } = await api.shareCode(item.id);
-      setShare({ id: item.id, code, createdAt: item.created_at, expiresAt: item.expires_at });
+      const { code, pickupCode } = await api.shareCode(item.id);
+      setShare({ id: item.id, code, pickupCode, createdAt: item.created_at, expiresAt: item.expires_at });
     } catch (reason) {
       const status = (reason as { response?: { status?: number } })?.response?.status;
       if (status === 404) setConfirm({ kind: "rotate", item });
@@ -232,34 +222,16 @@ export function Inbox() {
     finally { setBusy(false); }
   }
   const copy = async (value: string) => { try { await navigator.clipboard.writeText(value); setNotice("已复制到剪贴板。"); } catch { setError("复制失败，请手动复制。"); } };
-  return <div className="tn-temporary-transfer__content">
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(15rem,1fr)]">
-      <Card><CardHeader><CardTitle>快速投递</CardTitle><CardDescription>文件、文字和链接可在设备之间限期分享。</CardDescription></CardHeader><CardContent>
-        <form onSubmit={(event) => void create(event)} className="flex flex-col gap-4">
-          {resume && !hasJob && <p role="status">发现未完成的上传，请重新选择原来的 {resume.files.length} 个文件。<Button type="button" variant="ghost" size="sm" onClick={() => setDiscardOpen(true)}>撤销任务</Button></p>}
-          {settings && <p role="status" className="text-muted-foreground">{settings.r2.configured ? "新文件直传 R2，不经过服务器中转。" : "当前使用服务器本地存储，上传和下载速度受服务器带宽限制。"}</p>}
-          <Tabs value={mode} onValueChange={(value) => { if (value) setMode(value); }}><TabsList><TabsTrigger value="files" disabled={busy || hasJob}>文件</TabsTrigger><TabsTrigger value="text" disabled={busy || hasJob || Boolean(resume)}>文字 / 链接</TabsTrigger></TabsList>
-            <TabsContent value="files"><Field><FieldLabel htmlFor="transfer-files" className="tn-transfer-drop" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!busy && !hasJob) selectFiles(Array.from(event.dataTransfer.files)); }}><RiUploadCloud2Line aria-hidden="true" /><span>选择文件或拖入这里</span><span className="text-muted-foreground">支持多个文件，单次最多 20 个</span><Input id="transfer-files" className="sr-only" type="file" multiple disabled={busy || hasJob} onChange={(event) => selectFiles(Array.from(event.target.files ?? []))} /></FieldLabel></Field>
-              {files.length > 0 && <ul className="mt-3 flex flex-col gap-2">{files.map((file, index) => <li key={`${file.name}-${index}`} className="flex min-w-0 items-center justify-between gap-3"><span className="min-w-0 truncate" title={file.name}>{file.name} · {bytes(file.size)}</span>{hasJob ? <span className="shrink-0 text-muted-foreground">{completedFiles[index] ? "已完成" : index === currentIndex ? busy ? `上传中 ${Math.round(fileProgress)}%` : "已暂停或失败" : "等待中"}</span> : <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setFiles((previous) => previous.filter((_, i) => i !== index))}>移除</Button>}</li>)}</ul>}
-            </TabsContent>
-            <TabsContent value="text"><Field><FieldLabel htmlFor="transfer-text">文字或链接</FieldLabel><Textarea id="transfer-text" value={content} onChange={(event) => setContent(event.target.value)} placeholder="粘贴要传递的内容" rows={5} disabled={busy} /></Field></TabsContent>
-          </Tabs>
-          <FieldGroup className="sm:flex-row"><Field><FieldLabel htmlFor="transfer-hours">有效期（小时）</FieldLabel><Input id="transfer-hours" type="number" min="1" max={settings?.maxHours ?? 168} value={hours} onChange={(event) => setHours(Number(event.target.value))} disabled={busy || hasJob} /></Field><Field><FieldLabel htmlFor="transfer-limit">下载授权次数（可选）</FieldLabel><Input id="transfer-limit" type="number" min="1" max={settings?.maxGrantsAllowed ?? 10000} value={maxGrants} onChange={(event) => setMaxGrants(event.target.value)} disabled={busy || hasJob || mode === "text"} /></Field></FieldGroup>
-          {currentFile && <div aria-live="polite"><p className="truncate" title={currentFile}>{busy ? "正在上传" : "等待继续"}：{currentFile}</p><div className="flex items-center gap-3"><Progress className="flex-1" value={progress} aria-label="上传进度" /><span>{Math.round(progress)}%</span></div>{busy && rate > 0 && <p className="text-muted-foreground">{bytes(rate)}/s{eta !== null ? ` · 预计剩余 ${eta} 秒` : ""}</p>}</div>}
-          <Button type="submit" className="w-fit" disabled={busy}>{busy ? "处理中…" : hasJob ? "继续上传" : <><RiFileUploadLine data-icon="inline-start" />创建投递</>}</Button>
-          {busy && hasJob && <Button type="button" variant="outline" className="w-fit" onClick={() => abortUpload.current?.abort()}>暂停上传</Button>}
-          {!busy && hasJob && <Button type="button" variant="ghost" className="w-fit" onClick={() => setDiscardOpen(true)}>撤销上传任务</Button>}
-        </form>
-      </CardContent></Card>
-      <Card><CardHeader><CardTitle>存储使用</CardTitle><CardDescription>包含尚待清理的文件。</CardDescription></CardHeader><CardContent><p>{bytes(used)} / {settings ? bytes(settings.maxTotalBytes) : "—"}</p><Progress className="mt-3" value={settings ? Math.min(100, used / settings.maxTotalBytes * 100) : 0} aria-label="存储使用量" /></CardContent></Card>
-    </div>
-    {error && <p role="alert" className="text-destructive">{error}</p>}{cleanupFailures > 0 && <p role="alert" className="text-destructive">{cleanupFailures} 个过期或撤销文件清理失败，系统会继续重试；请检查 R2 配置和运行日志。</p>}{notice && <p role="status">{notice}</p>}
-    <Card><CardHeader><CardTitle>最近投递</CardTitle><CardDescription>查看状态、分享或撤销已有投递。</CardDescription></CardHeader><CardContent>
-      {loading ? <p role="status">正在读取投递…</p> : items.length === 0 ? <p className="text-muted-foreground">还没有投递，选择文件或输入文字即可开始。</p> : <ul className="divide-y">{items.map((item) => { const expired = item.expires_at <= now; const active = !item.revoked_at && !item.exhausted_at && !expired && item.state === "ready"; return <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate font-medium" title={item.title}>{item.title}</p>{item.storage_backend && <p className="text-muted-foreground">{item.storage_backend.includes(",") ? "混合存储" : item.storage_backend === "local" ? "服务器本地存储" : "R2 对象存储"}</p>}<p className="text-muted-foreground">{item.content_kind === "files" ? `${item.file_count} 个文件` : "文字"} · {bytes(item.size ?? 0)} · 创建于 {new Date(item.created_at).toLocaleString()}</p><div className="flex flex-wrap items-center gap-2"><StatusTag item={item} now={now} />{active && <span className="text-muted-foreground">有效至 {new Date(item.expires_at).toLocaleString()}</span>}</div></div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" disabled={!active || busy} onClick={() => void openShare(item)}><RiLink data-icon="inline-start" />分享</Button><DropdownMenu><DropdownMenuTrigger render={<Button type="button" variant="ghost" size="sm" aria-label={`${item.title}的更多操作`}>更多</Button>} /><DropdownMenuContent><DropdownMenuGroup><DropdownMenuItem disabled={!!item.revoked_at || busy} onClick={() => setConfirm({ kind: "revoke", item })}>撤销投递</DropdownMenuItem></DropdownMenuGroup></DropdownMenuContent></DropdownMenu></div></li>; })}</ul>}
-      {nextOffset !== null && <Button type="button" variant="outline" className="mt-4" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "加载中…" : "查看更多"}</Button>}
-    </CardContent></Card>
-    <Dialog open={Boolean(share)} onOpenChange={(open) => { if (!open) setShare(null); }}><DialogContent className="max-h-[calc(100dvh-var(--spacing)*8)] overflow-y-auto"><DialogHeader><DialogTitle>分享投递</DialogTitle><DialogDescription>接收方通过链接和提取码获取内容；建议分开发送。</DialogDescription></DialogHeader>{share && <div className="flex flex-col items-start gap-3"><QRCodeSVG value={shareUrl} size={144} /><Field><FieldLabel htmlFor="share-url">分享链接</FieldLabel><Input id="share-url" readOnly value={shareUrl} /></Field>{!settings?.publicBaseUrl && ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname) && <p className="text-muted-foreground">当前链接仅能在本机访问。请在平台设置中配置其他设备可访问的公开地址。</p>}<Button type="button" variant="outline" size="sm" onClick={() => void copy(shareUrl)}>复制链接</Button><Field><FieldLabel htmlFor="share-code">提取码</FieldLabel><Input id="share-code" readOnly value={share.code} /></Field><Button type="button" variant="outline" size="sm" onClick={() => void copy(share.code)}>复制提取码</Button><p>有效至 {new Date(share.expiresAt).toLocaleString()}</p><Button type="button" onClick={() => void copy(`${shareUrl}\n提取码：${share.code}`)}>复制分享信息</Button></div>}</DialogContent></Dialog>
+  return <>
+    <DeliveryView {...{items,settings,used,now,loading,loadingMore,nextOffset,busy,mode,files,content,hours,maxGrants,hasJob,completedFiles,currentIndex,fileProgress,currentFile,progress,rate,eta,setMode,setFiles,setContent,setHours,setMaxGrants,selectFiles,create,openShare,loadMore,refresh,error,notice,cleanupFailures}} resumeCount={resume?.files.length ?? 0} pause={()=>abortUpload.current?.abort()} discard={()=>setDiscardOpen(true)} revoke={item=>setConfirm({kind:"revoke",item})}/>
+    <Modal open={Boolean(share)} onClose={()=>setShare(null)} title="分享投递" description="独立取件码供登录用户使用；分享链接和二维码需要六位提取码。">{share&&<>
+      {share.pickupCode&&<div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4"><span className="text-xs text-muted-foreground">独立取件码</span><span className="pickup-code break-all text-2xl font-semibold">{share.pickupCode.slice(0,4)}-{share.pickupCode.slice(4)}</span><Button variant="outline" size="lg" onClick={()=>void copy(share.pickupCode??"")}>复制取件码</Button></div>}
+      <div className="flex items-center gap-4"><div className="qr-surface shrink-0 rounded-lg p-2"><QRCodeSVG value={shareUrl} size={104} bgColor="transparent"/></div><div className="flex min-w-0 flex-1 flex-col gap-2"><span className="text-sm font-medium">扫码在另一台设备接收</span><span className="break-all text-xs text-muted-foreground">{shareUrl}</span><Button variant="outline" className="w-fit" onClick={()=>void copy(shareUrl)}>复制链接</Button></div></div>
+      <Field><FieldLabel htmlFor="share-code">链接提取码</FieldLabel><Input id="share-code" readOnly value={share.code}/></Field><Button variant="outline" onClick={()=>void copy(share.code)}>复制提取码</Button>
+      {!settings?.publicBaseUrl&&["localhost","127.0.0.1","::1"].includes(location.hostname)&&<p className="text-xs text-muted-foreground">当前链接仅能在本机访问，请配置其他设备可访问的公开地址。</p>}
+      <p className="text-xs text-muted-foreground">有效至 {new Date(share.expiresAt).toLocaleString()} · 建议分开发送链接和提取码。</p><Button size="lg" onClick={()=>void copy(`${shareUrl}\n提取码：${share.code}${share.pickupCode?`\n独立取件码：${share.pickupCode}`:""}`)}>复制分享信息</Button>
+    </>}</Modal>
     <Dialog open={Boolean(confirm)} onOpenChange={(open) => { if (!open) setConfirm(null); }}><DialogContent><DialogHeader><DialogTitle>{confirm?.kind === "revoke" ? "撤销投递？" : "重新生成提取码？"}</DialogTitle><DialogDescription>{confirm?.kind === "revoke" ? "撤销后接收方无法获取新的下载授权，已签发的短期链接可能仍暂时有效。" : "出于安全考虑，原提取码不会保存为明文。重新生成后，之前的提取码立即失效。"}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setConfirm(null)}>取消</Button><Button type="button" disabled={busy} onClick={() => void confirmAction()}>{busy ? "处理中…" : "确认"}</Button></DialogFooter></DialogContent></Dialog>
     <Dialog open={discardOpen} onOpenChange={setDiscardOpen}><DialogContent><DialogHeader><DialogTitle>撤销上传任务？</DialogTitle><DialogDescription>已上传的分片将被清理，之后无法继续此任务。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" onClick={() => setDiscardOpen(false)}>取消</Button><Button type="button" disabled={busy} onClick={() => void discardResume()}>确认撤销</Button></DialogFooter></DialogContent></Dialog>
-  </div>;
+  </>;
 }

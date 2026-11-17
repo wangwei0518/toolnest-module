@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { disposition } from "./r2.js";
@@ -90,10 +91,13 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
   });
   app.get("/public/:id", async (request, reply) => {
     if (!idPattern.test(params(request).id ?? "")) return reply.code(404).send();
+    const nonce = randomBytes(18).toString("base64url");
+    const r2 = settings.get().r2;
+    const objectOrigins = r2 ? ` https://${r2.bucket}.${r2.accountId}.r2.cloudflarestorage.com https://${r2.accountId}.r2.cloudflarestorage.com` : "";
     return reply.type("text/html; charset=utf-8").header("cache-control", "no-store")
       .header("referrer-policy", "no-referrer").header("x-content-type-options", "nosniff")
-      .header("content-security-policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-      .send('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>接收临时投递</title><link rel="stylesheet" href="/api/v1/modules/temporary-transfer/public/assets/guest.css"></head><body><div id="root"></div><script type="module" src="/api/v1/modules/temporary-transfer/public/assets/guest.js"></script></body></html>');
+      .header("content-security-policy", `default-src 'none'; script-src 'self'; style-src 'self' 'nonce-${nonce}'; connect-src 'self'${objectOrigins}; img-src 'self' blob:; media-src blob:; object-src blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`)
+      .send(`<!doctype html><html lang="zh-CN"><head><meta name="toolnest-csp-nonce" content="${nonce}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>接收临时投递</title><link rel="stylesheet" href="/api/v1/modules/temporary-transfer/public/assets/guest.css"></head><body><div id="root"></div><script type="module" src="/api/v1/modules/temporary-transfer/public/assets/guest.js"></script></body></html>`);
   });
 
   app.setErrorHandler((error, _request, reply) => {
@@ -177,11 +181,11 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
 
   app.post("/transfers/:id/code", async (request, reply) => {
     const code = store.rotateCode(owner(request), params(request).id ?? "");
-    return code ? { code } : reply.code(404).send({ message: "投递不存在或已失效" });
+    return code ? { code, pickupCode: store.sharePickupCode(owner(request), params(request).id ?? "") } : reply.code(404).send({ message: "投递不存在或已失效" });
   });
   app.get("/transfers/:id/share", async (request, reply) => {
     const code = store.shareCode(owner(request), params(request).id ?? "");
-    return code ? reply.header("cache-control", "no-store").send({ code }) : reply.code(404).send({ message: "分享信息不可用，请重新生成提取码" });
+    return code ? reply.header("cache-control", "no-store").send({ code, pickupCode: store.sharePickupCode(owner(request), params(request).id ?? "") }) : reply.code(404).send({ message: "分享信息不可用，请重新生成提取码" });
   });
   app.delete("/transfers/:id", async (request, reply) => {
     return store.revoke(owner(request), params(request).id ?? "") ? { ok: true } : reply.code(404).send({ message: "投递不存在或已撤销" });
@@ -287,6 +291,49 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
   });
   app.post("/transfers/:id/publish", async (request, reply) => {
     return store.publish(owner(request), params(request).id ?? "") ? { ok: true } : reply.code(409).send({ message: "投递尚未完成上传或已失效" });
+  });
+
+  app.get("/transfers/:id/content", async (request, reply) => {
+    const id = params(request).id ?? "";
+    const result = store.ownedContent(owner(request), id);
+    return result ? reply.header("cache-control", "no-store").send({ ...result, id, files: store.files(id) }) : reply.code(404).send({message: "投递不存在或已失效"});
+  });
+  app.post("/transfers/:id/files/:file/download", async (request, reply) => {
+    const id = params(request).id ?? ""; const fileId = params(request).file ?? "";
+    const pin = store.shareCode(owner(request), id);
+    const file = pin && store.fileGrantCandidate(id, fileId);
+    if (!file) return reply.code(404).send({message: "文件不可用或已达到授权次数限制"});
+    const url = await storage(file.storage_backend).download(file.object_key);
+    if (!store.claimFileGrant(id, fileId, pin)) return reply.code(404).send({message: "文件不可用或已达到授权次数限制"});
+    return reply.header("cache-control", "no-store").send({url});
+  });
+  const pickupLimiter = new VerificationLimiter();
+  const pickupDownloadLimiter = new VerificationLimiter(60);
+  function pickup(request: FastifyRequest, downloading = false) {
+    const user = owner(request);
+    if (!(downloading ? pickupDownloadLimiter : pickupLimiter).allow(`owner:${user}`)) return "limited" as const;
+    const raw = body(request).code;
+    if (typeof raw !== "string" || raw.length > 16) return null;
+    const code = raw.replace(/[\s-]/g, "").toUpperCase();
+    return /^[A-Z0-9]{8}$/.test(code) ? store.resolvePickup(code) : null;
+  }
+  app.post("/pickup", async (request, reply) => {
+    const result = pickup(request);
+    if (result === "limited") return reply.code(429).send({message: "尝试过于频繁，请稍后再试"});
+    if (!result) return reply.code(403).send({message: "取件码无效或投递已失效"});
+    const {pin: _pin, ...content} = result;
+    return reply.header("cache-control", "no-store").send({...content, files: store.files(result.id)});
+  });
+  app.post("/pickup/:id/files/:file/download", async (request, reply) => {
+    const result = pickup(request, true);
+    if (result === "limited") return reply.code(429).send({message: "尝试过于频繁，请稍后再试"});
+    if (!result || result.id !== params(request).id) return reply.code(403).send({message: "取件码无效或投递已失效"});
+    const fileId = params(request).file ?? "";
+    const file = store.fileGrantCandidate(result.id, fileId);
+    if (!file) return reply.code(404).send({message: "文件不可用或已达到授权次数限制"});
+    const url = await storage(file.storage_backend).download(file.object_key);
+    if (!store.claimFileGrant(result.id, fileId, result.pin)) return reply.code(404).send({message: "文件不可用或已达到授权次数限制"});
+    return reply.header("cache-control", "no-store").send({url});
   });
 
   function verify(request: FastifyRequest, code: unknown) {
