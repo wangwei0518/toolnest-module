@@ -1,6 +1,6 @@
 import { DeliveryView } from "./delivery-view";
 import { Modal } from "./components/modal";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import SparkMD5 from "spark-md5";
 import { Button } from "@/components/ui/button";
@@ -47,7 +47,7 @@ export function Inbox() {
   const [mode, setMode] = useState("files");
   const [files, setFiles] = useState<File[]>([]);
   const [content, setContent] = useState("");
-  const [hours, setHours] = useState(24);
+  const [durationMinutes, setDurationMinutes] = useState(24 * 60);
   const [maxGrants, setMaxGrants] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -66,7 +66,7 @@ export function Inbox() {
   const abortUpload = useRef<AbortController | null>(null);
 
   async function refresh() {
-    try { const [list, config] = await Promise.all([api.list(), api.settings()]); setItems(list.items); setNextOffset(list.nextOffset ?? null); setUsed(list.usedBytes); setCleanupFailures(list.cleanupFailures ?? 0); setSettings(config); setHours(config.defaultHours); setMaxGrants(config.defaultMaxGrants == null ? "" : String(config.defaultMaxGrants)); setError(""); }
+    try { const [list, config] = await Promise.all([api.list(), api.settings()]); setItems(list.items); setNextOffset(list.nextOffset ?? null); setUsed(list.usedBytes); setCleanupFailures(list.cleanupFailures ?? 0); setSettings(config); setDurationMinutes(config.defaultHours * 60); setMaxGrants(config.defaultMaxGrants == null ? "" : String(config.defaultMaxGrants)); setError(""); }
     catch (reason) { setError(getTransferErrorMessage(reason, "读取投递箱失败，请重试。")); }
     finally { setLoading(false); }
   }
@@ -154,8 +154,7 @@ export function Inbox() {
     await refresh();
   }
 
-  async function create(event: FormEvent) {
-    event.preventDefault();
+  async function create(durationMinutes: number) {
     if (busy) return;
     setBusy(true); setError(""); setNotice("");
     try {
@@ -166,7 +165,7 @@ export function Inbox() {
       if (mode === "files" && files.some((file) => !file.name.trim() || file.name.trim().length > 180 || Array.from(file.name).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127))) throw new Error("文件名为空、过长或包含不支持的字符。");
       if (mode === "text" && !content.trim()) throw new Error("请输入要发送的文字或链接。");
       if (mode === "files" && maxGrants && (!Number.isSafeInteger(Number(maxGrants)) || Number(maxGrants) < 1 || Number(maxGrants) > settings.maxGrantsAllowed)) throw new Error("请输入允许范围内的整数下载授权次数，或留空表示不限。");
-      const transfer = await api.create({ kind: mode, title: mode === "files" ? files[0]?.name ?? "文件投递" : "文字投递", content, hours, maxGrants: mode === "files" && maxGrants ? Number(maxGrants) : null });
+      const transfer = await api.create({ kind: mode, title: mode === "files" ? files[0]?.name ?? "文件投递" : "文字投递", content, durationMinutes, maxGrants: mode === "files" && maxGrants ? Number(maxGrants) : null });
       if (mode === "text") { setContent(""); setShare(transfer); await refresh(); }
       else { job.current = { transfer, files: files.map((file) => ({ file, clientId: crypto.randomUUID(), completed: false })) }; setHasJob(true); setCompletedFiles(files.map(() => false)); remember(job.current); const controller = new AbortController(); abortUpload.current = controller; await finishUpload(job.current, controller.signal); }
     } catch (reason) { setError(getTransferErrorMessage(reason, "创建或上传失败，请检查设置和网络后重试。")); }
@@ -223,7 +222,7 @@ export function Inbox() {
   }
   const copy = async (value: string) => { try { await navigator.clipboard.writeText(value); setNotice("已复制到剪贴板。"); } catch { setError("复制失败，请手动复制。"); } };
   return <>
-    <DeliveryView {...{items,settings,used,now,loading,loadingMore,nextOffset,busy,mode,files,content,hours,maxGrants,hasJob,completedFiles,currentIndex,fileProgress,currentFile,progress,rate,eta,setMode,setFiles,setContent,setHours,setMaxGrants,selectFiles,create,openShare,loadMore,refresh,error,notice,cleanupFailures}} resumeCount={resume?.files.length ?? 0} pause={()=>abortUpload.current?.abort()} discard={()=>setDiscardOpen(true)} revoke={item=>setConfirm({kind:"revoke",item})}/>
+    <DeliveryView {...{items,settings,used,now,loading,loadingMore,nextOffset,busy,mode,files,content,durationMinutes,maxGrants,hasJob,completedFiles,currentIndex,fileProgress,currentFile,progress,rate,eta,setMode,setFiles,setContent,setDurationMinutes,setMaxGrants,selectFiles,create,openShare,loadMore,refresh,error,notice,cleanupFailures}} resumeCount={resume?.files.length ?? 0} pause={()=>abortUpload.current?.abort()} discard={()=>setDiscardOpen(true)} revoke={item=>setConfirm({kind:"revoke",item})}/>
     <Modal open={Boolean(share)} onClose={()=>setShare(null)} title="分享投递" description="独立取件码供登录用户使用；分享链接和二维码需要六位提取码。">{share&&<>
       {share.pickupCode&&<div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/40 p-4"><span className="text-xs text-muted-foreground">独立取件码</span><span className="pickup-code break-all text-2xl font-semibold">{share.pickupCode.slice(0,4)}-{share.pickupCode.slice(4)}</span><Button variant="outline" size="lg" onClick={()=>void copy(share.pickupCode??"")}>复制取件码</Button></div>}
       <div className="flex items-center gap-4"><div className="qr-surface shrink-0 rounded-lg p-2"><QRCodeSVG value={shareUrl} size={104} bgColor="transparent"/></div><div className="flex min-w-0 flex-1 flex-col gap-2"><span className="text-sm font-medium">扫码在另一台设备接收</span><span className="break-all text-xs text-muted-foreground">{shareUrl}</span><Button variant="outline" className="w-fit" onClick={()=>void copy(shareUrl)}>复制链接</Button></div></div>

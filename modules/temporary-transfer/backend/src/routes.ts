@@ -165,9 +165,12 @@ export function registerRoutes(app: FastifyInstance, store: TransferStore, setti
     const user = owner(request);
     const input = body(request);
     const title = text(input.title, 180).trim() || "临时投递";
-    const hours = integer(input.hours ?? settings.get().defaultHours, 1, settings.get().maxHours);
+    const { defaultHours, maxHours } = settings.get();
+    const durationMinutes = input.durationMinutes === undefined
+      ? integer(input.hours ?? defaultHours, 1, maxHours) * 60
+      : integer(input.durationMinutes, 1, maxHours * 60);
     const maxGrants = input.maxGrants === undefined ? settings.get().defaultMaxGrants : input.maxGrants === null ? null : integer(input.maxGrants, 1, settings.get().maxGrantsAllowed);
-    const expiresAt = Date.now() + hours * 3_600_000;
+    const expiresAt = Date.now() + durationMinutes * 60_000;
     if (input.kind === "text") {
       const content = text(input.content, 100_000);
       if (!content.trim()) throw new Error("输入内容不能为空");

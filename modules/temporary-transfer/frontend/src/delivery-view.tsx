@@ -35,6 +35,9 @@ import {
   FieldLabel,
   FieldDescription,
   FieldError,
+  FieldGroup,
+  FieldLegend,
+  FieldSet,
 } from "./components/ui/field";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
@@ -139,7 +142,7 @@ export interface DeliveryViewProps {
   mode: string;
   files: File[];
   content: string;
-  hours: number;
+  durationMinutes: number;
   maxGrants: string;
   hasJob: boolean;
   resumeCount: number;
@@ -153,10 +156,10 @@ export interface DeliveryViewProps {
   setMode: (v: string) => void;
   setFiles: (v: File[]) => void;
   setContent: (v: string) => void;
-  setHours: (v: number) => void;
+  setDurationMinutes: (v: number) => void;
   setMaxGrants: (v: string) => void;
   selectFiles: (v: File[]) => void;
-  create: (e: FormEvent) => Promise<void>;
+  create: (durationMinutes: number) => Promise<void>;
   pause: () => void;
   discard: () => void;
   openShare: (t: Transfer) => Promise<void>;
@@ -181,6 +184,10 @@ export function DeliveryView(p: DeliveryViewProps) {
     [filter, setFilter] = useState("全部投递"),
     [dragging, setDragging] = useState(false);
   const [copied, setCopied] = useState("");
+  const [customDuration, setCustomDuration] = useState<{
+    hours: string;
+    minutes: string;
+  } | null>(null);
   const input = useRef<HTMLInputElement>(null),
     requestId = useRef(0);
   const valid = p.items
@@ -190,15 +197,51 @@ export function DeliveryView(p: DeliveryViewProps) {
     (t) => filter === "全部投递" || transferStatus(t, p.now) === filter,
   );
   const locked = p.busy || p.hasJob;
-  const options = Array.from(
-    new Set([1, 6, 24, 72, p.hours, p.settings?.defaultHours ?? 24]),
+  const maxHours = p.settings?.maxHours ?? 168;
+  const durationMinutes = customDuration
+    ? Number(customDuration.hours) * 60 + Number(customDuration.minutes)
+    : p.durationMinutes;
+  let durationError = "";
+  if (customDuration) {
+    if (
+      !/^\d*$/.test(customDuration.hours) ||
+      !/^\d*$/.test(customDuration.minutes) ||
+      Number(customDuration.minutes) > 59
+    ) {
+      durationError = "小时须为非负整数，分钟须为 0 到 59 的整数。";
+    } else if (durationMinutes < 1 || durationMinutes > maxHours * 60) {
+      durationError = `有效期须在 1 分钟到 ${maxHours} 小时之间。`;
+    }
+  }
+  const durationInvalid = Boolean(durationError) && !p.hasJob;
+  const presetOptions = Array.from(
+    new Set([
+      1,
+      5,
+      10,
+      15,
+      30,
+      45,
+      60,
+      360,
+      1440,
+      4320,
+      p.durationMinutes,
+      (p.settings?.defaultHours ?? 24) * 60,
+    ]),
   )
-    .filter((h) => h <= (p.settings?.maxHours ?? 168))
+    .filter((minutes) => minutes <= maxHours * 60)
     .sort((a, b) => a - b)
-    .map((h) => ({
-      value: String(h),
-      label: h > 24 && h % 24 === 0 ? `${h / 24} 天` : `${h} 小时`,
+    .map((minutes) => ({
+      value: String(minutes),
+      label:
+        minutes > 1440 && minutes % 1440 === 0
+          ? `${minutes / 1440} 天`
+          : minutes % 60 === 0
+            ? `${minutes / 60} 小时`
+            : `${minutes} 分钟`,
     }));
+  const options = [...presetOptions, { value: "custom", label: "自定义" }];
   function changeCode(v: string) {
     requestId.current++;
     setCode(v.toUpperCase());
@@ -351,7 +394,10 @@ export function DeliveryView(p: DeliveryViewProps) {
           </CardHeader>
           <form
             className="flex min-h-0 flex-1 flex-col gap-3"
-            onSubmit={(e) => void p.create(e)}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!durationInvalid) void p.create(durationMinutes);
+            }}
           >
             <CardContent className="flex min-h-0 flex-1 flex-col gap-3">
               {p.resumeCount > 0 && !p.hasJob && (
@@ -558,10 +604,17 @@ export function DeliveryView(p: DeliveryViewProps) {
                   </FieldLabel>
                   <Select
                     items={options}
-                    value={String(p.hours)}
+                    value={
+                      customDuration ? "custom" : String(p.durationMinutes)
+                    }
                     disabled={locked}
                     onValueChange={(v) => {
-                      if (v) p.setHours(Number(v));
+                      if (v === "custom") {
+                        setCustomDuration({ hours: "", minutes: "" });
+                      } else if (v) {
+                        setCustomDuration(null);
+                        p.setDurationMinutes(Number(v));
+                      }
                     }}
                   >
                     <SelectTrigger id="expiry" className="w-28">
@@ -588,9 +641,80 @@ export function DeliveryView(p: DeliveryViewProps) {
                   更多设置
                 </Button>
               </div>
+              {customDuration && (
+                <FieldSet
+                  className="min-w-0 gap-2"
+                  disabled={locked}
+                  aria-describedby="expiry-custom-help"
+                >
+                  <FieldLegend variant="label" className="sr-only">
+                    自定义有效期
+                  </FieldLegend>
+                  <FieldGroup className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <FieldLabel htmlFor="expiry-hours">小时</FieldLabel>
+                      <Input
+                        id="expiry-hours"
+                        inputMode="numeric"
+                        placeholder="0"
+                        value={customDuration.hours}
+                        aria-invalid={
+                          durationInvalid &&
+                          Boolean(
+                            customDuration.hours || customDuration.minutes,
+                          )
+                        }
+                        aria-describedby="expiry-custom-help"
+                        onChange={(e) =>
+                          setCustomDuration({
+                            ...customDuration,
+                            hours: e.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="expiry-minutes">分钟</FieldLabel>
+                      <Input
+                        id="expiry-minutes"
+                        inputMode="numeric"
+                        placeholder="0"
+                        value={customDuration.minutes}
+                        aria-invalid={
+                          durationInvalid &&
+                          Boolean(
+                            customDuration.hours || customDuration.minutes,
+                          )
+                        }
+                        aria-describedby="expiry-custom-help"
+                        onChange={(e) =>
+                          setCustomDuration({
+                            ...customDuration,
+                            minutes: e.target.value,
+                          })
+                        }
+                      />
+                    </Field>
+                  </FieldGroup>
+                  {durationInvalid &&
+                  (customDuration.hours || customDuration.minutes) ? (
+                    <FieldError id="expiry-custom-help">
+                      {durationError}
+                    </FieldError>
+                  ) : (
+                    <FieldDescription id="expiry-custom-help">
+                      空白按 0 计算，至少 1 分钟，最长 {maxHours} 小时。
+                    </FieldDescription>
+                  )}
+                </FieldSet>
+              )}
             </CardContent>
             <CardFooter className="flex-col items-stretch gap-2">
-              <Button type="submit" size="lg" disabled={p.busy || p.loading}>
+              <Button
+                type="submit"
+                size="lg"
+                disabled={p.busy || p.loading || durationInvalid}
+              >
                 <Upload />
                 {p.busy ? "正在创建投递…" : p.hasJob ? "继续上传" : "创建投递"}
               </Button>

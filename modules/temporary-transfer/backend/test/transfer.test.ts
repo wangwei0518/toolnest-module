@@ -36,6 +36,36 @@ test("text sharing keeps the code stable, isolates owners and enforces revocatio
   assert.equal(store.usage(), 0);
 });
 
+test("creation accepts minute durations and preserves hour-based settings and clients", async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "toolnest-transfer-test-"));
+  const store = new TransferStore(dir);
+  const settings = new SettingsStore(dir);
+  await settings.load();
+  const app = Fastify();
+  registerRoutes(app, store, settings, new Set());
+  t.after(async () => { await app.close(); store.close(); await rm(dir, { recursive: true, force: true }); });
+
+  const create = (duration: { durationMinutes?: number; hours?: number }, kind = "text") =>
+    app.inject({ method: "POST", url: "/transfers", headers: { "x-toolnest-user-id": "1" },
+      payload: { kind, title: "测试", content: "有效期测试", ...duration } });
+
+  for (const [input, minutes, kind] of [
+    [{ durationMinutes: 1 }, 1, "text"],
+    [{ durationMinutes: 15 }, 15, "files"],
+    [{ hours: 1 }, 60, "text"],
+    [{}, settings.get().defaultHours * 60, "text"],
+  ] as const) {
+    const before = Date.now();
+    const response = await create(input, kind);
+    assert.equal(response.statusCode, 201, response.body);
+    const expiresAt = response.json().expiresAt;
+    assert.ok(expiresAt >= before + minutes * 60_000 && expiresAt <= Date.now() + minutes * 60_000);
+  }
+  for (const durationMinutes of [0, 1.5, settings.get().maxHours * 60 + 1]) {
+    assert.equal((await create({ durationMinutes })).statusCode, 400);
+  }
+});
+
 test("share keys survive restart and text is counted against capacity", async (t) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "toolnest-transfer-test-"));
   let store = new TransferStore(dir);

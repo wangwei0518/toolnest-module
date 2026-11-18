@@ -45,13 +45,13 @@ export function Modal({
       >
         <SheetContent
           side="bottom"
-          className="tn-temporary-transfer max-h-[92svh] overflow-y-auto rounded-t-xl"
+          className="tn-temporary-transfer max-h-[92svh] rounded-t-xl"
         >
-          <SheetHeader>
+          <SheetHeader className="shrink-0 pr-14">
             <SheetTitle>{title}</SheetTitle>
             {description && <SheetDescription>{description}</SheetDescription>}
           </SheetHeader>
-          <div className="flex min-w-0 flex-col gap-4 px-6 pb-6">
+          <div className="mx-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto pb-6">
             {children}
           </div>
         </SheetContent>
@@ -64,12 +64,14 @@ export function Modal({
         if (!v) onClose();
       }}
     >
-      <DialogContent className="tn-temporary-transfer max-h-[90svh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
+      <DialogContent className="tn-temporary-transfer tn-transfer-modal max-h-[90svh] max-w-xl">
+        <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-4">{children}</div>
+        <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
+          {children}
+        </div>
       </DialogContent>
     </Dialog>
   );

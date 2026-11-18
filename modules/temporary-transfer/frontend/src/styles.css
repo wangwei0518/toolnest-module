@@ -44,3 +44,10 @@
   .tn-temporary-transfer .tn-transfer-records-desktop { display: block; }
   .tn-temporary-transfer .tn-transfer-records-mobile { display: none; }
 }
+
+/* Host and module utilities can be loaded in either order. */
+.tn-temporary-transfer.tn-transfer-modal {
+  display: flex;
+  flex-direction: column;
+  max-width: min(var(--container-xl), calc(100% - var(--spacing) * 8));
+}
