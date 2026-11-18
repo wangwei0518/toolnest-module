@@ -1,5 +1,14 @@
 # 临时投递验证记录
 
+## 0.1.8 使用 shadcn Table 并取消记录红底（2026-11-18）
+
+- 按 https://ui.shadcn.com/docs/components/base/table 的组合方式，复用平台现有 Base Mira Table 源码到模块本地，使用 Table、TableHeader、TableBody、TableRow、TableHead 和 TableCell；Table 内部复用模块 TableContainer，只保留一层滚动容器。保留固定列宽、长名称省略、状态徽章与操作菜单。
+- 桌面和移动记录均取消整行红色背景，已清理/撤销记录使用普通背景；过期红色徽章及警示图标保留。未修改记录数据和清理逻辑。
+- HMR 和实际安装包检查 1280×720、1440×900、768×1024、390×844 的明暗主题：记录背景中性、可见条目数与接口一致、两套布局互斥，无横向溢出。Browser 插件不可用，使用 Playwright CLI；原生自适应预览窗口已刷新。
+- 平台 pnpm ui:check、本次变更文件的定向 Oxlint、模块前端类型检查、构建、包体预算及 git diff --check 通过。仅验证本模块，未测试真实 R2、未运行全量回归、未推送 GitHub。
+- 通过运行时升级 API 导入 0.1.8 并轮询至 completed；release：`sha256-0f43b9afb45f5d340550f13838a93d15f2e79d158f50c52b07d51cb41c474ebb`。
+
+
 ## 0.1.7 投递记录响应式互斥修复（2026-11-17）
 
 - 原因：宿主和独立模块的 Tailwind 工具类叠加后，移动列表的 `md:hidden` 被宿主 `flex` 规则覆盖，桌面同时显示表格与移动列表；并非接口重复返回记录。

@@ -70,7 +70,14 @@ import { Skeleton } from "./components/ui/skeleton";
 import { Separator } from "./components/ui/separator";
 import { Progress } from "./components/ui/progress";
 import { Modal } from "./components/modal";
-import { TableContainer } from "./components/table-container";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "./components/ui/table";
 import { SettingsPage } from "./settings-page";
 import { FileAttachments, FilePreview, type FileEntry } from "./file-previews";
 import { Receiver } from "./receiver";
@@ -803,14 +810,12 @@ export function DeliveryView(p: DeliveryViewProps) {
                 variant="outline"
                 size="lg"
                 onClick={() =>
-                  document
-                    .getElementById("delivery-records")
-                    ?.scrollIntoView({
-                      behavior: matchMedia("(prefers-reduced-motion: reduce)")
-                        .matches
-                        ? "instant"
-                        : "smooth",
-                    })
+                  document.getElementById("delivery-records")?.scrollIntoView({
+                    behavior: matchMedia("(prefers-reduced-motion: reduce)")
+                      .matches
+                      ? "instant"
+                      : "smooth",
+                  })
                 }
               >
                 查看全部投递
@@ -868,94 +873,83 @@ export function DeliveryView(p: DeliveryViewProps) {
           ) : (
             <>
               <div className="tn-transfer-records-desktop">
-                <TableContainer>
-                  <table className="w-full table-fixed text-left text-xs">
-                    <colgroup>
-                      <col className="w-[29%]" />
-                      <col className="w-[19%]" />
-                      <col className="w-[22%]" />
-                      <col className="w-[14%]" />
-                      <col className="w-[16%]" />
-                    </colgroup>
-                    <thead className="bg-muted/60 text-muted-foreground">
-                      <tr>
-                        {[
-                          "名称 / 类型",
-                          "创建时间",
-                          "有效期",
-                          "状态",
-                          "操作",
-                        ].map((x) => (
-                          <th key={x} className="px-3 py-2.5 font-normal">
-                            {x}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((t) => (
-                        <tr
-                          key={t.id}
-                          className={cn(
-                            "border-b border-border last:border-0",
-                            t.expires_at <= p.now && "bg-destructive/5",
-                          )}
-                        >
-                          <td className="px-3 py-3">
-                            <p
-                              className="truncate text-sm font-medium"
-                              title={t.title}
-                            >
-                              {t.title}
-                            </p>
-                            <p className="truncate text-muted-foreground">
-                              {t.content_kind === "files"
-                                ? `${t.file_count} 个文件`
-                                : "文字与链接"}{" "}
-                              · {bytes(t.size)}
-                            </p>
-                          </td>
-                          <td className="px-3 py-3 text-muted-foreground">
-                            {new Date(t.created_at).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-3 text-muted-foreground">
-                            {new Date(t.expires_at).toLocaleString()}
-                          </td>
-                          <td className="px-3 py-3">
-                            <StatusTag item={t} now={p.now} />
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="outline"
-                                disabled={p.busy || !!opening}
-                                onClick={() =>
-                                  void (transferStatus(t, p.now) === "有效"
-                                    ? p.openShare(t)
-                                    : show(t))
-                                }
-                              >
-                                {transferStatus(t, p.now) === "有效"
-                                  ? "分享"
-                                  : "详情"}
-                              </Button>
-                              {actions(t)}
-                            </div>
-                          </td>
-                        </tr>
+                <Table className="table-fixed">
+                  <colgroup>
+                    <col className="w-[29%]" />
+                    <col className="w-[19%]" />
+                    <col className="w-[22%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[16%]" />
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow>
+                      {[
+                        "名称 / 类型",
+                        "创建时间",
+                        "有效期",
+                        "状态",
+                        "操作",
+                      ].map((x) => (
+                        <TableHead key={x} scope="col" className="text-center">
+                          {x}
+                        </TableHead>
                       ))}
-                    </tbody>
-                  </table>
-                </TableContainer>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell className="text-center">
+                          <p
+                            className="truncate text-sm font-medium"
+                            title={t.title}
+                          >
+                            {t.title}
+                          </p>
+                          <p className="truncate text-muted-foreground">
+                            {t.content_kind === "files"
+                              ? `${t.file_count} 个文件`
+                              : "文字与链接"}{" "}
+                            · {bytes(t.size)}
+                          </p>
+                        </TableCell>
+                        <TableCell className="whitespace-normal text-center text-muted-foreground">
+                          {new Date(t.created_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="whitespace-normal text-center text-muted-foreground">
+                          {new Date(t.expires_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <StatusTag item={t} now={p.now} />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              variant="outline"
+                              disabled={p.busy || !!opening}
+                              onClick={() =>
+                                void (transferStatus(t, p.now) === "有效"
+                                  ? p.openShare(t)
+                                  : show(t))
+                              }
+                            >
+                              {transferStatus(t, p.now) === "有效"
+                                ? "分享"
+                                : "详情"}
+                            </Button>
+                            {actions(t)}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
               <div className="tn-transfer-records-mobile flex-col">
                 {filtered.map((t) => (
                   <div
                     key={t.id}
-                    className={cn(
-                      "flex items-center gap-3 border-b border-border py-4 last:border-0",
-                      t.expires_at <= p.now && "bg-destructive/5",
-                    )}
+                    className="flex items-center gap-3 border-b border-border py-4 last:border-0"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{t.title}</p>
