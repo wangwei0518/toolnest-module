@@ -7,7 +7,7 @@ export const navigation = [
 
 export const menu: ToolNestModuleMenuItem = {
   key: "temporary-transfer",
-  label: "临时投递",
+  label: "文件邮局",
   path: "",
   icon: "box",
   order: 100,

@@ -2,8 +2,8 @@
   "platform": "toolnest-react-backend",
   "manifest_version": 1,
   "id": "temporary-transfer",
-  "name": "临时投递",
-  "version": "0.1.13",
+  "name": "文件邮局",
+  "version": "0.1.17",
   "description": "跨设备临时文件与文字投递",
   "author": "ToolNest",
   "icon": "box",
@@ -46,7 +46,7 @@
   "menus": [
     {
       "key": "temporary-transfer",
-      "label": "临时投递",
+      "label": "文件邮局",
       "path": "",
       "icon": "box",
       "order": 100
