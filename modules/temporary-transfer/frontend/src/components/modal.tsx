@@ -51,7 +51,7 @@ export function Modal({
             <SheetTitle>{title}</SheetTitle>
             {description && <SheetDescription>{description}</SheetDescription>}
           </SheetHeader>
-          <div className="mx-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto pb-6">
+          <div className="mx-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-1 pt-1 pb-6">
             {children}
           </div>
         </SheetContent>
@@ -69,7 +69,7 @@ export function Modal({
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto">
+        <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-1">
           {children}
         </div>
       </DialogContent>
