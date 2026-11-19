@@ -10,6 +10,7 @@ const options = parseArgs(process.argv.slice(2))
 const moduleDir = path.join(rootDir, 'modules', options.moduleDir || options.id)
 const manifestPath = path.join(moduleDir, 'manifest.json')
 const backendDir = path.join(moduleDir, 'backend')
+const goBackendDir = path.join(moduleDir, 'backend-go')
 const frontendDir = path.join(moduleDir, 'frontend')
 const stagingDir = path.join(moduleDir, '.package-staging')
 const outputDir = path.join(moduleDir, 'dist')
@@ -104,7 +105,7 @@ function moduleVersionFiles() {
   return [
     [manifestPath, '模块清单'],
     [path.join(frontendDir, 'package.json'), 'React 前端包'],
-    [path.join(backendDir, 'package.json'), 'Node 后端包'],
+    ...(isNative ? [] : [[path.join(backendDir, 'package.json'), 'Node 后端包']]),
     [path.join(frontendDir, 'src', 'index.tsx'), '入口'],
   ]
 }
@@ -124,8 +125,9 @@ function assertDirectory(directory, label) {
 }
 
 const currentManifest = readManifest()
+const isNative = currentManifest.runtime?.kind === 'native'
 assertDirectory(frontendDir, 'React 前端目录')
-assertDirectory(backendDir, 'Node 后端目录')
+assertDirectory(isNative ? goBackendDir : backendDir, isNative ? 'Go 后端目录' : 'Node 后端目录')
 
 if (options.versionBump) {
   const nextVersion = incrementPatchVersion(currentManifest.version)
@@ -137,7 +139,6 @@ const manifest = readManifest()
 assertModuleVersionSync(manifest.version)
 
 runStep('构建 React 前端', frontendViteCommand, ['build'], frontendDir)
-runStep('检查 Node 后端类型', backendTscCommand, ['-p', 'tsconfig.json'], backendDir)
 
 const outputFile = path.join(outputDir, `${manifest.id}-${manifest.version}.tnmod`)
 rmSync(stagingDir, { recursive: true, force: true })
@@ -148,16 +149,21 @@ mkdirSync(outputDir, { recursive: true })
 const stagingStartedAt = Date.now()
 cpSync(manifestPath, path.join(stagingDir, 'manifest.json'))
 cpSync(path.join(frontendDir, 'dist'), path.join(stagingDir, 'frontend', 'dist'), { recursive: true })
-mkdirSync(path.join(stagingDir, 'backend', 'dist'), { recursive: true })
-runStep(
-  '打包 Node 后端及生产依赖',
-  process.execPath,
-  [path.join(rootDir, 'scripts', 'bundle-backend.mjs'), path.join(backendDir, 'dist', 'main.js'), path.join(stagingDir, 'backend', 'dist', 'main.js')],
-)
-cpSync(path.join(backendDir, 'package.json'), path.join(stagingDir, 'backend', 'package.json'))
-copySharpPlatformDependencies(path.join(stagingDir, 'backend'))
-const backendPrismaDir = path.join(backendDir, 'prisma')
-if (existsSync(backendPrismaDir)) cpSync(backendPrismaDir, path.join(stagingDir, 'backend', 'prisma'), { recursive: true })
+if (isNative) {
+  buildNativeBackend(manifest.runtime.executables)
+} else {
+  runStep('检查 Node 后端类型', backendTscCommand, ['-p', 'tsconfig.json'], backendDir)
+  mkdirSync(path.join(stagingDir, 'backend', 'dist'), { recursive: true })
+  runStep(
+    '打包 Node 后端及生产依赖',
+    process.execPath,
+    [path.join(rootDir, 'scripts', 'bundle-backend.mjs'), path.join(backendDir, 'dist', 'main.js'), path.join(stagingDir, 'backend', 'dist', 'main.js')],
+  )
+  cpSync(path.join(backendDir, 'package.json'), path.join(stagingDir, 'backend', 'package.json'))
+  copySharpPlatformDependencies(path.join(stagingDir, 'backend'))
+  const backendPrismaDir = path.join(backendDir, 'prisma')
+  if (existsSync(backendPrismaDir)) cpSync(backendPrismaDir, path.join(stagingDir, 'backend', 'prisma'), { recursive: true })
+}
 console.log(`[toolnest-module] 准备发布目录：完成（${Date.now() - stagingStartedAt}ms）`)
 
 const stagingStats = directoryStats(stagingDir)
@@ -172,6 +178,27 @@ archive.writeZip(outputFile)
 console.log(`[toolnest-module] 压缩 tnmod 包：完成（${Date.now() - archiveStartedAt}ms）`)
 rmSync(stagingDir, { recursive: true, force: true })
 console.log(`已生成 ${path.relative(rootDir, outputFile)}`)
+
+function buildNativeBackend(executables) {
+  if (!executables || typeof executables !== 'object' || Object.keys(executables).length === 0) {
+    throw new Error('原生模块必须声明 runtime.executables')
+  }
+  const paths = new Set()
+  for (const [target, entry] of Object.entries(executables)) {
+    const match = /^([a-z0-9]+)\/([a-z0-9]+)$/.exec(target)
+    if (!match || typeof entry !== 'string' || !entry.startsWith('backend/bin/') ||
+        entry.split('/').some((part) => !/^[a-zA-Z0-9_.-]+$/.test(part) || part === '.' || part === '..') ||
+        (match[1] === 'windows' && !entry.endsWith('.exe')) || paths.has(entry)) {
+      throw new Error(`无效的原生模块目标或入口：${target}`)
+    }
+    paths.add(entry)
+    const output = path.join(stagingDir, entry)
+    mkdirSync(path.dirname(output), { recursive: true })
+    runStep(`构建 Go 后端 ${target}`, process.env.TOOLNEST_GO_EXECUTABLE || 'go',
+      ['build', '-mod=readonly', '-trimpath', '-buildvcs=false', '-ldflags=-s -w', '-o', output, '.'],
+      goBackendDir, { GOOS: match[1], GOARCH: match[2], CGO_ENABLED: '0' })
+  }
+}
 
 function addDirectory(currentDir, relativeDir = '') {
   for (const entry of readdirSync(currentDir, { withFileTypes: true })) {

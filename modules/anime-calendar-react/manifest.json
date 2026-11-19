@@ -9,10 +9,14 @@
   "icon": "calendar",
   "minimum_core_version": ">=0.1.0",
   "runtime": {
-    "kind": "node",
-    "entry": "backend/dist/main.js",
+    "kind": "native",
+    "executables": {
+      "linux/amd64": "backend/bin/anime-calendar-linux-amd64",
+      "linux/arm64": "backend/bin/anime-calendar-linux-arm64",
+      "windows/amd64": "backend/bin/anime-calendar-windows-amd64.exe"
+    },
     "transport": "http",
-    "startup": "lazy",
+    "startup": "eager",
     "startup_timeout_ms": 15000,
     "shutdown_timeout_ms": 20000,
     "request_timeout_ms": 120000,

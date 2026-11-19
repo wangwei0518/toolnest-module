@@ -18,7 +18,8 @@ const defaultBudget = {
   packageFiles: 200,
 }
 const moduleBudgets = {
-  'anime-calendar-react': { totalJsGzip: 160 * kib, largestAsyncJsGzip: 120 * kib, packageBytes: 3 * mib, unpackedBytes: 6 * mib },
+  // Three stripped native executables share one catalog artifact.
+  'anime-calendar-react': { totalJsGzip: 160 * kib, largestAsyncJsGzip: 120 * kib, packageBytes: 18 * mib, unpackedBytes: 46 * mib },
   'python-runner': { totalJsGzip: 1_050 * kib, largestAsyncJsGzip: 800 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
   'workflow-tickets-react': { totalJsGzip: 600 * kib, largestAsyncJsGzip: 200 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
 }

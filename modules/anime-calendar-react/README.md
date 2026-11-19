@@ -8,7 +8,7 @@ ToolNest React 运行时模块。按档期与星期浏览 Bangumi 新番数据�
 - 周历页：七日放送分栏、地区与关注筛选、折叠/展开和详情查看。
 - 设置页：真实 Bangumi 连接测试、代理、手动刷新、长剧集缓存、默认展示偏好、通知渠道/条件/模板。
 - Dashboard 小组件：今日放送摘要与模块快捷入口。
-- 缓存与标记：模块数据目录内原子写入 JSON；关注标记独立于上游缓存，刷新不会覆盖。
+- 缓存与标记：PostgreSQL 保存缓存、关注、通知配置和发送历史。关注标记独立于上游缓存。
 
 模块行为和优化决策以当前实现、测试和平台运行时契约为准。
 
@@ -16,7 +16,8 @@ ToolNest React 运行时模块。按档期与星期浏览 Bangumi 新番数据�
 
 - 数据源为 Bangumi 公共 API，无需用户凭据；上游不可用时保留并回退到现有缓存。
 - 可选代理支持 `http`、`https`、`socks5` 和 `socks5h`。
-- 持久化文件只写入 `TOOLNEST_PLUGIN_DATA_DIR`，不写模块源码或发布包。
+- 后端是 Go 原生模块。宿主需支持 `runtime.kind: native`，当前包支持 Linux amd64、Linux arm64 和 Windows amd64。
+- 数据沿用 `anime_calendar_entities`。首次打开空表时可从 `TOOLNEST_PLUGIN_DATA_DIR` 导入旧 JSON，现有库升级直接沿用数据。
 - 后端通过平台网关提供 API，并使用平台内部令牌发送通知；前端不直接访问外网。
 - React、React DOM、TanStack Query、SDK 与 Sonner 由宿主共享，模块不打包第二份运行时。
 - 模块只注册一个主菜单入口，档期、周历和设置通过模块内部路由访问。
@@ -31,15 +32,16 @@ ToolNest React 运行时模块。按档期与星期浏览 Bangumi 新番数据�
 
 ```bash
 pnpm install
-pnpm --dir modules/anime-calendar-react/backend test
-pnpm --dir modules/anime-calendar-react/backend typecheck
-pnpm --dir modules/anime-calendar-react/backend build
+cd modules/anime-calendar-react/backend-go
+go test -race ./...
+go vet ./...
+cd ../../..
 pnpm --dir modules/anime-calendar-react/frontend test
 pnpm --dir modules/anime-calendar-react/frontend typecheck
 pnpm --dir modules/anime-calendar-react/frontend build
 ```
 
-正式交付包从仓库根目录生成：
+设置 `ANIME_TEST_DATABASE_URL` 指向隔离 PostgreSQL 后，Go 测试还会检查旧数据导入与事务回滚。正式交付包从仓库根目录生成，构建机需具备 `backend-go/go.mod` 声明的 Go 工具链：
 
 ```bash
 pnpm package:module --id anime-calendar-react
@@ -52,11 +54,13 @@ pnpm package:module --id anime-calendar-react
 - 档期刷新失败：页面显示失败/旧缓存状态，已有缓存与关注标记保持不变，可检查网络或代理后重试。
 - 周历请求失败：存在缓存时回退缓存；无缓存时显示可重试错误态。
 - 设置校验失败：服务端返回明确的 4xx 信息，不会写入部分设置。
-- 状态文件异常：模块以默认空状态启动，后续刷新可重建业务缓存。
+- 数据库或旧 JSON 无法读取时，模块启动失败并保留数据。排查连接配置或恢复备份后重新启用。
 - 通知不可用：测试与调度返回失败结果，不伪造成功，不影响日历浏览。
 
 ## 已知外部限制
 
 - 番剧元数据、评分、封面和放送安排以 Bangumi 返回为准；缺失字段会以“未知”或空值展示。
 - Bangumi 的周历接口是轻量数据，详情首次打开时会按需补全并缓存七天。
-- 定时通知依赖模块进程持续运行以及平台通知渠道已启用。
+- 模块启用后常驻运行，定时刷新和通知使用平台时区。投递依赖平台通知渠道已启用。
+
+见 [Go 迁移评估与验收](GO-MIGRATION.md)。
