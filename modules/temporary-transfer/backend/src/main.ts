@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 
 import { config } from "./config.js";
 import { LocalStorage } from "./local-storage.js";
-import { cleanupTransfers } from "./cleanup.js";
+import { CleanupError, cleanupTransfers } from "./cleanup.js";
 import { registerRoutes } from "./routes.js";
 import { SettingsStore } from "./settings.js";
 import { TransferStore } from "./store.js";
@@ -37,10 +37,21 @@ export async function createApp(): Promise<FastifyInstance> {
   const local = new LocalStorage(config.dataDir);
   registerRoutes(app, store, settings, initializing, { apiUrl: config.platformApiUrl, moduleId: config.moduleId, token: config.token }, local);
   let cleanup: Promise<void> | undefined;
+  let lastFailure = "";
+  let lastFailureLoggedAt = 0;
   const runCleanup = () => {
     if (cleanup) return;
     cleanup = cleanupTransfers(store, settings, initializing, local)
-      .catch(() => { console.warn("临时投递清理任务失败，将稍后重试"); }).finally(() => { cleanup = undefined; });
+      .then(() => { lastFailure = ""; })
+      .catch((error: unknown) => {
+        const reason = error instanceof CleanupError ? error.message : "未知错误";
+        const now = Date.now();
+        if (reason !== lastFailure || now - lastFailureLoggedAt >= 15 * 60_000) {
+          console.warn(`临时投递清理任务失败：${reason}，将稍后重试`);
+          lastFailure = reason;
+          lastFailureLoggedAt = now;
+        }
+      }).finally(() => { cleanup = undefined; });
   };
   runCleanup();
   const timer = setInterval(runCleanup, 60_000);

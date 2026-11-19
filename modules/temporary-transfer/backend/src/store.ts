@@ -246,9 +246,14 @@ export class TransferStore {
   }
 
   purgeExpiredText() {
+    const now = Date.now();
+    const pending = `(revoked_at IS NOT NULL OR expires_at <= ? OR (exhausted_at IS NOT NULL AND exhausted_at <= ?))
+      AND (text_content IS NOT NULL OR title <> '已清理的投递')`;
+    const cutoff = now - 120_000;
+    // SQLite takes the writer lock for UPDATE even if there are no matching rows.
+    if (!this.db.prepare(`SELECT 1 FROM transfers WHERE ${pending} LIMIT 1`).get(now, cutoff)) return;
     const changed = this.db.prepare(`UPDATE transfers SET text_content = NULL, title = '已清理的投递'
-      WHERE (revoked_at IS NOT NULL OR expires_at <= ? OR (exhausted_at IS NOT NULL AND exhausted_at <= ?))
-      AND (text_content IS NOT NULL OR title <> '已清理的投递')`).run(Date.now(), Date.now() - 120_000);
+      WHERE ${pending}`).run(now, cutoff);
     if (changed.changes) this.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   }
 

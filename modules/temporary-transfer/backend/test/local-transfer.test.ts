@@ -124,6 +124,26 @@ test("local reservations respect quotas and revoke cleanup removes partial and c
   assert.equal(await env.local.hasCompletedObject(object.object_key, 0), false);
 });
 
+test("cleanup skips unnecessary SQLite writes and retries actual expired content after a lock clears", async (t) => {
+  const env = await setup(t);
+  const db = new DatabaseSync(path.join(env.dir, "transfers.sqlite"));
+  const runCleanup = () => cleanupTransfers(env.store, env.settings, new Set(), env.local);
+  try {
+    db.exec("BEGIN IMMEDIATE");
+    await runCleanup();
+    db.exec("ROLLBACK");
+
+    env.store.createText("1", "Expired", "content", Date.now() - 1000, null, 1024);
+    db.exec("BEGIN IMMEDIATE");
+    await assert.rejects(runCleanup, /清除失效投递内容（SQLITE_BUSY\/5）/);
+    assert.equal(env.store.usage(), 7);
+    db.exec("ROLLBACK");
+
+    await runCleanup();
+    assert.equal(env.store.usage(), 0);
+  } finally { db.close(); }
+});
+
 test("configuring R2 does not relocate existing local files or make their downloads use R2", async (t) => {
   const env = await setup(t); const file = await env.prepare(0); await env.publish(file.id, file.fileId);
   const r2 = { accountId: "a".repeat(32), bucket: "test-bucket", accessKeyId: "test-access", secretAccessKey: "test-secret" };
