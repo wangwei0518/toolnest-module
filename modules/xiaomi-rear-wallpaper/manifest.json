@@ -3,14 +3,18 @@
   "manifest_version": 1,
   "id": "xiaomi-rear-wallpaper",
   "name": "背屏壁纸",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "为小米手机背屏裁切、预览和管理壁纸。",
   "author": "ToolNest",
   "icon": "box",
   "minimum_core_version": ">=0.1.0",
   "runtime": {
-    "kind": "node",
-    "entry": "backend/dist/main.js",
+    "kind": "native",
+    "executables": {
+      "linux/amd64": "backend/bin/wallpaper-linux-amd64",
+      "linux/arm64": "backend/bin/wallpaper-linux-arm64",
+      "windows/amd64": "backend/bin/wallpaper-windows-amd64.exe"
+    },
     "transport": "http",
     "http_shutdown": true,
     "startup": "lazy",

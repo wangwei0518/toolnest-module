@@ -1,6 +1,5 @@
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
 
@@ -13,7 +12,6 @@ const goBackendDir = path.join(moduleDir, 'backend-go')
 const frontendDir = path.join(moduleDir, 'frontend')
 const stagingDir = path.join(moduleDir, '.package-staging')
 const outputDir = path.join(moduleDir, 'dist')
-const backendRequire = createRequire(path.join(backendDir, 'package.json'))
 const binSuffix = process.platform === 'win32' ? '.cmd' : ''
 const frontendViteCommand = path.join(frontendDir, 'node_modules', '.bin', `vite${binSuffix}`)
 const backendTscCommand = path.join(backendDir, 'node_modules', '.bin', `tsc${binSuffix}`)
@@ -172,7 +170,6 @@ if (isNative) {
     [path.join(rootDir, 'scripts', 'bundle-backend.mjs'), path.join(backendDir, 'dist', 'main.js'), path.join(stagingDir, 'backend', 'dist', 'main.js')],
   )
   cpSync(path.join(backendDir, 'package.json'), path.join(stagingDir, 'backend', 'package.json'))
-  copySharpPlatformDependencies(path.join(stagingDir, 'backend'))
   const backendPrismaDir = path.join(backendDir, 'prisma')
   if (existsSync(backendPrismaDir)) cpSync(backendPrismaDir, path.join(stagingDir, 'backend', 'prisma'), { recursive: true })
 }
@@ -207,7 +204,7 @@ function buildNativeBackend(executables) {
     const output = path.join(stagingDir, entry)
     mkdirSync(path.dirname(output), { recursive: true })
     runStep(`构建 Go 后端 ${target}`, process.env.TOOLNEST_GO_EXECUTABLE || 'go',
-      ['build', '-mod=readonly', '-trimpath', '-buildvcs=false', '-ldflags=-s -w', '-o', output, '.'],
+      ['build', ...(manifest.id === 'xiaomi-rear-wallpaper' ? ['-tags=nodynamic'] : []), '-mod=readonly', '-trimpath', '-buildvcs=false', '-ldflags=-s -w', '-o', output, '.'],
       goBackendDir, { GOOS: match[1], GOARCH: match[2], CGO_ENABLED: '0' })
   }
 }
@@ -223,70 +220,6 @@ function addDirectory(currentDir, relativeDir = '') {
       archive.addLocalFile(absolutePath, parent === '.' ? '' : parent, entry.name)
     }
   }
-}
-
-function copySharpPlatformDependencies(stagingBackendDir) {
-  let sharpEntry
-  try {
-    sharpEntry = backendRequire.resolve('sharp')
-  } catch {
-    return
-  }
-
-  const sharpRoot = findPackageRoot(sharpEntry, 'sharp')
-  const sharpRequire = createRequire(path.join(sharpRoot, 'package.json'))
-  const sharpManifest = JSON.parse(readFileSync(path.join(sharpRoot, 'package.json'), 'utf8'))
-  const runtimePlatform = `${process.platform}-${process.arch}`
-  const nativePackageNames = [
-    `@img/sharp-${runtimePlatform}`,
-    `@img/sharp-libvips-${runtimePlatform}`,
-  ].filter((name) => sharpManifest.optionalDependencies?.[name])
-
-  if (nativePackageNames.length === 0) {
-    throw new Error(`sharp 没有为当前平台 ${runtimePlatform} 声明原生可选依赖`)
-  }
-
-  const scopedPackageDir = path.join(stagingBackendDir, 'node_modules', '@img')
-  mkdirSync(scopedPackageDir, { recursive: true })
-
-  for (const packageName of nativePackageNames) {
-    const entryCandidates = [`${packageName}/sharp.node`, `${packageName}/package`, packageName]
-    let packageEntry
-    for (const candidate of entryCandidates) {
-      try {
-        packageEntry = sharpRequire.resolve(candidate)
-        break
-      } catch {
-        // Try the next exported package entry; the package root is copied below.
-      }
-    }
-    if (!packageEntry) {
-      throw new Error(
-        `sharp 原生依赖 ${packageName} 未安装。请在目标平台运行 pnpm install --include=optional 后重新打包。`,
-      )
-    }
-
-    const packageRoot = findPackageRoot(packageEntry, packageName)
-    const packageDestination = path.join(scopedPackageDir, packageName.slice('@img/'.length))
-    cpSync(realpathSync(packageRoot), packageDestination, { recursive: true })
-  }
-
-  console.log(`[toolnest-module] 已附带 sharp 原生依赖：${nativePackageNames.join(', ')}`)
-}
-
-function findPackageRoot(entryPath, expectedName) {
-  let currentDir = path.dirname(realpathSync(entryPath))
-  while (true) {
-    const manifestPath = path.join(currentDir, 'package.json')
-    if (existsSync(manifestPath)) {
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-      if (manifest.name === expectedName) return currentDir
-    }
-    const parentDir = path.dirname(currentDir)
-    if (parentDir === currentDir) break
-    currentDir = parentDir
-  }
-  throw new Error(`无法定位 ${expectedName} 的安装目录（${entryPath}）`)
 }
 
 function directoryStats(directory) {

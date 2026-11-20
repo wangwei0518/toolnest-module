@@ -47,6 +47,7 @@ jobs:
             modules/anime-calendar-react/backend-go/go.sum
             modules/temporary-transfer/backend-go/go.sum
             modules/workflow-tickets-react/backend-go/go.sum
+            modules/xiaomi-rear-wallpaper/backend-go/go.sum
 
       - name: Test anime calendar Go backend
         working-directory: modules/anime-calendar-react/backend-go
@@ -71,6 +72,10 @@ jobs:
           go -C modules/temporary-transfer/backend-go test -race ./...
           go -C modules/temporary-transfer/backend-go vet ./...
           node --experimental-strip-types --test modules/temporary-transfer/frontend/test/errors.test.ts
+
+      - name: Test wallpaper Go backend
+        working-directory: modules/xiaomi-rear-wallpaper/backend-go
+        run: go test -tags nodynamic -race ./... && go vet -tags nodynamic ./...
 
       - name: Validate module bundle budgets
         run: pnpm budget:check

@@ -23,9 +23,8 @@ ToolNest React 运行时模块：上传静态图片或安卓 Live Photo，为小
 
 ```bash
 pnpm --filter @toolnest/xiaomi-rear-wallpaper-react-frontend typecheck
-pnpm --filter @toolnest/xiaomi-rear-wallpaper-react-backend test
+go -C modules/xiaomi-rear-wallpaper/backend-go test -tags nodynamic ./...
 pnpm --filter @toolnest/xiaomi-rear-wallpaper-react-frontend build
-pnpm --filter @toolnest/xiaomi-rear-wallpaper-react-backend build
 ```
 
 在 ToolNest 仓库根目录启动 React Host 和隔离的模块 HMR 开发映射：
@@ -37,7 +36,7 @@ pnpm react:dev:xiaomi-rear-wallpaper
 替换手机参考原图或调整遮罩区域后，在模块仓库根目录重新生成透明框，再构建前端：
 
 ```bash
-node modules/xiaomi-rear-wallpaper/scripts/prepare-device-frame.mjs
+go -C modules/xiaomi-rear-wallpaper/backend-go run ./cmd/prepare-device-frame
 ```
 
 原始参考图位于 `frontend/assets/xiaomi-rear-display-reference.png`，生成的框图位于 `frontend/src/assets/xiaomi-rear-display-frame.png`。
@@ -48,4 +47,4 @@ node modules/xiaomi-rear-wallpaper/scripts/prepare-device-frame.mjs
 pnpm package:module --id xiaomi-rear-wallpaper
 ```
 
-打包器会将当前构建平台与 CPU 架构所需的 Sharp 原生可选依赖一并放入 `.tnmod`。请在目标运行环境的平台上安装可选依赖并打包；跨平台发布时需分别在各目标平台构建。
+后端由 ToolNest 原生运行时托管。打包器可在同一台开发机上为 Linux amd64、Linux arm64 和 Windows amd64 构建 Go 可执行文件。升级复用原有 `users/<用户>/wallpapers.json` 和作品目录，保留既有作品和待处理任务。迁移设计见 [MIGRATION.md](backend-go/MIGRATION.md)。
