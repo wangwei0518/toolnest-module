@@ -22,12 +22,14 @@ const maxPackageFiles = positiveInteger(process.env.TOOLNEST_MODULE_MAX_FILES, 1
 const maxUnpackedBytes = positiveInteger(process.env.TOOLNEST_MODULE_MAX_UNPACKED_BYTES, 64 * 1024 * 1024)
 
 function parseArgs(argv) {
-  const result = { id: '', moduleDir: '', versionBump: true }
+  const result = { id: '', moduleDir: '', versionBump: true, target: '', versionOnly: false }
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index]
     if (value === '--id') result.id = argv[++index] ?? ''
     else if (value === '--module-dir') result.moduleDir = argv[++index] ?? ''
     else if (value === '--no-version-bump') result.versionBump = false
+    else if (value === '--target') result.target = argv[++index] ?? ''
+    else if (value === '--version-only') result.versionOnly = true
     else if (!result.id && !value.startsWith('-')) result.id = value
   }
   if (!result.id) throw new Error('请提供模块 ID，例如：pnpm package:module -- --id demo-module')
@@ -126,6 +128,10 @@ function assertDirectory(directory, label) {
 
 const currentManifest = readManifest()
 const isNative = currentManifest.runtime?.kind === 'native'
+if (options.target && !['linux/amd64', 'linux/arm64', 'windows/amd64'].includes(options.target)) throw new Error('不支持的打包目标')
+if (options.target && isNative && !currentManifest.runtime.executables?.[options.target]) throw new Error('模块未声明目标入口')
+const hostTarget = `${process.platform === 'win32' ? 'windows' : process.platform}/${process.arch === 'x64' ? 'amd64' : process.arch}`
+if (options.target && !isNative && options.target !== hostTarget) throw new Error('Node 原生依赖必须在目标平台打包')
 assertDirectory(frontendDir, 'React 前端目录')
 assertDirectory(isNative ? goBackendDir : backendDir, isNative ? 'Go 后端目录' : 'Node 后端目录')
 
@@ -137,17 +143,23 @@ if (options.versionBump) {
 
 const manifest = readManifest()
 assertModuleVersionSync(manifest.version)
+if (options.versionOnly) process.exit(0)
 
 runStep('构建 React 前端', frontendViteCommand, ['build'], frontendDir)
 
-const outputFile = path.join(outputDir, `${manifest.id}-${manifest.version}.tnmod`)
+const suffix = options.target ? `-${options.target.replace('/', '-')}` : ''
+const outputFile = path.join(outputDir, `${manifest.id}-${manifest.version}${suffix}.tnmod`)
 rmSync(stagingDir, { recursive: true, force: true })
 rmSync(outputFile, { force: true })
 mkdirSync(stagingDir, { recursive: true })
 mkdirSync(outputDir, { recursive: true })
 
 const stagingStartedAt = Date.now()
-cpSync(manifestPath, path.join(stagingDir, 'manifest.json'))
+if (options.target) {
+  manifest.package_target = options.target
+  if (isNative) manifest.runtime.executables = { [options.target]: manifest.runtime.executables[options.target] }
+}
+writeFileSync(path.join(stagingDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
 cpSync(path.join(frontendDir, 'dist'), path.join(stagingDir, 'frontend', 'dist'), { recursive: true })
 if (isNative) {
   buildNativeBackend(manifest.runtime.executables)

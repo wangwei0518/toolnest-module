@@ -246,12 +246,19 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Fastify
     return reply.code(204).send();
   });
 
-  app.addHook("onClose", async () => undefined);
+  app.post("/health/shutdown", async (_request, reply) => {
+    reply.raw.once("finish", () => {
+      void app.close().then(() => process.exit(0), () => process.exit(1));
+    });
+    return reply.code(204).send();
+  });
+  app.addHook("onClose", async () => service.close());
   return app;
 }
 
 if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
   void createApp().then(async (app) => {
     await app.listen({ host: "127.0.0.1", port: config.port });
+    process.once("SIGTERM", () => { void app.close().then(() => process.exit(0), () => process.exit(1)); });
   });
 }

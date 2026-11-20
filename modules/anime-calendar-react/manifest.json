@@ -16,6 +16,7 @@
       "windows/amd64": "backend/bin/anime-calendar-windows-amd64.exe"
     },
     "transport": "http",
+    "http_shutdown": true,
     "startup": "eager",
     "startup_timeout_ms": 15000,
     "shutdown_timeout_ms": 20000,

@@ -1,5 +1,6 @@
 {
   "platform": "toolnest-react-backend",
+  "python_environment_recovery": true,
   "manifest_version": 1,
   "id": "python-runner",
   "name": "Python 工具",

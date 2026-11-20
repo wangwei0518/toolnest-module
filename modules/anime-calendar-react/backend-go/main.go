@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log"
@@ -130,8 +131,21 @@ func run(ctx context.Context, cfg config) error {
 		stop()
 		workers.Wait()
 	}()
+	handler := api.handler()
 	server := &http.Server{
-		Handler: api.handler(), ReadHeaderTimeout: 5 * time.Second,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost || r.URL.Path != "/health/shutdown" {
+				handler.ServeHTTP(w, r)
+				return
+			}
+			if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Toolnest-Internal-Token")), []byte(cfg.token)) != 1 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			_ = http.NewResponseController(w).Flush()
+			stop()
+		}), ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second,
 		BaseContext: func(net.Listener) context.Context { return workerCtx },
 	}
@@ -144,7 +158,7 @@ func run(ctx context.Context, cfg config) error {
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
-	case <-ctx.Done():
+	case <-workerCtx.Done():
 		stop()
 		shutdown, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()

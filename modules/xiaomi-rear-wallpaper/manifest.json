@@ -12,6 +12,7 @@
     "kind": "node",
     "entry": "backend/dist/main.js",
     "transport": "http",
+    "http_shutdown": true,
     "startup": "lazy",
     "startup_timeout_ms": 15000,
     "shutdown_timeout_ms": 20000,

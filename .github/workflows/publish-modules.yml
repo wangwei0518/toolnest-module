@@ -2,112 +2,146 @@ name: Publish ToolNest modules
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "GitHub Release tag"
+        description: GitHub Release tag
         required: false
-        default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: publish-modules
   cancel-in-progress: false
 
 jobs:
-  publish:
+  prepare:
     if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.prepare.outputs.build }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 准备版本与发布清单
+        id: prepare
+        run: |
+          node scripts/package-release.mjs --prepare
+          git diff --binary > module-release-versions.patch
+          echo "build=$(jq 'length > 0' module-release-plan.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-plan
+          path: |
+            module-release-plan.json
+            module-release-versions.patch
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, target: linux/amd64, artifact: linux-amd64 }
+          - { runner: ubuntu-24.04-arm, target: linux/arm64, artifact: linux-arm64 }
+          - { runner: windows-2025, target: windows/amd64, artifact: windows-amd64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+      - shell: bash
+        run: if test -s module-release-versions.patch; then git apply module-release-versions.patch; fi
+      - uses: pnpm/action-setup@v4
         with:
           version: 11
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: modules/anime-calendar-react/backend-go/go.mod
           cache-dependency-path: modules/anime-calendar-react/backend-go/go.sum
-
-      - name: Build and package modules
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm release:package --build
         env:
-          RELEASE_BASE_SHA: ${{ github.event.before }}
-          RELEASE_HEAD_SHA: ${{ github.sha }}
-        run: pnpm release:package
-
-      - name: Test bundle budget validation
-        run: node --test test/module-budgets.test.mjs
-
-      - name: Test temporary transfer storage and access
-        run: pnpm --dir modules/temporary-transfer/backend exec node --import tsx --test test/transfer.test.ts test/local-transfer.test.ts ../frontend/test/errors.test.ts
-
-      - name: Validate module bundle budgets
-        run: pnpm budget:check
-
-      - name: Resolve release tag
-        id: release
-        shell: bash
-        env:
-          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
-          RUN_NUMBER: ${{ github.run_number }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TARGET_PLATFORM: ${{ matrix.target }}
+      - if: matrix.target == 'linux/amd64'
         run: |
-          short_sha="${SOURCE_SHA:0:7}"
-          release_tag="${INPUT_RELEASE_TAG:-module-release-${RUN_NUMBER}-${RUN_ATTEMPT}-${short_sha}}"
-          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
-
-      - name: Build catalog
-        env:
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-        run: pnpm catalog:build
-
-      - name: Commit versions and catalog
-        id: commit
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          node --test test/module-budgets.test.mjs
+          pnpm --dir modules/temporary-transfer/backend exec node --import tsx --test test/transfer.test.ts test/local-transfer.test.ts ../frontend/test/errors.test.ts
+      - name: 安装并启动 Linux 发布包
+        if: runner.os == 'Linux'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add catalog.json \
-            modules/*/manifest.json \
-            modules/*/frontend/package.json \
-            modules/*/frontend/src/index.tsx \
-            modules/*/backend/package.json
-          if ! git diff --cached --quiet; then
-            git commit -m "发布模块目录 ${RELEASE_TAG} [skip ci]"
+          if compgen -G 'release-assets/*.tnmod' >/dev/null; then
+            docker pull wudaren/toolnest:latest
+            node test/release-package-install.mjs
           fi
-          echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          git push origin HEAD:main
+      - name: 验证 Windows 发布包启动
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TOOLNEST_TEST_DATABASE_URL: postgresql://postgres:root@127.0.0.1:5432/postgres?sslmode=disable
+        run: |
+          if (Get-ChildItem release-assets -Filter *.tnmod) {
+            $service = Get-Service -Name 'postgresql-x64-*' | Select-Object -First 1
+            Set-Service -Name $service.Name -StartupType Manual
+            Start-Service -Name $service.Name
+            node test/release-package-windows.mjs
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: module-packages-${{ matrix.artifact }}
+          path: release-assets/*.tnmod
+          if-no-files-found: ignore
 
-      - name: Create GitHub Release
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: module-packages-*
+          path: release-assets
+          merge-multiple: true
+      - name: 上传并验证全部包后更新目录
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_TARGET: ${{ steps.commit.outputs.target }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          gh release create "$RELEASE_TAG" modules/*/dist/*.tnmod \
-            --target "$RELEASE_TARGET" \
-            --title "$RELEASE_TAG" \
-            --notes "ToolNest module release $RELEASE_TAG"
+          set -euo pipefail
+          tag="${INPUT_RELEASE_TAG:-module-release-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA:0:7}}"
+          [[ "$tag" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]
+          git check-ref-format "refs/tags/$tag"
+          if test -s module-release-versions.patch; then git apply module-release-versions.patch; fi
+          RELEASE_TAG="$tag" node scripts/build-catalog.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u -- modules
+          if ! git diff --cached --quiet; then git commit -m "同步模块版本 $tag [skip ci]"; fi
+          git tag "$tag"
+          git push origin "refs/tags/$tag"
+          gh release create "$tag" release-assets/*.tnmod --verify-tag --draft --title "$tag" --notes "ToolNest module release $tag"
+          gh release download "$tag" --pattern '*.tnmod' --dir verified-assets
+          for file in release-assets/*.tnmod; do cmp "$file" "verified-assets/${file##*/}"; done
+          gh release edit "$tag" --draft=false
+          git add catalog-v2.json
+          git commit -m "发布模块目录 v2 $tag [skip ci]"
+          git push origin HEAD:main

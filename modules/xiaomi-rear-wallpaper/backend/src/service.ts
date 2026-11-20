@@ -104,6 +104,7 @@ function checkedCropPixels(crop: CropRect, width: number, height: number) {
 
 export class WallpaperService {
   private readonly jobs = new Map<string, ProcessingJob>();
+  private readonly pending = new Set<Promise<void>>();
 
   constructor(private readonly storage = new WallpaperStorage(config.dataDir)) {}
 
@@ -335,7 +336,13 @@ export class WallpaperService {
   }
 
   private schedule(ownerId: string, wallpaperId: string, jobId: string): void {
-    queueMicrotask(() => void this.process(ownerId, wallpaperId, jobId));
+    const task = Promise.resolve().then(() => this.process(ownerId, wallpaperId, jobId));
+    this.pending.add(task);
+    void task.then(() => this.pending.delete(task), () => this.pending.delete(task));
+  }
+
+  async close(): Promise<void> {
+    await Promise.allSettled(this.pending);
   }
 
   private async process(ownerId: string, wallpaperId: string, jobId: string): Promise<void> {

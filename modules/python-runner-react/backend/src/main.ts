@@ -1262,7 +1262,26 @@ async function directoryStats(root: string): Promise<PathStats> {
   );
 }
 
-if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
+if (process.argv[2] === "--recover-python-environments") {
+  const db = new Database(config.databaseUrl, config.databaseSchema, config.databasePoolMax);
+  try {
+    const projects = new ProjectService(db);
+    const security = new SecurityService(db, projects);
+    const environments = new EnvironmentService(db, projects, security);
+    const records = await db.query<{ id: string; has_environment: boolean }>(
+      "SELECT p.id, e.project_id IS NOT NULL AS has_environment FROM pr_projects p LEFT JOIN pr_environment_states e ON e.project_id = p.id WHERE p.status <> 'deleted' ORDER BY p.id",
+    );
+    for (const { id, has_environment } of records.rows) {
+      if (!has_environment && !await stat(path.join(projects.projectRoot(id), "venv")).catch(() => null)) continue;
+      const scan = await security.scanProject(id);
+      await security.requireProjectConfirmation(id, { risk_confirmed: true, scan_id: scan.scan_id }, "恢复环境");
+      await environments.rebuild(id);
+      await environments.installRequirements(id, { confirm_risk: true, scan_id: scan.scan_id });
+    }
+  } finally {
+    await db.close();
+  }
+} else if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
   const context = await createApp();
   await context.app.listen({ host: "127.0.0.1", port: config.port });
   const shutdown = async () => {

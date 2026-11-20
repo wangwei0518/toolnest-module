@@ -1,35 +1,20 @@
 import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import process from 'node:process'
 
-const rootDir = process.cwd()
 const repository = process.env.GITHUB_REPOSITORY ?? 'wangwei0518/toolnest-module'
-const releaseTag = process.env.RELEASE_TAG ?? 'main'
-const outputFile = process.env.CATALOG_OUTPUT ?? path.join(rootDir, 'catalog.json')
-const modulesDir = path.join(rootDir, 'modules')
+const releaseTag = process.env.RELEASE_TAG
+if (!releaseTag) throw new Error('缺少 RELEASE_TAG')
+const output = process.env.CATALOG_OUTPUT ?? 'catalog-v2.json'
+const plan = readJson('module-release-plan.json')
+const previous = readJson(existsSync(output) ? output : 'catalog.json')
+const modules = new Map(previous.modules.map(item => [item.id, item]))
 
-function readJson(filePath) {
-  return JSON.parse(readFileSync(filePath, 'utf8'))
-}
-
-function hashFile(filePath) {
-  return createHash('sha256').update(readFileSync(filePath)).digest('hex')
-}
-
-const modules = []
-for (const id of readdirSync(modulesDir).sort()) {
-  const moduleDir = path.join(modulesDir, id)
-  if (!statSync(moduleDir).isDirectory()) continue
-  const manifest = readJson(path.join(moduleDir, 'manifest.json'))
-  const packageName = `${manifest.id}-${manifest.version}.tnmod`
-  const packagePath = path.join(moduleDir, 'dist', packageName)
-  const packageUrl = `https://github.com/${repository}/releases/download/${releaseTag}/${packageName}`
-  const packageStats = statSync(packagePath)
-  modules.push({
-    id: manifest.id,
-    name: manifest.name,
-    version: manifest.version,
+for (const { id, dir, version, targets } of plan) {
+  const manifest = readJson(path.join('modules', dir, 'manifest.json'))
+  if (manifest.id !== id || manifest.version !== version) throw new Error('构建清单版本与源码不同')
+  const entry = {
+    id, name: manifest.name, version,
     description: manifest.description ?? '',
     author: manifest.author ?? 'ToolNest',
     icon: manifest.icon ?? 'cube',
@@ -37,18 +22,25 @@ for (const id of readdirSync(modulesDir).sort()) {
     release_notes: `由 ${releaseTag} 发布。`,
     tags: ['ToolNest', '模块'],
     published_at: new Date().toISOString(),
-    package: {
-      url: packageUrl,
-      sha256: hashFile(packagePath),
-      size_bytes: packageStats.size,
-    },
-  })
+  }
+  if (targets.length) entry.packages = Object.fromEntries(targets.map(target => [target, packageInfo(id, version, target)]))
+  else entry.package = packageInfo(id, version)
+  modules.set(id, entry)
+}
+writeFileSync(output, JSON.stringify({ schema_version: 2, name: previous.name, modules: [...modules.values()].sort((a, b) => a.id.localeCompare(b.id)) }, null, 2) + '\n')
+
+function readJson(file) {
+  return JSON.parse(readFileSync(file, 'utf8'))
 }
 
-const catalog = {
-  schema_version: 1,
-  name: 'ToolNest 官方模块目录',
-  modules,
+function packageInfo(id, version, target) {
+  const filename = `${id}-${version}${target ? '-' + target.replace('/', '-') : ''}.tnmod`
+  const file = path.join('release-assets', filename)
+  const size = statSync(file).size
+  if (size < 1 || size > 256 * 1024 * 1024) throw new Error(`包大小无效：${filename}`)
+  return {
+    url: `https://github.com/${repository}/releases/download/${encodeURIComponent(releaseTag)}/${filename}`,
+    sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
+    size_bytes: size,
+  }
 }
-writeFileSync(outputFile, `${JSON.stringify(catalog, null, 2)}\n`, 'utf8')
-console.log(`已生成 ${path.relative(rootDir, outputFile)}，包含 ${modules.length} 个模块版本。`)

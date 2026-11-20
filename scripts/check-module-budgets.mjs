@@ -29,6 +29,9 @@ const budgetExemptModules = new Set(['xiaomi-rear-wallpaper'])
 const additionalFrontendEntries = { 'temporary-transfer': ['guest.js'] }
 const selectedIdIndex = process.argv.indexOf('--id')
 const selectedId = selectedIdIndex === -1 ? undefined : process.argv[selectedIdIndex + 1]
+const targetIndex = process.argv.indexOf('--target')
+const target = targetIndex === -1 ? undefined : process.argv[targetIndex + 1]
+if (targetIndex !== -1 && !/^(linux\/(amd64|arm64)|windows\/amd64)$/.test(target ?? '')) throw new Error('--target 需要有效的平台目标')
 if (selectedIdIndex !== -1 && (!selectedId || selectedId.startsWith('--'))) throw new Error('--id 需要模块 ID')
 
 let failed = false
@@ -45,7 +48,8 @@ for (const moduleDir of moduleDirs) {
   const frontendDir = path.join(moduleDir, 'frontend', 'dist')
   const entryPath = path.join(frontendDir, 'index.js')
   const entryPaths = [entryPath, ...(additionalFrontendEntries[manifest.id] ?? []).map((entry) => path.join(frontendDir, entry))]
-  const packagePath = path.join(moduleDir, 'dist', `${manifest.id}-${manifest.version}.tnmod`)
+  const suffix = target ? `-${target.replace('/', '-')}` : ''
+  const packagePath = path.join(moduleDir, 'dist', `${manifest.id}-${manifest.version}${suffix}.tnmod`)
   if (entryPaths.some((entry) => !existsSync(entry)) || !existsSync(packagePath)) {
     console.error(`[budget] ${manifest.id}: 缺少当前版本构建产物或 tnmod`)
     failed = true
@@ -73,6 +77,15 @@ for (const moduleDir of moduleDirs) {
   const largestAsyncJsGzip = Math.max(0, ...asyncFiles.map(gzipSize))
   const archive = new AdmZip(packagePath)
   const packageEntries = archive.getEntries().filter((entry) => !entry.isDirectory)
+  if (target) {
+    const packaged = JSON.parse(archive.readAsText('manifest.json'))
+    const expected = manifest.runtime?.executables?.[target]
+    if (packaged.package_target !== target || (expected && (JSON.stringify(packaged.runtime.executables) !== JSON.stringify({ [target]: expected }) ||
+      packageEntries.filter(file => file.entryName.startsWith('backend/bin/')).map(file => file.entryName).join(',') !== expected))) {
+      console.error(`[budget] ${manifest.id}: 目标包清单或二进制不匹配 ${target}`)
+      failed = true
+    }
+  }
   for (const entry of entryPaths) {
     const packageEntry = `frontend/dist/${path.relative(frontendDir, entry).replaceAll('\\', '/')}`
     if (!packageEntries.some((file) => file.entryName === packageEntry)) {
