@@ -1,31 +1,22 @@
-# Python Runner React 模块
+# Python Runner
 
-这是面向 ToolNest React 平台的 Python Runner 运行时模块。
+Python Runner 使用 React 前端、Go 原生模块进程和 PostgreSQL。模块随 ToolNest 启动，定时任务和设为自动启动的常驻任务由后端调度。运行项目仍需系统 Python，可以单独为各项目创建虚拟环境。
 
-当前版本已包含：
+主要功能包括项目 ZIP 导入、版本更新与回滚、源码预览、安全风险确认、依赖安装及日志、单次执行、Cron 和常驻任务。配置编辑支持 JSON 和 YAML，界面会遮盖敏感值。
 
-- React ESM 动态前端入口；
-- 独立 Node 运行时进程；
-- 模块专用 PostgreSQL 表迁移；
-- PostgreSQL 持久化的项目仓库、release 更新/回滚和存储统计；
-- ZIP 安全解压、只读源码预览、静态安全扫描和风险确认；
-- 内联/项目 Python 执行、参数限制、超时、输出截断、停止、重跑、日志和执行历史；
-- Cron/一次性定时任务，支持 IANA 时区、启停、立即运行和持久化统计；
-- 常驻任务、自动启动、失败重启策略、日志和生命周期事件；
-- JSON/YAML 配置读取与覆盖保存，敏感字段脱敏并保留原值；
-- React 页面：总览、快速运行、项目仓库、项目详情、执行记录、定时任务和常驻任务；
-- 运行时模块级加载/卸载，前端 ESM 与后端独立 Node 进程分别由宿主治理。
+## 开发和打包
 
-当前状态：首轮功能纵向切片和宿主真实浏览器流程已完成，模块后端集成测试、React/新后端类型检查、Lint、构建和模块包校验已通过；发布前仍需完成宿主安装升级回滚、跨 PC 验证矩阵和性能基准记录。
-
-生成可导入包：
+在模块仓库根目录运行：
 
 ```bash
-pnpm package:python-runner-react
+go -C modules/python-runner-react/backend-go test -race ./...
+go -C modules/python-runner-react/backend-go vet ./...
+pnpm package:module --id python-runner --module-dir python-runner-react --no-version-bump --target linux/amd64
+pnpm budget:check --id python-runner --target linux/amd64
 ```
 
-产物位于 `module-react/python-runner-react/dist/python-runner-2.0.0.tnmod`。导入 React 平台后，模块默认停用；在“模块管理”中启用即可。
+也可打包 `linux/arm64` 和 `windows/amd64`。产物在 `modules/python-runner-react/dist`。安装或升级通过 ToolNest 运行时模块 API 完成，须等待操作成功。
 
-完整迁移范围、API、数据库、进程治理、安全、性能和测试门禁见：
+数据库集成测试使用 `PYTHON_RUNNER_TEST_DATABASE_URL` 指定独立的 PostgreSQL 测试库，并在临时 schema 创建测试数据。真实升级回归使用 `node test/python-runner-go-upgrade.mjs <旧版包> <Go版包>`，需要 Docker 和预构建的 ToolNest Go 平台镜像。通过 `TOOLNEST_GO_TEST_IMAGE` 指定镜像标签。
 
-[Python Runner React 模块迁移开发文档](../../docs/modules/python-runner/python-runner-react-migration-development.md)
+[迁移方案与验收](backend-go/MIGRATION.md)

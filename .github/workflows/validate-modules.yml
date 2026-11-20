@@ -48,6 +48,7 @@ jobs:
             modules/temporary-transfer/backend-go/go.sum
             modules/workflow-tickets-react/backend-go/go.sum
             modules/xiaomi-rear-wallpaper/backend-go/go.sum
+            modules/python-runner-react/backend-go/go.sum
 
       - name: Test anime calendar Go backend
         working-directory: modules/anime-calendar-react/backend-go
@@ -76,6 +77,12 @@ jobs:
       - name: Test wallpaper Go backend
         working-directory: modules/xiaomi-rear-wallpaper/backend-go
         run: go test -tags nodynamic -race ./... && go vet -tags nodynamic ./...
+
+      - name: Test Python Runner Go backend
+        working-directory: modules/python-runner-react/backend-go
+        env:
+          PYTHON_RUNNER_TEST_DATABASE_URL: postgres://postgres:module-tests@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres?sslmode=disable
+        run: go test -race ./... && go vet ./...
 
       - name: Validate module bundle budgets
         run: pnpm budget:check

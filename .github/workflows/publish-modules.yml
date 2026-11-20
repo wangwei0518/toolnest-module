@@ -75,6 +75,7 @@ jobs:
             modules/temporary-transfer/backend-go/go.sum
             modules/workflow-tickets-react/backend-go/go.sum
             modules/xiaomi-rear-wallpaper/backend-go/go.sum
+            modules/python-runner-react/backend-go/go.sum
       - run: pnpm install --frozen-lockfile
       - run: pnpm release:package --build
         env:
@@ -88,6 +89,8 @@ jobs:
           go -C modules/workflow-tickets-react/backend-go vet ./...
           go -C modules/xiaomi-rear-wallpaper/backend-go test -tags nodynamic -race ./...
           go -C modules/xiaomi-rear-wallpaper/backend-go vet -tags nodynamic ./...
+          go -C modules/python-runner-react/backend-go test -race ./...
+          go -C modules/python-runner-react/backend-go vet ./...
           node --experimental-strip-types --test modules/temporary-transfer/frontend/test/errors.test.ts
       - name: 安装并启动 Linux 发布包
         if: runner.os == 'Linux'

@@ -20,7 +20,7 @@ const defaultBudget = {
 const moduleBudgets = {
   // Three stripped native executables share one catalog artifact.
   'anime-calendar-react': { totalJsGzip: 160 * kib, largestAsyncJsGzip: 120 * kib, packageBytes: 18 * mib, unpackedBytes: 46 * mib },
-  'python-runner': { totalJsGzip: 1_050 * kib, largestAsyncJsGzip: 800 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
+  'python-runner': { totalJsGzip: 1_050 * kib, largestAsyncJsGzip: 800 * kib, packageBytes: 7 * mib, unpackedBytes: 20 * mib },
   'workflow-tickets-react': { totalJsGzip: 600 * kib, largestAsyncJsGzip: 200 * kib },
 }
 // This module deliberately embeds its full-resolution phone frame in the entry bundle.
@@ -46,9 +46,9 @@ for (const moduleDir of moduleDirs) {
   const manifest = JSON.parse(readFileSync(path.join(moduleDir, 'manifest.json'), 'utf8'))
   const budget = { ...defaultBudget, ...(moduleBudgets[manifest.id] ?? {}) }
   // Local all-target packages include three binaries. Published packages use the per-target limits.
-  if (['temporary-transfer', 'workflow-tickets-react'].includes(manifest.id) && manifest.runtime?.kind === 'native' && !target) {
+  if (['temporary-transfer', 'workflow-tickets-react', 'python-runner'].includes(manifest.id) && manifest.runtime?.kind === 'native' && !target) {
     budget.packageBytes = 20 * mib
-    budget.unpackedBytes = 46 * mib
+    budget.unpackedBytes = manifest.id === 'python-runner' ? 48 * mib : 46 * mib
   }
   const frontendDir = path.join(moduleDir, 'frontend', 'dist')
   const entryPath = path.join(frontendDir, 'index.js')

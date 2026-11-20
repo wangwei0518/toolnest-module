@@ -4,15 +4,20 @@
   "manifest_version": 1,
   "id": "python-runner",
   "name": "Python 工具",
-  "version": "2.0.28",
+  "version": "2.0.29",
   "description": "本地 Python 项目运行、调度和环境管理。",
   "author": "ToolNest",
   "icon": "code",
   "minimum_core_version": ">=0.1.0",
   "runtime": {
-    "kind": "node",
-    "entry": "backend/dist/main.js",
+    "kind": "native",
+    "executables": {
+      "linux/amd64": "backend/bin/python-runner-linux-amd64",
+      "linux/arm64": "backend/bin/python-runner-linux-arm64",
+      "windows/amd64": "backend/bin/python-runner-windows-amd64.exe"
+    },
     "transport": "http",
+    "http_shutdown": true,
     "startup": "eager",
     "startup_timeout_ms": 15000,
     "shutdown_timeout_ms": 20000,
