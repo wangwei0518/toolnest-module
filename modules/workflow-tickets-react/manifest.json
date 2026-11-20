@@ -3,14 +3,19 @@
   "manifest_version": 1,
   "id": "workflow-tickets-react",
   "name": "工单模板",
-  "version": "0.1.136",
+  "version": "0.1.137",
   "description": "工作流工单与项目协作",
   "author": "ToolNest",
   "icon": "box",
   "minimum_core_version": ">=0.1.0",
   "runtime": {
-    "kind": "node",
-    "entry": "backend/dist/main.js",
+    "kind": "native",
+    "executables": {
+      "linux/amd64": "backend/bin/workflow-tickets-linux-amd64",
+      "linux/arm64": "backend/bin/workflow-tickets-linux-arm64",
+      "windows/amd64": "backend/bin/workflow-tickets-windows-amd64.exe"
+    },
+    "http_shutdown": true,
     "transport": "http",
     "startup": "eager",
     "startup_timeout_ms": 15000,

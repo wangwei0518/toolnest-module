@@ -73,6 +73,7 @@ jobs:
           cache-dependency-path: |
             modules/anime-calendar-react/backend-go/go.sum
             modules/temporary-transfer/backend-go/go.sum
+            modules/workflow-tickets-react/backend-go/go.sum
       - run: pnpm install --frozen-lockfile
       - run: pnpm release:package --build
         env:
@@ -82,6 +83,8 @@ jobs:
           node --test test/module-budgets.test.mjs
           go -C modules/temporary-transfer/backend-go test -race ./...
           go -C modules/temporary-transfer/backend-go vet ./...
+          go -C modules/workflow-tickets-react/backend-go test -race ./...
+          go -C modules/workflow-tickets-react/backend-go vet ./...
           node --experimental-strip-types --test modules/temporary-transfer/frontend/test/errors.test.ts
       - name: 安装并启动 Linux 发布包
         if: runner.os == 'Linux'

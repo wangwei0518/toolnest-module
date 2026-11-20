@@ -21,7 +21,7 @@ const moduleBudgets = {
   // Three stripped native executables share one catalog artifact.
   'anime-calendar-react': { totalJsGzip: 160 * kib, largestAsyncJsGzip: 120 * kib, packageBytes: 18 * mib, unpackedBytes: 46 * mib },
   'python-runner': { totalJsGzip: 1_050 * kib, largestAsyncJsGzip: 800 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
-  'workflow-tickets-react': { totalJsGzip: 600 * kib, largestAsyncJsGzip: 200 * kib, packageBytes: 3 * mib, unpackedBytes: 8 * mib },
+  'workflow-tickets-react': { totalJsGzip: 600 * kib, largestAsyncJsGzip: 200 * kib },
 }
 // This module deliberately embeds its full-resolution phone frame in the entry bundle.
 const budgetExemptModules = new Set(['xiaomi-rear-wallpaper'])
@@ -45,8 +45,8 @@ if (selectedId && !moduleDirs.length) throw new Error(`模块不存在：${selec
 for (const moduleDir of moduleDirs) {
   const manifest = JSON.parse(readFileSync(path.join(moduleDir, 'manifest.json'), 'utf8'))
   const budget = { ...defaultBudget, ...(moduleBudgets[manifest.id] ?? {}) }
-  // The all-target file-post archive contains three binaries. Each catalog target retains the default limits.
-  if (manifest.id === 'temporary-transfer' && manifest.runtime?.kind === 'native' && !target) {
+  // Local all-target packages include three binaries. Published packages use the per-target limits.
+  if (['temporary-transfer', 'workflow-tickets-react'].includes(manifest.id) && manifest.runtime?.kind === 'native' && !target) {
     budget.packageBytes = 20 * mib
     budget.unpackedBytes = 46 * mib
   }

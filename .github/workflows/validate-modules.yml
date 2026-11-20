@@ -46,6 +46,7 @@ jobs:
           cache-dependency-path: |
             modules/anime-calendar-react/backend-go/go.sum
             modules/temporary-transfer/backend-go/go.sum
+            modules/workflow-tickets-react/backend-go/go.sum
 
       - name: Test anime calendar Go backend
         working-directory: modules/anime-calendar-react/backend-go
@@ -55,6 +56,12 @@ jobs:
 
       - name: Build and package modules
         run: pnpm package:all
+
+      - name: Test workflow tickets Go backend
+        working-directory: modules/workflow-tickets-react/backend-go
+        env:
+          TOOLNEST_WORKFLOW_TEST_DATABASE_URL: postgres://postgres:module-tests@127.0.0.1:${{ job.services.postgres.ports[5432] }}/postgres?sslmode=disable
+        run: go test -race ./... && go vet ./...
 
       - name: Test bundle budget validation
         run: node --test test/module-budgets.test.mjs
