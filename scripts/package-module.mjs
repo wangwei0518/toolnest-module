@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import process from 'node:process'
-import AdmZip from '../node_modules/adm-zip/adm-zip.js'
 
 const rootDir = process.cwd()
 const options = parseArgs(process.argv.slice(2))
@@ -145,6 +144,7 @@ const manifest = readManifest()
 assertModuleVersionSync(manifest.version)
 if (options.versionOnly) process.exit(0)
 
+const { default: AdmZip } = await import('adm-zip')
 runStep('构建 React 前端', frontendViteCommand, ['build'], frontendDir)
 
 const suffix = options.target ? `-${options.target.replace('/', '-')}` : ''
