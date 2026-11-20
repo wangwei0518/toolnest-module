@@ -43,7 +43,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: modules/anime-calendar-react/backend-go/go.mod
-          cache-dependency-path: modules/anime-calendar-react/backend-go/go.sum
+          cache-dependency-path: |
+            modules/anime-calendar-react/backend-go/go.sum
+            modules/temporary-transfer/backend-go/go.sum
 
       - name: Test anime calendar Go backend
         working-directory: modules/anime-calendar-react/backend-go
@@ -58,7 +60,10 @@ jobs:
         run: node --test test/module-budgets.test.mjs
 
       - name: Test temporary transfer storage and access
-        run: pnpm --dir modules/temporary-transfer/backend exec node --import tsx --test test/transfer.test.ts test/local-transfer.test.ts ../frontend/test/errors.test.ts
+        run: |
+          go -C modules/temporary-transfer/backend-go test -race ./...
+          go -C modules/temporary-transfer/backend-go vet ./...
+          node --experimental-strip-types --test modules/temporary-transfer/frontend/test/errors.test.ts
 
       - name: Validate module bundle budgets
         run: pnpm budget:check

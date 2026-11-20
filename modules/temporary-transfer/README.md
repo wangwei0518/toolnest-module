@@ -4,7 +4,7 @@
 
 ## 运行条件
 
-- ToolNest React 平台与独立 Node 运行时；模块后端使用 Node 内置 SQLite，要求 Node.js 22.13 或更新版本（该能力目前仍为实验性）。
+- 使用支持 `native` 原生模块的 ToolNest 平台。文件邮局包包含对应系统架构的 Go 可执行文件，支持 Linux amd64、Linux arm64 和 Windows amd64。使用现有 SQLite 数据目录，可按 [Go 迁移方案](./GO-MIGRATION.md) 升级或回退。
 - R2 可选。本地模式无需云凭证，设置页的 R2 字段可以全部留空；容量与期限仍可保存。本地文件位于 `TOOLNEST_PLUGIN_DATA_DIR/local-files`，签名密钥也在数据目录中，不能放在公开静态目录或活动 release 内。
 - 使用 R2 时准备私有标准存储桶和仅限该桶的 Object Read & Write 凭证；请勿启用公开开发域名或公开读取策略。在模块设置中填写账号 ID、桶名及凭证，密钥不回显、不进入发布包。
 - R2 模式需在桶 CORS 中允许实际 HTTPS 源；允许 `PUT`、`GET`、`HEAD` 并公开 `ETag`。CORS 不提供鉴权，桶仍需保持私有。

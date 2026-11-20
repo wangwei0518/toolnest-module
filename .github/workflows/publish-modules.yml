@@ -70,7 +70,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: modules/anime-calendar-react/backend-go/go.mod
-          cache-dependency-path: modules/anime-calendar-react/backend-go/go.sum
+          cache-dependency-path: |
+            modules/anime-calendar-react/backend-go/go.sum
+            modules/temporary-transfer/backend-go/go.sum
       - run: pnpm install --frozen-lockfile
       - run: pnpm release:package --build
         env:
@@ -78,7 +80,9 @@ jobs:
       - if: matrix.target == 'linux/amd64'
         run: |
           node --test test/module-budgets.test.mjs
-          pnpm --dir modules/temporary-transfer/backend exec node --import tsx --test test/transfer.test.ts test/local-transfer.test.ts ../frontend/test/errors.test.ts
+          go -C modules/temporary-transfer/backend-go test -race ./...
+          go -C modules/temporary-transfer/backend-go vet ./...
+          node --experimental-strip-types --test modules/temporary-transfer/frontend/test/errors.test.ts
       - name: 安装并启动 Linux 发布包
         if: runner.os == 'Linux'
         run: |

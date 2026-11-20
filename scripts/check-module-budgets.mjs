@@ -45,6 +45,11 @@ if (selectedId && !moduleDirs.length) throw new Error(`模块不存在：${selec
 for (const moduleDir of moduleDirs) {
   const manifest = JSON.parse(readFileSync(path.join(moduleDir, 'manifest.json'), 'utf8'))
   const budget = { ...defaultBudget, ...(moduleBudgets[manifest.id] ?? {}) }
+  // The all-target file-post archive contains three binaries. Each catalog target retains the default limits.
+  if (manifest.id === 'temporary-transfer' && manifest.runtime?.kind === 'native' && !target) {
+    budget.packageBytes = 20 * mib
+    budget.unpackedBytes = 46 * mib
+  }
   const frontendDir = path.join(moduleDir, 'frontend', 'dist')
   const entryPath = path.join(frontendDir, 'index.js')
   const entryPaths = [entryPath, ...(additionalFrontendEntries[manifest.id] ?? []).map((entry) => path.join(frontendDir, entry))]

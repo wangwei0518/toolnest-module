@@ -3,14 +3,19 @@
   "manifest_version": 1,
   "id": "temporary-transfer",
   "name": "文件邮局",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "跨设备临时文件与文字投递",
   "author": "ToolNest",
   "icon": "box",
   "minimum_core_version": ">=0.1.0",
   "runtime": {
-    "kind": "node",
-    "entry": "backend/dist/main.js",
+    "kind": "native",
+    "executables": {
+      "linux/amd64": "backend/bin/file-post-linux-amd64",
+      "linux/arm64": "backend/bin/file-post-linux-arm64",
+      "windows/amd64": "backend/bin/file-post-windows-amd64.exe"
+    },
+    "http_shutdown": true,
     "transport": "http",
     "startup": "eager",
     "startup_timeout_ms": 15000,
