@@ -5,115 +5,115 @@
     {
       "id": "anime-calendar-react",
       "name": "新番日历",
-      "version": "0.1.59",
+      "version": "0.1.60",
       "description": "按档期与星期浏览新番，管理关注、缓存与通知。",
       "author": "ToolNest",
       "icon": "calendar",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-76-1-38dda30 发布。",
+      "release_notes": "由 module-release-77-1-6fe325f 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-20T09:21:21.458Z",
+      "published_at": "2026-11-20T09:57:18.037Z",
       "packages": {
         "linux/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/anime-calendar-react-0.1.59-linux-amd64.tnmod",
-          "sha256": "bdec5b8a2d11765739907833a919d973657d6d8617790563d3fb751b4103be46",
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/anime-calendar-react-0.1.60-linux-amd64.tnmod",
+          "sha256": "a527a759f89c39beff40dde6dc88393678f61973f8e208f2622cea775cb5c3d1",
           "size_bytes": 5285128
         },
         "linux/arm64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/anime-calendar-react-0.1.59-linux-arm64.tnmod",
-          "sha256": "c79dc934d53e2f7d9befa5dd496c7551a64612b1c44461441d759e8fef0684ff",
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/anime-calendar-react-0.1.60-linux-arm64.tnmod",
+          "sha256": "94c25ad0d73bd0d7802fcceb1a59cfdef4527a25f8f56f90993ed7d72456d4d9",
           "size_bytes": 4866154
         },
         "windows/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/anime-calendar-react-0.1.59-windows-amd64.tnmod",
-          "sha256": "88eeb7aa2231289e6102a005a2c46738b0b7c3a0da511eeab22b5ba27789c967",
-          "size_bytes": 5419564
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/anime-calendar-react-0.1.60-windows-amd64.tnmod",
+          "sha256": "650d8031137ba3db6915ba929f2154522bfe9dedf505130ccf48e2cbd16057de",
+          "size_bytes": 5419562
         }
       }
     },
     {
       "id": "python-runner",
       "name": "Python 工具",
-      "version": "2.0.27",
+      "version": "2.0.28",
       "description": "本地 Python 项目运行、调度和环境管理。",
       "author": "ToolNest",
       "icon": "code",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-76-1-38dda30 发布。",
+      "release_notes": "由 module-release-77-1-6fe325f 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-20T09:21:21.585Z",
+      "published_at": "2026-11-20T09:57:18.139Z",
       "package": {
-        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/python-runner-2.0.27.tnmod",
-        "sha256": "640a2f3098be7a6330dd2c9fa54426dd71a9fa9a69ad8a5b6b28c360b387c1a4",
+        "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/python-runner-2.0.28.tnmod",
+        "sha256": "fc1be92b0f19743e91739cec5462d707a48c79afd5e64ed437be5536aa3c4beb",
         "size_bytes": 1423060
       }
     },
     {
       "id": "temporary-transfer",
       "name": "文件邮局",
-      "version": "0.1.21",
+      "version": "0.1.22",
       "description": "跨设备临时文件与文字投递",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-76-1-38dda30 发布。",
+      "release_notes": "由 module-release-77-1-6fe325f 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-20T09:21:21.587Z",
+      "published_at": "2026-11-20T09:57:18.140Z",
       "packages": {
         "linux/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/temporary-transfer-0.1.21-linux-amd64.tnmod",
-          "sha256": "fffbe3c333b8fb5c2daf1fce03645bc25932c7d5f990e7ddfd240915fc138727",
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/temporary-transfer-0.1.22-linux-amd64.tnmod",
+          "sha256": "269a366b56283846e3ecf27f13274086045931d7b6c62e779db88b25947ef69e",
           "size_bytes": 6139011
         },
         "linux/arm64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/temporary-transfer-0.1.21-linux-arm64.tnmod",
-          "sha256": "3b792235884c0f500f16970b54987bfdf3cfb5bf8d849ee0fd4daf50779ecb3d",
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/temporary-transfer-0.1.22-linux-arm64.tnmod",
+          "sha256": "cda22dfa8c788460a03a1353fbd3cde6f0366fe5a6fa30cae15fbe86d6a0164a",
           "size_bytes": 5630745
         },
         "windows/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/temporary-transfer-0.1.21-windows-amd64.tnmod",
-          "sha256": "1b2253d897c06ba82ac1cca068f5f92d17d5c478950b22d5da08eae991e4cc59",
-          "size_bytes": 6181376
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/temporary-transfer-0.1.22-windows-amd64.tnmod",
+          "sha256": "d9b7adce872f16a8b6f1b3f7169dc576ad10e96edbc0e3988a3bb825bc09c47e",
+          "size_bytes": 6181377
         }
       }
     },
     {
       "id": "workflow-tickets-react",
       "name": "工单模板",
-      "version": "0.1.137",
+      "version": "0.1.138",
       "description": "工作流工单与项目协作",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-76-1-38dda30 发布。",
+      "release_notes": "由 module-release-77-1-6fe325f 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-20T09:21:21.606Z",
+      "published_at": "2026-11-20T09:57:18.159Z",
       "packages": {
         "linux/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/workflow-tickets-react-0.1.137-linux-amd64.tnmod",
-          "sha256": "c08cbd59574cb6db36666fab5801db9754b84cd6ad3819924539457e9261a9c6",
-          "size_bytes": 5281347
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/workflow-tickets-react-0.1.138-linux-amd64.tnmod",
+          "sha256": "9c9341c0b0b8f3a3d5259c150f2f1d3338bcfba202affe2c7308378600a80326",
+          "size_bytes": 5281346
         },
         "linux/arm64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/workflow-tickets-react-0.1.137-linux-arm64.tnmod",
-          "sha256": "c1a4d8390fbe4325e72b4a26a17f3d07bc4b717e49aba12be1a77ab0911cc546",
-          "size_bytes": 4831326
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/workflow-tickets-react-0.1.138-linux-arm64.tnmod",
+          "sha256": "a40a9627ad4e5d6fdd405f56d08385b72eb507ccfd191a0a8c684c36a61bff79",
+          "size_bytes": 4831325
         },
         "windows/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/workflow-tickets-react-0.1.137-windows-amd64.tnmod",
-          "sha256": "67326dbdb0e292b6421e680aaaf091b44408f96cbc8fa1ec15fe22977a824031",
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/workflow-tickets-react-0.1.138-windows-amd64.tnmod",
+          "sha256": "0bb99f38e97764eae5e1416aca08ef076a30ae4c7ae95793fb098db5aecd0730",
           "size_bytes": 5427441
         }
       }
@@ -121,32 +121,32 @@
     {
       "id": "xiaomi-rear-wallpaper",
       "name": "背屏壁纸",
-      "version": "0.1.23",
+      "version": "0.1.24",
       "description": "为小米手机背屏裁切、预览和管理壁纸。",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-76-1-38dda30 发布。",
+      "release_notes": "由 module-release-77-1-6fe325f 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-20T09:21:21.625Z",
+      "published_at": "2026-11-20T09:57:18.176Z",
       "packages": {
         "linux/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/xiaomi-rear-wallpaper-0.1.23-linux-amd64.tnmod",
-          "sha256": "02c36c8deb39e276b4976ca6f6b8fcc5b0fb03ff645a1b76a910eefa16b0598d",
-          "size_bytes": 9874988
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/xiaomi-rear-wallpaper-0.1.24-linux-amd64.tnmod",
+          "sha256": "4fa783686b93c5363550ce59f1b8cb7a5d83440fb2246b190f9f5d9c72978fb3",
+          "size_bytes": 6740746
         },
         "linux/arm64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/xiaomi-rear-wallpaper-0.1.23-linux-arm64.tnmod",
-          "sha256": "7b682985fac64fd886a53c28560ba37e50a955ddb6889641a7e6e47d562159cd",
-          "size_bytes": 10085026
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/xiaomi-rear-wallpaper-0.1.24-linux-arm64.tnmod",
+          "sha256": "ccb07771065382947d2eca5187cc8f7cdeceb314bd8c6a34e7ed8121d9cce2b5",
+          "size_bytes": 6264033
         },
         "windows/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-76-1-38dda30/xiaomi-rear-wallpaper-0.1.23-windows-amd64.tnmod",
-          "sha256": "ca22d1cf2e41339d16f00f247594cde095ed12bf4f6cef776b1e1af9c0724a23",
-          "size_bytes": 10811559
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-77-1-6fe325f/xiaomi-rear-wallpaper-0.1.24-windows-amd64.tnmod",
+          "sha256": "75a708593004a0f0a0ddb816c19e77daa7d435c28154c71aab0d01c82c3a1b78",
+          "size_bytes": 6834799
         }
       }
     }
