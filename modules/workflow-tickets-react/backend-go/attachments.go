@@ -18,6 +18,7 @@ func (app *api) attachmentRead(item record) record {
 	return record{
 		"id": item["id"], "name": item["filename"], "filename": item["filename"],
 		"mime_type": item["mime_type"], "size": item["size"],
+		"ticket_node_id": item["ticket_node_id"], "field_id": item["field_id"],
 		"url": "/api/v1/modules/" + app.moduleID + "/attachments/" + stringValue(item["id"]),
 	}
 }

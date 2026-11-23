@@ -153,41 +153,62 @@ func (state *workflowState) evaluateLeaf(rule, ticket, node record) bool {
 			}
 		}
 		minimum := 1.0
-		if rule["count"] != nil {
-			minimum = numeric(rule["count"])
+		if threshold := defaultValue(rule["count"], rule["value"]); threshold != nil {
+			minimum = numeric(threshold)
 		}
 		return float64(count) >= minimum
 	case "node_status":
-		other := nodeByDefinition(ticket, stringValue(rule["node_id"]))
+		other := nodeByDefinition(ticket, stringOr(rule["node_id"], stringValue(rule["field_id"])))
 		status := stringValue(other["status"])
-		return (other != nil && status == stringValue(rule["status"])) ||
-			slices.ContainsFunc(array(rule["statuses"]), func(wanted any) bool { return stringValue(wanted) == status })
-	case "value_compare":
-		expected := rule["operator_value"]
-		if expected == nil {
-			expected = rule["value"]
+		if other == nil {
+			return false
 		}
-		switch rule["operator"] {
-		case "=", "==":
+		if statuses := array(rule["statuses"]); len(statuses) > 0 {
+			return slices.ContainsFunc(statuses, func(wanted any) bool { return stringValue(wanted) == status })
+		}
+		return status == stringOr(rule["status"], stringOr(rule["value"], "completed"))
+	case "value_compare":
+		operator, expected := comparisonRuleParts(rule)
+		switch operator {
+		case "=", "==", "equals":
 			return comparableText(value) == comparableText(expected)
-		case "!=":
+		case "!=", "not_equals":
 			return comparableText(value) != comparableText(expected)
-		case ">":
+		case ">", "greater_than":
 			return numeric(value) > numeric(expected)
-		case "<":
+		case "<", "less_than":
 			return numeric(value) < numeric(expected)
-		case ">=":
+		case ">=", "greater_or_equal":
 			return numeric(value) >= numeric(expected)
-		case "<=":
+		case "<=", "less_or_equal":
 			return numeric(value) <= numeric(expected)
 		case "contains":
 			return strings.Contains(comparableText(value), comparableText(expected))
+		case "not_contains":
+			return !strings.Contains(comparableText(value), comparableText(expected))
 		default:
 			return hasValue(value)
 		}
 	default:
 		return true
 	}
+}
+
+func comparisonRuleParts(rule record) (string, any) {
+	operator := stringValue(rule["operator"])
+	editorOperator := stringValue(rule["operator_value"])
+	// The designer writes the operator to operator_value and the operand
+	// to value. Older rules can instead put the operand in operator_value.
+	switch editorOperator {
+	case "=", "==", "!=", ">", "<", ">=", "<=", "equals", "not_equals", "greater_than", "less_than", "greater_or_equal", "less_or_equal", "contains", "not_contains":
+		if value, exists := rule["value"]; exists || operator == "" {
+			return editorOperator, value
+		}
+	}
+	if operator != "" {
+		return operator, defaultValue(rule["operator_value"], rule["value"])
+	}
+	return "equals", rule["value"]
 }
 
 func comparableText(value any) string {
