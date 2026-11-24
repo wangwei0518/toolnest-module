@@ -1,6 +1,4 @@
 import DOMPurify from "dompurify";
-import { format } from "date-fns";
-import { zhCN } from "date-fns/locale";
 import { marked } from "marked";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Fragment, useEffect, useMemo, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
@@ -10,10 +8,10 @@ import { RiAddLine, RiArrowLeftLine, RiArrowRightSLine, RiBarChartLine, RiCalend
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { DatePicker } from "@/components/date-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -21,7 +19,6 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Progress } from "@/components/ui/progress";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,13 +67,6 @@ function clampPercent(value: number) { return Math.min(100, Math.max(0, value));
 function ganttPosition(value: Date, start: Date, end: Date) { return clampPercent((value.getTime() - start.getTime()) / Math.max(1, end.getTime() - start.getTime()) * 100); }
 function dateInput(value?: string | null) { return value ? new Date(value).toISOString().slice(0, 10) : ""; }
 function toIso(value: string) { return value ? new Date(value).toISOString() : null; }
-function parseDateOnly(value: string) {
-  if (!value) return undefined;
-  const [year, month, day] = value.split("-").map(Number);
-  if (year === undefined || month === undefined || day === undefined || ![year, month, day].every(Number.isInteger)) return undefined;
-  const date = new Date(year, month - 1, day);
-  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : undefined;
-}
 function normalizeMilestoneStatus(value: string) { return value === "planned" ? "pending" : value === "active" ? "in_progress" : value; }
 function statusVariant(value: string): "default" | "secondary" | "outline" | "destructive" { return ["completed", "active", "normal"].includes(value) ? "default" : ["blocked", "cancelled", "overdue", "risk"].includes(value) ? "destructive" : ["planning", "pending", "in_progress", "planned"].includes(value) ? "outline" : "secondary"; }
 function StatusBadge({ value }: { value: string }) { return <Badge key={value} className="tn-workflow-motion-status" variant={statusVariant(value)}>{statusLabels[value] ?? (value || "未知")}</Badge>; }
@@ -711,7 +701,7 @@ function MilestoneFormDialog({ api, projectId, milestone, open, onOpenChange, on
             <Field><FieldLabel>里程碑名称</FieldLabel><Input value={draft.name} onChange={(event) => update("name", event.target.value)} autoFocus /></Field>
             <Field><FieldLabel>阶段目标</FieldLabel><Textarea value={draft.goal} onChange={(event) => update("goal", event.target.value)} rows={2} /></Field>
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field><FieldLabel>目标日期</FieldLabel><MilestoneDatePicker value={draft.target_at} onChange={(value) => update("target_at", value)} /></Field>
+              <Field><FieldLabel htmlFor="milestone-target-date">目标日期</FieldLabel><DatePicker id="milestone-target-date" value={draft.target_at} onChange={(value) => update("target_at", value)} /></Field>
               <Field><FieldLabel>状态</FieldLabel><Select value={draft.status} onValueChange={(value) => update("status", value ?? "pending")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectLabel>状态</SelectLabel>{milestoneStatuses.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent></Select></Field>
               <Field><FieldLabel>负责人</FieldLabel><Input value={draft.owner_name} onChange={(event) => update("owner_name", event.target.value)} placeholder="默认当前用户" /></Field>
             </div>
@@ -737,19 +727,6 @@ function defaultMilestoneId(milestones: Milestone[]) {
   return milestones.find((item) => normalizeMilestoneStatus(item.status) === "in_progress")?.id ?? milestones.find((item) => normalizeMilestoneStatus(item.status) === "pending")?.id ?? milestones[0]?.id;
 }
 
-function MilestoneDatePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const date = parseDateOnly(value);
-  return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger render={<Button type="button" variant="outline" data-empty={!date} aria-label="选择目标日期" className="w-full justify-start text-left font-normal data-[empty=true]:text-muted-foreground" />}>
-      <RiCalendarLine data-icon="inline-start" />
-      {date ? format(date, "yyyy年M月d日", { locale: zhCN }) : <span>未设置</span>}
-    </PopoverTrigger>
-    <PopoverContent className="w-auto p-0" align="start">
-      <Calendar className="rounded-md border border-foreground/20" locale={zhCN} mode="single" selected={date} onSelect={(nextDate) => { onChange(nextDate ? format(nextDate, "yyyy-MM-dd") : ""); window.setTimeout(() => setOpen(false), 0); }} />
-    </PopoverContent>
-  </Popover>;
-}
 
 function MilestoneWorkspaceHeader({ milestones, onCreate }: { milestones: Milestone[]; onCreate: () => void }) {
   return <>

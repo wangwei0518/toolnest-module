@@ -15,6 +15,7 @@ import {
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { DatePicker } from "@/components/date-picker";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -316,11 +317,11 @@ function CreateForm({ selected, currentVersion, projects, milestones, projectId,
             <div className="tn-workflow-tickets-create-time-grid">
               <Field>
                 <FieldLabel htmlFor="ticket-create-due">目标时间</FieldLabel>
-                <Input id="ticket-create-due" type="datetime-local" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+                <DatePicker id="ticket-create-due" withTime value={dueAt} onChange={setDueAt} />
               </Field>
               <Field>
                 <FieldLabel htmlFor="ticket-create-reminder">提醒时间</FieldLabel>
-                <Input id="ticket-create-reminder" type="datetime-local" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)} />
+                <DatePicker id="ticket-create-reminder" withTime value={reminderAt} onChange={setReminderAt} />
                 <FieldDescription>到达该时间后通过已启用的工单通知规则提醒。</FieldDescription>
               </Field>
             </div>
