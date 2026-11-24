@@ -88,6 +88,7 @@ export function createWorkflowApi(client: ToolNestModuleApiClient, moduleId = "w
     bulkUpdateTickets: (payload: Record<string, unknown>) => call(client.post<Envelope<Ticket[]>>(`${base}/tickets/bulk-update`, payload)),
     saveNode: (ticketId: string, nodeId: string, values: Record<string, unknown>) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/save`, { values })),
     completeNode: (ticketId: string, nodeId: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/complete`)),
+    upgradeTicketWorkflow: (ticketId: string, sourceVersionId: string, targetVersionId: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${ticketId}/upgrade-workflow`, { source_version_id: sourceVersionId, target_version_id: targetVersionId })),
     blockNode: (ticketId: string, nodeId: string, reason: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/block`, { reason })),
     rollbackNode: (ticketId: string, nodeId: string, targetNodeId: string, reason: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${ticketId}/nodes/${nodeId}/rollback`, { target_node_id: targetNodeId, reason })),
     cancelTicket: (id: string, reason: string) => call(client.post<Envelope<Ticket>>(`${base}/tickets/${id}/cancel`, { reason })),

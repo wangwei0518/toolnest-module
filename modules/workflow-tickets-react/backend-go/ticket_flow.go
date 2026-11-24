@@ -118,11 +118,7 @@ func (state *workflowState) createTicketFromVersion(workflow, version, input rec
 	actionable := 0
 	for _, definition := range asRecords(version["nodes"]) {
 		nodeType := stringOr(definition["node_type"], "general")
-		node := record{
-			"id": newID(), "node_id": definition["id"], "name": definition["name"], "key": definition["key"],
-			"node_type": nodeType, "status": "pending", "values": record{}, "outputs": []record{}, "resources": record{},
-			"blocked_reason": "", "started_at": nil, "completed_at": nil, "assignee_id": nil, "assignee_name": nil,
-		}
+		node := newTicketNode(definition)
 		if nodeType != "summary" {
 			actionable++
 			if !incoming[stringValue(node["node_id"])] {
@@ -148,6 +144,14 @@ func (state *workflowState) createTicketFromVersion(workflow, version, input rec
 	state.entities["tickets"] = append([]record{ticket}, state.entities["tickets"]...)
 	state.ticketEvent(ticket, nil, "ticket_created", "工单已创建", now)
 	return ticket, nil
+}
+
+func newTicketNode(definition record) record {
+	return record{
+		"id": newID(), "node_id": definition["id"], "name": definition["name"], "key": definition["key"],
+		"node_type": stringOr(definition["node_type"], "general"), "status": "pending", "values": record{}, "outputs": []record{}, "resources": record{},
+		"blocked_reason": "", "started_at": nil, "completed_at": nil, "assignee_id": nil, "assignee_name": nil,
+	}
 }
 
 func (state *workflowState) ticketVersion(ticket record) record {
@@ -257,6 +261,10 @@ func (state *workflowState) nodeEnteredActions(ticket, version record, nodes []r
 }
 
 func (state *workflowState) activateNodes(ticket, version record, now string, force bool) []record {
+	return state.activateConnectedNodes(ticket, version, now, force, true)
+}
+
+func (state *workflowState) activateConnectedNodes(ticket, version record, now string, force, recordEvents bool) []record {
 	var activated []record
 	edges := asRecords(version["edges"])
 	for _, node := range asRecords(ticket["node_instances"]) {
@@ -292,9 +300,13 @@ func (state *workflowState) activateNodes(ticket, version record, now string, fo
 			}
 			node["status"] = "ready"
 			hydrateDefaults(ticket, node, definition)
-			state.prepareRuntimeResources(ticket, node, definition, now)
+			if recordEvents || len(asRecord(node["resources"])) == 0 {
+				state.prepareRuntimeResources(ticket, node, definition, now)
+			}
 			activated = append(activated, node)
-			state.ticketEvent(ticket, node, "node_ready", fmt.Sprintf("节点「%s」已进入待处理", node["name"]), now)
+			if recordEvents {
+				state.ticketEvent(ticket, node, "node_ready", fmt.Sprintf("节点「%s」已进入待处理", node["name"]), now)
+			}
 			break
 		}
 	}

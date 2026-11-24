@@ -223,6 +223,9 @@ func (app *api) registerTicketEdits(mux *http.ServeMux) {
 		{"POST /tickets/{ticketID}/duplicate", func(state *workflowState, ticket record, request *http.Request, body record) (record, error) {
 			return state.duplicateTicket(ticket, body, actorName(request), timestamp(time.Now()))
 		}},
+		{"POST /tickets/{ticketID}/upgrade-workflow", func(state *workflowState, ticket record, request *http.Request, body record) (record, error) {
+			return state.upgradeTicketWorkflow(ticket, body, actorName(request), timestamp(time.Now()))
+		}},
 		{"DELETE /tickets/{ticketID}", func(state *workflowState, ticket record, _ *http.Request, _ record) (record, error) {
 			for _, file := range matchingRecords(state.entities["attachments"], "ticket_id", ticket["id"]) {
 				app.queueAttachmentRemoval(state, file)
