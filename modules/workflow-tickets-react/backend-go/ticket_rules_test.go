@@ -1,6 +1,32 @@
 package main
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
+
+func TestValidateValuesSkipsFormatChecksForReadOnlyOutput(t *testing.T) {
+	fields := []record{
+		{"id": "compose", "label": "docker compose", "type": "json", "required": true, "readonly": true},
+		{"id": "reference", "label": "引用结果", "type": "json", "reference": record{"path": "nodes.prepare.values.compose"}},
+		{"id": "input", "label": "手填配置", "type": "json", "required": true},
+	}
+	const yaml = "services:\n  app:\n    image: nginx"
+	values := record{"compose": yaml, "reference": yaml, "input": yaml}
+	for _, completing := range []bool{false, true} {
+		if got := validateValues(fields, values, completing); !slices.Equal(got, []string{"「手填配置」不是有效 JSON"}) {
+			t.Errorf("completing = %v: got %v, expected only the editable field's format error", completing, got)
+		}
+	}
+	values["input"] = "{}"
+	if got := validateValues(fields, values, true); len(got) != 0 {
+		t.Errorf("completing with populated read-only output: got %v", got)
+	}
+	delete(values, "compose")
+	if got := validateValues(fields, values, true); !slices.Equal(got, []string{"「docker compose」为必填项"}) {
+		t.Errorf("completing without required output: got %v", got)
+	}
+}
 
 func TestCompletionRulesFromDesigner(t *testing.T) {
 	state := newState()

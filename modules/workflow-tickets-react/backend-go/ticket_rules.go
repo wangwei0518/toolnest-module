@@ -48,6 +48,10 @@ func validateValues(fields []record, values record, require bool) []string {
 			}
 			continue
 		}
+		// Read-only and reference fields display existing output rather than user input.
+		if truthy(field["readonly"]) || stringValue(asRecord(field["reference"])["path"]) != "" {
+			continue
+		}
 		switch field["type"] {
 		case "number":
 			number := numeric(value)
