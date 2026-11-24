@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"maps"
+	"reflect"
 )
 
 func (state *workflowState) upgradeTicketWorkflow(ticket, body record, actor, now string) (record, error) {
@@ -109,11 +110,47 @@ func (state *workflowState) upgradeTicketWorkflow(ticket, body record, actor, no
 			}
 		}
 	}
+	if ticket["status"] != "cancelled" && ticket["status"] != "archived" {
+		oldNodes := asRecords(from["nodes"])
+		for _, node := range instances {
+			id := stringValue(node["node_id"])
+			previous := saved[id]
+			if previous != nil {
+				state.refreshUpgradedScripts(upgraded, node, previous, findRecord(oldNodes, id), findRecord(latestNodes, id), now)
+			}
+		}
+	}
 	maps.Copy(ticket, upgraded)
 	event := state.ticketEvent(ticket, nil, "ticket_workflow_upgraded", "工单模板已升级", now)
 	event["detail"] = fmt.Sprintf("V%s → V%s", stringValue(from["version"]), stringValue(latest["version"]))
 	event["actor_name"] = actor
 	return ticket, nil
+}
+
+func (state *workflowState) refreshUpgradedScripts(ticket, node, previous, from, to record, now string) {
+	oldFields := asRecords(asRecord(from["form_schema"])["fields"])
+	for _, field := range asRecords(asRecord(to["form_schema"])["fields"]) {
+		id := stringValue(field["id"])
+		before := findRecord(oldFields, id)
+		oldScript, newScript := before["type"] == "script", field["type"] == "script"
+		if !oldScript && !newScript {
+			continue
+		}
+		oldConfig, newConfig := asRecord(before["config"]), asRecord(field["config"])
+		if oldScript == newScript && reflect.DeepEqual(oldConfig, newConfig) {
+			continue
+		}
+		hadResource := asRecord(previous["resources"])[id] != nil
+		if !newScript || stringValue(newConfig["execution_template"]) == "" {
+			state.revokeRuntimeResource(ticket, node, field)
+			delete(asRecord(node["resources"]), id)
+			continue
+		}
+		if hadResource || hasRunnableNode([]record{previous}) {
+			hydrateDefaults(ticket, node, to)
+			state.prepareRuntimeResource(ticket, node, field, now)
+		}
+	}
 }
 
 func hasRunnableNode(instances []record) bool {

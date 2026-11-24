@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"maps"
 	"testing"
 )
 
@@ -114,5 +115,43 @@ func TestUpgradeWorkflowEnablesNewNodeAfterCompletedPredecessor(t *testing.T) {
 	}
 	if len(state.entities["timeline"]) != 1 || len(state.entities["action_executions"]) != 0 {
 		t.Fatal("upgrade replayed workflow actions")
+	}
+}
+
+func TestUpgradeWorkflowRefreshesChangedScript(t *testing.T) {
+	state, ticket, latest := workflowUpgradeFixture()
+	from := state.ticketVersion(ticket)
+	script := func(template string) record {
+		return record{"id": "deploy", "type": "script", "config": record{"execution_template": template}}
+	}
+	unchanged := script("unchanged")
+	unchanged["id"] = "unchanged"
+	oldNode := maps.Clone(asRecords(from["nodes"])[1])
+	newNode := maps.Clone(asRecords(latest["nodes"])[1])
+	oldNode["form_schema"] = record{"fields": []record{script("old"), unchanged}}
+	newNode["form_schema"] = record{"fields": []record{script("new: {{ nodes.prepare.values.note }}"), unchanged}}
+	asRecords(from["nodes"])[1] = oldNode
+	asRecords(latest["nodes"])[1] = newNode
+	asRecords(ticket["node_instances"])[0]["key"] = "prepare"
+	asRecords(latest["nodes"])[0]["key"] = "prepare"
+	node := asRecords(ticket["node_instances"])[1]
+	node["values"] = record{"draft": "保留草稿"}
+	const now = "2026-11-24T01:00:00.000Z"
+	state.prepareRuntimeResources(ticket, node, oldNode, now)
+	old := state.entities["temporary_resources"][0]
+	same := state.entities["temporary_resources"][1]
+	result, err := state.upgradeTicketWorkflow(ticket, record{"source_version_id": "v1", "target_version_id": "v2"}, "处理人", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := asRecords(result["node_instances"])[1]
+	resources := asRecord(updated["resources"])
+	if generated := asRecord(resources["deploy"]); generated["content"] != "new: 保留记录" ||
+		generated["id"] == old["id"] || old["revoked"] != true {
+		t.Fatalf("changed script was not regenerated, or old token was not revoked")
+	}
+	if asRecord(resources["unchanged"])["id"] != same["id"] || same["revoked"] != false ||
+		updated["status"] != "in_progress" || asRecord(updated["values"])["draft"] != "保留草稿" {
+		t.Fatal("unchanged script or saved progress was modified")
 	}
 }
