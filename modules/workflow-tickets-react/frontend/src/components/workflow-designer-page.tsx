@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
-import type { FormField, Workflow, WorkflowApi, WorkflowEdge, WorkflowNode } from "../api";
+import type { FormField, VisibilityRule, Workflow, WorkflowApi, WorkflowEdge, WorkflowNode } from "../api";
 import { useModulePageMeta } from "./module-layout";
 import { CompletionRuleEditor, PredecessorRuleEditor, WorkflowActionEditor, WorkflowActionSummary, WorkflowEdgeEditor, WorkflowFormDesignerDialog, type ActionProvider, type FormVariable, type RuleRecord } from "./workflow-editor-components";
 
@@ -602,16 +602,23 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
   const applyFormFields = (fields: FormField[], idChanges: Record<string, string>) => {
     if (!selected || readOnly) return;
     const validIds = new Set(fields.map((field) => field.id));
+    const rewriteVisibility = (rule: VisibilityRule, nodeId: string): VisibilityRule => {
+      if (rule.children) return { ...rule, children: rule.children.map((child) => rewriteVisibility(child, nodeId)) };
+      const replacement = rule.field_id && (rule.node_id || nodeId) === selected.id ? idChanges[rule.field_id] : undefined;
+      return replacement ? { ...rule, field_id: replacement } : rule;
+    };
     const rewrittenNodes = nodes.map((node) => {
       const rewritten = rewriteFieldPaths(node, idChanges);
-      if (node.id !== selected.id) return rewritten;
+      const sourceFields = node.id === selected.id ? rewriteFieldPaths(fields, idChanges) : rewritten.form_schema.fields;
+      const formSchema = { ...rewritten.form_schema, fields: sourceFields.map((field) => field.visibility_rule ? { ...field, visibility_rule: rewriteVisibility(field.visibility_rule, node.id) } : field) };
+      if (node.id !== selected.id) return { ...rewritten, form_schema: formSchema };
       const completionRule = rewriteFieldRule(node.completion_rule as RuleRecord, idChanges, validIds) ?? { type: "group", operator: "AND", children: [] };
-      return { ...rewritten, form_schema: { ...node.form_schema, fields: rewriteFieldPaths(fields, idChanges) }, completion_rule: completionRule };
+      return { ...rewritten, form_schema: formSchema, completion_rule: completionRule };
     });
     const rewrittenEdges = edges.map((edge) => {
       if (edge.source_node_id !== selected.id || !edge.condition) return rewriteFieldPaths(edge, idChanges);
       const condition = rewriteFieldRule(edge.condition as RuleRecord, idChanges, validIds);
-      return { ...rewriteFieldPaths(edge, idChanges), condition: condition?.children?.length || condition?.type === "rule" ? condition : null, condition_mode: condition ? (condition.negate ? "unless" : "conditional") : "unconditional" };
+      return { ...rewriteFieldPaths(edge, idChanges), condition: condition?.children?.length || condition?.type === "rule" ? condition : null, condition_mode: condition ? edge.condition_mode ?? (condition.negate ? "unless" : "conditional") : "unconditional" };
     });
     void updateWorkflow(rewrittenNodes, rewrittenEdges);
   };
@@ -1131,7 +1138,7 @@ export function WorkflowDesignerPage({ api, router, params, query }: Props) {
         </aside>
       </div>
 
-      <WorkflowFormDesignerDialog key={`${selected.id}-${formInitialFieldId}`} open={formOpen} onOpenChange={setFormOpen} node={selected} initialFieldId={formInitialFieldId} variables={formVariables} onApply={applyFormFields} />
+      <WorkflowFormDesignerDialog key={`${selected.id}-${formInitialFieldId}`} open={formOpen} onOpenChange={setFormOpen} node={selected} initialFieldId={formInitialFieldId} variables={formVariables} ancestors={formAncestors} onApply={applyFormFields} />
       <Dialog open={completionOpen} onOpenChange={(next) => { if (next) openCompletionEditor(); else closeCompletionEditor(); }}><DialogContent className="max-h-[min(48rem,calc(100dvh-2rem))] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>{selected.name} · 完成条件</DialogTitle><DialogDescription>所有条件、任意条件和嵌套规则组都可以组合配置。空规则组默认满足。</DialogDescription></DialogHeader><CompletionRuleEditor value={completionDraft ?? completionRule} fieldOptions={selected.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` }))} nodeOptions={nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }))} onChange={setCompletionDraft} /><DialogFooter><Button variant="outline" onClick={closeCompletionEditor}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={flowOpen} onOpenChange={setFlowOpen}><DialogContent className="flex max-h-[min(48rem,calc(100dvh-2rem))] w-[calc(100vw-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0"><DialogHeader className="shrink-0 border-b px-5 py-4 pr-12"><DialogTitle>{selected.name} · 节点流转</DialogTitle><DialogDescription>配置前序节点、后继节点和分支进入条件，修改会即时写入当前草稿。</DialogDescription></DialogHeader><div className="min-h-0 flex-1 overflow-y-auto px-5 py-4"><div className="grid gap-6"><section className="grid gap-3"><div><h3 className="text-sm font-semibold">前序节点</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">组合多个前序节点的状态，决定当前节点何时进入待处理。</p></div>{incomingNodes.length > 1 ? readOnly ? <div className="grid gap-2">{incomingNodes.map((node) => <div className="rounded-md border p-3 text-sm" key={node.id}>{node.name} · {String(selected.predecessor_rule?.operator ?? "OR")}</div>)}</div> : <PredecessorRuleEditor node={selected} incomingNodes={incomingNodes} onChange={updatePredecessorRule} /> : <p className="m-0 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">{incomingNodes.length ? "当前只有一个前序节点，无需配置组合条件。" : "当前节点没有前序节点，将作为起始节点进入流程。"}</p>}</section><section className="grid gap-3 border-t pt-5"><div className="flex min-w-0 items-start justify-between gap-3"><div className="min-w-0"><h3 className="text-sm font-semibold">后继节点与分支</h3><p className="mt-1 text-xs leading-relaxed text-muted-foreground">设置完成当前节点后进入的节点和判断条件。</p></div><Button className="shrink-0" size="sm" variant="secondary" disabled={readOnly} onClick={() => void addBranch()}><RiAddLine data-icon="inline-start" />新增分支</Button></div>{outgoingEdges.length ? <div className="tn-workflow-tickets-edge-config">{outgoingEdges.map((edge, index) => readOnly ? <div className="rounded-md border p-3 text-sm" key={edge.id}>{nodes.find((node) => node.id === edge.target_node_id)?.name ?? "未知节点"} · 优先级 {edge.priority ?? 0} · {edge.condition ? "已配置条件" : "无条件进入"}</div> : <WorkflowEdgeEditor key={edge.id} edge={edge} index={index} nodes={nodes} onChange={updateEdge} onRemove={() => void removeEdge(edge.id)} />)}</div> : <p className="m-0 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">当前节点还没有后继节点，点击“新增分支”添加流向。</p>}</section></div></div><DialogFooter className="shrink-0 border-t px-5 py-3"><Button variant="outline" onClick={() => setFlowOpen(false)}>完成</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}><DialogContent><DialogHeader><DialogTitle>模板信息</DialogTitle><DialogDescription>修改模板名称、描述和分组。</DialogDescription></DialogHeader><FieldGroup><Field><FieldLabel>模板名称</FieldLabel><Input value={metaDraft.name} onChange={(event) => setMetaDraft({ ...metaDraft, name: event.target.value })} /></Field><Field><FieldLabel>模板描述</FieldLabel><Textarea value={metaDraft.description} onChange={(event) => setMetaDraft({ ...metaDraft, description: event.target.value })} /></Field><Field><FieldLabel>模板分组</FieldLabel><Input value={metaDraft.group_name} onChange={(event) => setMetaDraft({ ...metaDraft, group_name: event.target.value })} /></Field></FieldGroup><DialogFooter><Button variant="outline" onClick={() => setMetaOpen(false)}>取消</Button><Button disabled={saving} onClick={() => void saveMeta()}>保存修改</Button></DialogFooter></DialogContent></Dialog>

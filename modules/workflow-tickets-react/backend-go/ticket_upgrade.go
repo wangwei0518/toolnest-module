@@ -83,13 +83,18 @@ func (state *workflowState) upgradeTicketWorkflow(ticket, body record, actor, no
 	upgraded["node_instances"], upgraded["workflow_version_id"] = instances, latest["id"]
 	upgraded["workflow_name"], upgraded["updated_at"] = workflow["name"], now
 	if !terminalTicket(ticket["status"]) {
+		for _, node := range instances {
+			if node["status"] == "skipped" && !nodeHasProgress(node, attachments, resources) {
+				node["status"] = "pending"
+			}
+		}
 		for _, node := range rootInstances(upgraded, latest) {
 			def := findRecord(latestNodes, stringValue(node["node_id"]))
 			if node["status"] == "pending" && predecessorsSatisfied(upgraded, asRecord(def["predecessor_rule"])) {
 				node["status"] = "ready"
-				hydrateDefaults(upgraded, node, def)
+				hydrateDefaults(upgraded, latest, node, def)
 				if len(asRecord(node["resources"])) == 0 {
-					state.prepareRuntimeResources(upgraded, node, def, now)
+					state.prepareRuntimeResources(upgraded, latest, node, def, now)
 				}
 			}
 		}
@@ -105,18 +110,17 @@ func (state *workflowState) upgradeTicketWorkflow(ticket, body record, actor, no
 		for _, node := range instances {
 			if node["node_type"] == "summary" && saved[stringValue(node["node_id"])] == nil {
 				def := findRecord(latestNodes, stringValue(node["node_id"]))
-				hydrateDefaults(upgraded, node, def)
+				hydrateDefaults(upgraded, latest, node, def)
 				node["status"], node["completed_at"] = "completed", now
 			}
 		}
 	}
 	if ticket["status"] != "cancelled" && ticket["status"] != "archived" {
-		oldNodes := asRecords(from["nodes"])
 		for _, node := range instances {
 			id := stringValue(node["node_id"])
 			previous := saved[id]
 			if previous != nil {
-				state.refreshUpgradedScripts(upgraded, node, previous, findRecord(oldNodes, id), findRecord(latestNodes, id), now)
+				state.refreshUpgradedScripts(upgraded, latest, ticket, from, node, previous, now)
 			}
 		}
 	}
@@ -127,9 +131,12 @@ func (state *workflowState) upgradeTicketWorkflow(ticket, body record, actor, no
 	return ticket, nil
 }
 
-func (state *workflowState) refreshUpgradedScripts(ticket, node, previous, from, to record, now string) {
-	oldFields := asRecords(asRecord(from["form_schema"])["fields"])
-	for _, field := range asRecords(asRecord(to["form_schema"])["fields"]) {
+func (state *workflowState) refreshUpgradedScripts(ticket, version, original, oldVersion, node, previous record, now string) {
+	nodeID := stringValue(node["node_id"])
+	oldFields := formFields(findRecord(asRecords(oldVersion["nodes"]), nodeID))
+	definition := findRecord(asRecords(version["nodes"]), nodeID)
+	hidden := conditionalHiddenFields(ticket, version, node, asRecord(node["values"]))
+	for _, field := range formFields(definition) {
 		id := stringValue(field["id"])
 		before := findRecord(oldFields, id)
 		oldScript, newScript := before["type"] == "script", field["type"] == "script"
@@ -137,19 +144,31 @@ func (state *workflowState) refreshUpgradedScripts(ticket, node, previous, from,
 			continue
 		}
 		oldConfig, newConfig := asRecord(before["config"]), asRecord(field["config"])
-		if oldScript == newScript && reflect.DeepEqual(oldConfig, newConfig) {
-			continue
-		}
-		hadResource := asRecord(previous["resources"])[id] != nil
-		if !newScript || stringValue(newConfig["execution_template"]) == "" {
+		template := stringValue(newConfig["execution_template"])
+		if !newScript || template == "" || hidden[id] {
 			state.revokeRuntimeResource(ticket, node, field)
 			delete(asRecord(node["resources"]), id)
 			continue
 		}
-		if hadResource || hasRunnableNode([]record{previous}) {
-			hydrateDefaults(ticket, node, to)
-			state.prepareRuntimeResource(ticket, node, field, now)
+		hadResource := asRecord(previous["resources"])[id] != nil
+		if !hadResource && !hasRunnableNode([]record{previous}) {
+			continue
 		}
+		if oldScript && reflect.DeepEqual(oldConfig, newConfig) && reflect.DeepEqual(before["visibility_rule"], field["visibility_rule"]) {
+			oldContext, oldNode := templateFormContext(original, oldVersion, previous)
+			context, current := templateFormContext(ticket, version, node)
+			if renderTemplate(template, oldContext, oldNode) == renderTemplate(template, context, current) {
+				continue
+			}
+		}
+		hydrateDefaults(ticket, version, node, definition)
+		if conditionalHiddenFields(ticket, version, node, asRecord(node["values"]))[id] {
+			state.revokeRuntimeResource(ticket, node, field)
+			delete(asRecord(node["resources"]), id)
+			continue
+		}
+		context, current := templateFormContext(ticket, version, node)
+		state.prepareRuntimeResource(ticket, node, field, renderTemplate(template, context, current), now)
 	}
 }
 
@@ -186,7 +205,7 @@ func removedSavedField(node, from, to record, attachments, resources []record) s
 }
 
 func nodeHasProgress(node record, attachments, resources []record) bool {
-	if node["status"] != "pending" || node["started_at"] != nil || node["completed_at"] != nil ||
+	if (node["status"] != "pending" && node["status"] != "skipped") || node["started_at"] != nil || node["completed_at"] != nil ||
 		len(asRecord(node["values"])) > 0 || len(asRecords(node["outputs"])) > 0 || len(asRecord(node["resources"])) > 0 ||
 		hasValue(node["assignee_id"]) || hasValue(node["assignee_name"]) || hasValue(node["blocked_reason"]) {
 		return true

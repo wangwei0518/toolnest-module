@@ -10,6 +10,9 @@ func (state *workflowState) blockNode(ticketID, nodeID, reason, now string) (rec
 	if err != nil {
 		return nil, err
 	}
+	if node["status"] == "skipped" || node["status"] == "pending" {
+		return nil, failure(409, "当前节点尚未进入流程")
+	}
 	if reason == "" {
 		return nil, failure(422, "请填写阻塞原因")
 	}
@@ -76,8 +79,37 @@ func (state *workflowState) rollbackNode(ticketID, currentID, targetID, reason, 
 	if !slices.Contains(direct, targetID) {
 		return nil, failure(422, "只能回退到当前节点的直接完成前序节点")
 	}
+	reachable := downstreamNodes(outgoing, currentID)
+	siblings := downstreamNodes(outgoing, targetID)
+	resetInstances := map[string]bool{}
+	for _, node := range asRecords(ticket["node_instances"]) {
+		id := stringValue(node["node_id"])
+		switch {
+		case id == targetID:
+			node["status"], node["completed_at"], node["blocked_reason"] = "ready", nil, ""
+			node["outputs"] = []record{}
+		case reachable[id]:
+			node["status"], node["values"], node["outputs"] = "pending", record{}, []record{}
+			node["started_at"], node["completed_at"], node["blocked_reason"] = nil, nil, ""
+			node["resources"] = record{}
+			resetInstances[stringValue(node["id"])] = true
+		case siblings[id] && node["status"] == "skipped":
+			node["status"] = "pending"
+		}
+	}
+	for _, resource := range matchingRecords(state.entities["temporary_resources"], "ticket_id", ticketID) {
+		if resetInstances[stringValue(resource["ticket_node_id"])] {
+			resource["revoked"] = true
+		}
+	}
+	ticket["status"], ticket["updated_at"] = "in_progress", now
+	state.ticketEvent(ticket, target, "node_rolled_back", fmt.Sprintf("工单已回退到节点「%s」", target["name"]), now)["detail"] = reason
+	return ticket, nil
+}
+
+func downstreamNodes(outgoing map[string][]string, start string) map[string]bool {
 	reachable := map[string]bool{}
-	queue := []string{currentID}
+	queue := []string{start}
 	for i := 0; i < len(queue); i++ {
 		id := queue[i]
 		if !reachable[id] {
@@ -85,18 +117,7 @@ func (state *workflowState) rollbackNode(ticketID, currentID, targetID, reason, 
 			queue = append(queue, outgoing[id]...)
 		}
 	}
-	for _, node := range asRecords(ticket["node_instances"]) {
-		id := stringValue(node["node_id"])
-		if id == targetID {
-			node["status"], node["completed_at"], node["blocked_reason"] = "ready", nil, ""
-		} else if reachable[id] {
-			node["status"], node["values"], node["outputs"] = "pending", record{}, []record{}
-			node["completed_at"], node["blocked_reason"] = nil, ""
-		}
-	}
-	ticket["status"], ticket["updated_at"] = "in_progress", now
-	state.ticketEvent(ticket, target, "node_rolled_back", fmt.Sprintf("工单已回退到节点「%s」", target["name"]), now)["detail"] = reason
-	return ticket, nil
+	return reachable
 }
 
 func (state *workflowState) reopenTicket(ticketID, now string) (record, error) {
@@ -119,8 +140,8 @@ func (state *workflowState) reopenTicket(ticketID, now string) (record, error) {
 			if root["status"] == "pending" {
 				root["status"] = "ready"
 				definition := findRecord(asRecords(version["nodes"]), stringValue(root["node_id"]))
-				hydrateDefaults(ticket, root, definition)
-				state.prepareRuntimeResources(ticket, root, definition, now)
+				hydrateDefaults(ticket, version, root, definition)
+				state.prepareRuntimeResources(ticket, version, root, definition, now)
 				state.executeNodeActions(ticket, root, definition, "on_enter", now)
 			}
 		}
@@ -144,8 +165,8 @@ func (state *workflowState) reopenTicket(ticketID, now string) (record, error) {
 		reopened["status"], reopened["started_at"], reopened["completed_at"] = "ready", now, nil
 		reopened["outputs"], reopened["blocked_reason"] = []record{}, ""
 		definition := findRecord(definitions, stringValue(reopened["node_id"]))
-		hydrateDefaults(ticket, reopened, definition)
-		state.prepareRuntimeResources(ticket, reopened, definition, now)
+		hydrateDefaults(ticket, version, reopened, definition)
+		state.prepareRuntimeResources(ticket, version, reopened, definition, now)
 		state.executeNodeActions(ticket, reopened, definition, "on_enter", now)
 	default:
 		for _, node := range nodes {

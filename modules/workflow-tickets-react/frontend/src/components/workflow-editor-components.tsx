@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 import type { FormField, WorkflowEdge, WorkflowNode } from "../api";
+import { conditionalHiddenFields } from "../lib/form-visibility";
 
 const fieldTypes = [
   { value: "text", label: "单行文本", group: "基础字段" }, { value: "textarea", label: "多行文本", group: "基础字段" },
@@ -48,9 +49,10 @@ function templatePreview(value: string, emptyHint: string) {
   return value.trim() ? value.split(/\r?\n/).slice(0, 2).join("\n") : emptyHint;
 }
 
-export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFieldId, variables = [], onApply }: {
+export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFieldId, variables = [], ancestors = [], onApply }: {
   open: boolean; onOpenChange: (open: boolean) => void; node: WorkflowNode; initialFieldId?: string;
   variables?: FormVariable[];
+  ancestors?: WorkflowNode[];
   onApply: (fields: FormField[], idChanges: Record<string, string>) => void;
 }) {
   const initialFields = useMemo(() => (node.form_schema?.fields ?? []).map((field) => ({ ...clone(field), config: { rows: ["textarea", "markdown"].includes(field.type) ? 4 : ["code", "json"].includes(field.type) ? 10 : undefined, language: field.type === "json" ? "json" : field.type === "markdown" ? "markdown" : "plaintext", markdown_mode: "split", max_files: 1, max_size_mb: 100, ...field.config } })) as FieldDraft[], [node.id, node.form_schema]);
@@ -73,6 +75,12 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
   const [draggingId, setDraggingId] = useState("");
   const [dropId, setDropId] = useState("");
   const [error, setError] = useState("");
+  const visibilitySources = [
+    ...fields.filter((field) => field.id !== activeId && field.type !== "script").map((field) => ({ value: JSON.stringify([node.id, field.id]), label: field.label, nodeId: node.id, field })),
+    ...ancestors.flatMap((parent) => parent.form_schema.fields.filter((field) => field.type !== "script").map((field) => ({ value: JSON.stringify([parent.id, field.id]), label: `${parent.name} / ${field.label}`, nodeId: parent.id, field }))),
+  ];
+  const previewInput = Object.fromEntries(fields.map((field) => [field.id, previewValues[field.id] ?? field.default ?? (field.type === "switch" ? false : undefined)]));
+  const previewHidden = preview ? conditionalHiddenFields({ id: node.id, form_schema: { fields: fields.map(({ options: _options, ...field }) => field) } }, previewInput) : new Set<string>();
   const activeField = fields.find((field) => field.id === activeId);
   const active = activeField?.reference?.path ? activeField : activeField ? (() => { const next = { ...activeField }; delete next.reference; return next; })() : undefined;
   useEffect(() => {
@@ -255,8 +263,8 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
         <main className="tn-workflow-tickets-form-dialog-preview flex min-h-0 flex-col overflow-hidden border-b p-4">
           <div className="mb-3"><h3 className="text-sm font-semibold">{preview ? "填写预览" : "表单画布"}</h3><p className="text-xs text-muted-foreground">{preview ? "检查实际填写体验" : "点击字段即可配置"}</p></div>
           <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border bg-muted/20 p-5">
-            <div className="mx-auto grid max-w-2xl gap-5">{fields.map((field) => <Field key={field.id} className={field.hidden ? "opacity-50" : ""}><FieldLabel>{field.label || "未命名字段"}{field.required ? <span className="text-destructive"> *</span> : null}</FieldLabel>{field.description ? <FieldDescription>{field.description}</FieldDescription> : null}
-              {field.type === "textarea" || ["markdown", "json", "code", "script"].includes(field.type) ? <Textarea rows={Number(field.config?.rows ?? 4)} value={String(previewValues[field.id] ?? field.default ?? "")} placeholder={field.placeholder || ""} disabled={!preview || field.readonly} onChange={(event) => setPreviewValues((current) => ({ ...current, [field.id]: event.target.value }))} /> : field.type === "switch" ? <Switch checked={Boolean(previewValues[field.id])} disabled={!preview} onCheckedChange={(checked) => setPreviewValues((current) => ({ ...current, [field.id]: checked }))} /> : ["select", "radio", "multiselect"].includes(field.type) ? <Select value={String(previewValues[field.id] ?? "")} onValueChange={(value) => setPreviewValues((current) => ({ ...current, [field.id]: value ?? "" }))} disabled={!preview}><SelectTrigger className="w-full"><SelectValue placeholder={field.placeholder || "请选择"} /></SelectTrigger><SelectContent>{(field.options ?? []).map((option, index) => <SelectItem key={option.id ?? String(index)} value={String(option.value ?? option.label)}>{option.label}</SelectItem>)}</SelectContent></Select> : field.type === "checklist" || field.type === "todo" ? <div className="grid gap-2">{(field.items ?? []).map((item) => <label key={item.id} className="flex items-center gap-2 text-sm"><Checkbox disabled={!preview} /><span>{item.label}</span></label>)}</div> : field.type === "file" || field.type === "image" ? <Input type="file" accept={String(field.config?.accept ?? (field.type === "image" ? "image/*" : ""))} disabled={!preview} /> : <Input type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "url" ? "url" : "text"} value={String(previewValues[field.id] ?? field.default ?? "")} placeholder={field.placeholder || ""} disabled={!preview || field.readonly} onChange={(event) => setPreviewValues((current) => ({ ...current, [field.id]: event.target.value }))} />}
+            <div className="mx-auto grid max-w-2xl gap-5">{fields.filter((field) => !preview || (!field.hidden && !field.config?.hidden && field.type !== "hidden" && !previewHidden.has(field.id))).map((field) => <Field key={field.id} className={field.hidden ? "opacity-50" : ""}><FieldLabel>{field.label || "未命名字段"}{field.required ? <span className="text-destructive"> *</span> : null}</FieldLabel>{field.description ? <FieldDescription>{field.description}</FieldDescription> : null}
+              {field.type === "textarea" || ["markdown", "json", "code", "script"].includes(field.type) ? <Textarea rows={Number(field.config?.rows ?? 4)} value={String(previewValues[field.id] ?? field.default ?? "")} placeholder={field.placeholder || ""} disabled={!preview || field.readonly} onChange={(event) => setPreviewValues((current) => ({ ...current, [field.id]: event.target.value }))} /> : field.type === "switch" ? <Switch checked={Boolean(previewInput[field.id])} disabled={!preview} onCheckedChange={(checked) => setPreviewValues((current) => ({ ...current, [field.id]: checked }))} /> : ["select", "radio", "multiselect"].includes(field.type) ? <Select value={String(previewInput[field.id] ?? "")} onValueChange={(value) => setPreviewValues((current) => ({ ...current, [field.id]: value ?? "" }))} disabled={!preview}><SelectTrigger className="w-full"><SelectValue placeholder={field.placeholder || "请选择"} /></SelectTrigger><SelectContent>{(field.options ?? []).map((option, index) => <SelectItem key={option.id ?? String(index)} value={String(option.value ?? option.label)}>{option.label}</SelectItem>)}</SelectContent></Select> : field.type === "checklist" || field.type === "todo" ? <div className="grid gap-2">{(field.items ?? []).map((item) => <label key={item.id} className="flex items-center gap-2 text-sm"><Checkbox disabled={!preview} /><span>{item.label}</span></label>)}</div> : field.type === "file" || field.type === "image" ? <Input type="file" accept={String(field.config?.accept ?? (field.type === "image" ? "image/*" : ""))} disabled={!preview} /> : <Input type={field.type === "number" ? "number" : field.type === "date" ? "date" : field.type === "url" ? "url" : "text"} value={String(previewValues[field.id] ?? field.default ?? "")} placeholder={field.placeholder || ""} disabled={!preview || field.readonly} onChange={(event) => setPreviewValues((current) => ({ ...current, [field.id]: event.target.value }))} />}
             </Field>)}</div>
           </div>
         </main>
@@ -277,6 +285,17 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
               {["file", "image"].includes(active.type) ? <><Field><FieldLabel>允许格式</FieldLabel><Input value={String(active.config?.accept ?? (active.type === "image" ? "image/*" : ""))} onChange={(event) => setConfig({ accept: event.target.value })} placeholder=".pdf,.docx" /></Field><div className="grid grid-cols-2 gap-2">{(["max_files", "max_size_mb"] as const).map((key) => <Field key={key}><FieldLabel>{key === "max_files" ? "最多文件" : "单文件 MB"}</FieldLabel><Input type="number" min={1} value={String(active.config?.[key] ?? (key === "max_files" ? 1 : 100))} onChange={(event) => setConfig({ [key]: Number(event.target.value) })} /></Field>)}</div></> : null}
               {referenceVariables.length > 0 || active.reference ? <><div className="tn-workflow-tickets-form-config-divider" aria-hidden="true" /><Field><FieldLabel>字段引用</FieldLabel><Select value={active.reference?.path ?? "__none"} onValueChange={(path) => updateReference(active.id, path ?? "__none")}><SelectTrigger className="w-full"><SelectValue placeholder="选择前序节点字段或输出" /></SelectTrigger><SelectContent><SelectItem value="__none">不引用字段</SelectItem>{referenceVariables.map((item) => <SelectItem key={item.value} value={item.value}>{item.label} · {item.field_id ? `字段 ID：${item.field_id}` : item.value} · {fieldTypeLabel(item.source_type ?? "output")}</SelectItem>)}</SelectContent></Select><FieldDescription>引用后会在节点进入时保存一份当前值，并自动以只读方式展示。</FieldDescription></Field></> : null}
               {!["date", "switch", "file", "image", "script"].includes(active.type) && !active.reference ? <><div className="tn-workflow-tickets-form-config-divider" aria-hidden="true" /><Field><FieldLabel>动态默认值</FieldLabel><div className="tn-workflow-tickets-form-variable-editor"><div className="tn-workflow-tickets-form-template-summary"><div><strong>{active.default_template?.trim() ? "已配置模板" : "未设置模板"}</strong><small>{templateSummary(active.default_template ?? "", "尚未设置动态默认值")}</small></div><Button size="sm" variant="secondary" onClick={() => openAdvancedEditor("default")}><RiPencilLine data-icon="inline-start" />高级编辑</Button></div><p className="tn-workflow-tickets-form-template-preview">{templatePreview(active.default_template ?? "", "可在模板中插入前序节点字段，运行工单时会自动解析。")}</p></div></Field></> : null}
+              <Field>
+                <FieldLabel>显示条件</FieldLabel>
+                <Select value={active.visibility_rule ? "conditional" : "always"} onValueChange={(value) => setField(active.id, { visibility_rule: value === "conditional" ? { type: "group", operator: "AND", children: [] } : null })}>
+                  <SelectTrigger className="w-full" aria-label="显示条件"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="always">始终显示</SelectItem><SelectItem value="conditional">满足条件时显示</SelectItem></SelectContent>
+                </Select>
+                {active.visibility_rule ? <>
+                  <FieldDescription>可引用本节点字段和已完成的上游节点字段。填写预览仅使用当前节点的输入。</FieldDescription>
+                  <CompletionRuleEditor value={active.visibility_rule} fieldOptions={[]} nodeOptions={[]} visibilitySources={visibilitySources} currentNodeId={node.id} onChange={(next) => setField(active.id, { visibility_rule: next })} />
+                </> : null}
+              </Field>
             </FieldGroup></div>
             <div className="mt-4 grid gap-3 border-t pt-4">{([["required", "必填", "提交前必须填写"], ["readonly", "只读", "展示但不可修改"], ["hidden", "隐藏", "运行时不展示"]] as const).filter(([key]) => key !== "required" || !["switch", "script"].includes(active.type)).filter(([key]) => key !== "readonly" || active.type !== "script").map(([key, label, description]) => <label key={key} className="flex items-center justify-between gap-3"><span><strong className="block text-sm font-medium">{label}</strong><small className="text-xs text-muted-foreground">{description}</small></span><Switch checked={Boolean(active[key])} onCheckedChange={(checked) => setField(active.id, { [key]: checked })} /></label>)}</div>
           </> : <p className="m-auto text-center text-sm text-muted-foreground">新增或选择一个字段后，在这里配置。</p>}
@@ -311,12 +330,14 @@ export function WorkflowFormDesignerDialog({ open, onOpenChange, node, initialFi
 }
 
 export type RuleRecord = Record<string, unknown> & { type?: string; operator?: string; children?: RuleRecord[]; kind?: string; field_id?: string; label?: string; message?: string; value?: unknown; operator_value?: string };
+type VisibilitySource = { value: string; label: string; nodeId: string; field: FieldDraft };
 const ruleKinds = [{ label: "字段已填写", value: "field_filled" }, { label: "字段值比较", value: "value_compare" }, { label: "Checklist 完成", value: "checklist_complete" }, { label: "附件数量", value: "attachment_count" }, { label: "人工确认", value: "manual_confirm" }, { label: "节点状态", value: "node_status" }];
 const completionStatuses = [{ label: "未开始", value: "pending" }, { label: "可进入", value: "ready" }, { label: "处理中", value: "in_progress" }, { label: "等待中", value: "waiting" }, { label: "已阻塞", value: "blocked" }, { label: "已完成", value: "completed" }, { label: "已跳过", value: "skipped" }, { label: "失败", value: "failed" }, { label: "已取消", value: "cancelled" }];
 
-export function CompletionRuleEditor({ value, fieldOptions, nodeOptions, onChange, depth = 0, onRemove }: {
+export function CompletionRuleEditor({ value, fieldOptions, nodeOptions, onChange, depth = 0, onRemove, visibilitySources, currentNodeId }: {
   value: RuleRecord; fieldOptions: Array<{ value: string; label: string }>; nodeOptions: Array<{ value: string; label: string }>;
   onChange: (value: RuleRecord) => void; depth?: number; onRemove?: () => void;
+  visibilitySources?: VisibilitySource[] | undefined; currentNodeId?: string | undefined;
 }) {
   const children = value.children ?? [];
   const updateChildren = (next: RuleRecord[]) => onChange({ ...value, children: next });
@@ -327,42 +348,66 @@ export function CompletionRuleEditor({ value, fieldOptions, nodeOptions, onChang
   const isGroup = value.type !== "rule";
   if (!isGroup) {
     const kind = String(value.kind ?? "field_filled");
-    const options = kind === "node_status" ? nodeOptions : fieldOptions;
+    const options = visibilitySources ?? (kind === "node_status" ? nodeOptions : fieldOptions);
+    const kinds = visibilitySources ? ruleKinds.slice(0, 2) : ruleKinds;
+    const sourceValue = visibilitySources && value.field_id ? JSON.stringify([value.node_id || currentNodeId, value.field_id]) : String(value.field_id ?? "");
+    const source = visibilitySources?.find((item) => item.value === sourceValue);
+    const changeSource = (selection: string | null) => {
+      if (!visibilitySources) {
+        onChange({ ...value, field_id: selection ?? "" });
+        return;
+      }
+      const next = visibilitySources.find((item) => item.value === selection);
+      onChange({ ...value, node_id: next?.nodeId ?? "", field_id: next?.field.id ?? "", value: "" });
+    };
+    const choices = source?.field.type === "switch" ? [{ label: "开启", value: true }, { label: "关闭", value: false }]
+      : source?.field.options?.filter((item) => item.value !== undefined);
+    const operatorValue = String(value.operator_value ?? value.operator ?? "=");
     return <div className="grid gap-2 rounded-md border bg-background p-3" data-rule-row>
-      <div className="flex items-center justify-between gap-2"><span className="text-xs font-medium text-muted-foreground">完成规则</span><Button size="icon-sm" variant="ghost" aria-label="删除规则" onClick={onRemove}><RiDeleteBinLine /></Button></div>
-      <Select value={kind} onValueChange={(nextKind) => { if (!nextKind) return; const next: RuleRecord = { type: "rule", kind: nextKind, field_id: "", label: ruleKinds.find((item) => item.value === nextKind)?.label ?? "" }; if (nextKind === "value_compare") { next.operator_value = "="; next.value = ""; } if (nextKind === "attachment_count") next.value = 1; if (nextKind === "node_status") next.value = "completed"; onChange(next); }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{ruleKinds.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select>
-      <Select value={String(value.field_id ?? "")} onValueChange={(fieldId) => onChange({ ...value, field_id: fieldId ?? "" })}><SelectTrigger className="w-full"><SelectValue placeholder={kind === "node_status" ? "选择节点" : "选择字段"} /></SelectTrigger><SelectContent>{options.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select>
-      {kind === "value_compare" ? <div className="grid grid-cols-[minmax(5rem,0.45fr)_minmax(0,1fr)] gap-2"><Select value={String(value.operator_value ?? value.operator ?? "=")} onValueChange={(next) => { if (next) onChange({ ...value, operator_value: next }); }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{([["=", "等于（=）"], ["!=", "不等于（≠）"], [">", "大于（>）"], ["<", "小于（<）"]] as const).map(([v, label]) => <SelectItem key={v} value={v}>{label}</SelectItem>)}</SelectContent></Select><Input aria-label="比较值" value={String(value.value ?? "")} placeholder="比较值" onChange={(event) => onChange({ ...value, value: event.target.value })} /></div> : null}
+      <div className="flex items-center justify-between gap-2"><span className="text-xs font-medium text-muted-foreground">{visibilitySources ? "显示规则" : "完成规则"}</span><Button size="icon-sm" variant="ghost" aria-label="删除规则" onClick={onRemove}><RiDeleteBinLine /></Button></div>
+      <Select value={kind} onValueChange={(nextKind) => { if (!nextKind) return; const next: RuleRecord = { type: "rule", kind: nextKind, field_id: "", label: ruleKinds.find((item) => item.value === nextKind)?.label ?? "" }; if (nextKind === "value_compare") { next.operator_value = "="; next.value = ""; } if (nextKind === "attachment_count") next.value = 1; if (nextKind === "node_status") next.value = "completed"; onChange(next); }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{kinds.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select>
+      <Select value={sourceValue} onValueChange={changeSource}><SelectTrigger className="w-full" aria-label={kind === "node_status" ? "选择节点" : "选择字段"}><SelectValue placeholder={kind === "node_status" ? "选择节点" : "选择字段"} /></SelectTrigger><SelectContent>
+        {visibilitySources && sourceValue && !source ? <SelectItem value={sourceValue} disabled>字段引用已失效</SelectItem> : null}
+        {options.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}
+      </SelectContent></Select>
+      {kind === "value_compare" ? <div className="grid grid-cols-[minmax(5rem,0.45fr)_minmax(0,1fr)] gap-2"><Select value={operatorValue} onValueChange={(next) => { if (next) onChange({ ...value, operator_value: next }); }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{([["=", "等于（=）"], ["!=", "不等于（≠）"], [">", "大于（>）"], ["<", "小于（<）"]] as const).map(([v, label]) => <SelectItem key={v} value={v}>{label}</SelectItem>)}</SelectContent></Select>{choices?.length && ["=", "!="].includes(operatorValue)
+        ? <Select value={String(value.value ?? "")} onValueChange={(next) => onChange({ ...value, value: choices.find((item) => String(item.value) === next)?.value ?? "" })}>
+            <SelectTrigger className="min-w-0" aria-label="比较值"><SelectValue placeholder="选择比较值" /></SelectTrigger>
+            <SelectContent>{choices.map((item) => <SelectItem key={String(item.value)} value={String(item.value)}>{item.label}</SelectItem>)}</SelectContent>
+          </Select>
+        : <Input aria-label="比较值" value={String(value.value ?? "")} placeholder="比较值" onChange={(event) => onChange({ ...value, value: event.target.value })} />}</div> : null}
       {kind === "attachment_count" ? <Field><FieldLabel>最少附件数</FieldLabel><Input type="number" min={0} value={String(value.value ?? 1)} onChange={(event) => onChange({ ...value, value: Number(event.target.value) })} /></Field> : null}
       {kind === "node_status" ? <Select value={String(value.value ?? "completed")} onValueChange={(next) => onChange({ ...value, value: next })}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{completionStatuses.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent></Select> : null}
       {kind === "manual_confirm" ? <Field><FieldLabel>确认说明</FieldLabel><Input value={String(value.label ?? "")} onChange={(event) => onChange({ ...value, label: event.target.value })} placeholder="例如：已完成复核" /></Field> : null}
-      <Field><FieldLabel>未满足时提示（可选）</FieldLabel><Input value={String(value.message ?? "")} onChange={(event) => onChange({ ...value, message: event.target.value })} placeholder="显示给工单处理人的原因" /></Field>
+      {!visibilitySources ? <Field><FieldLabel>未满足时提示（可选）</FieldLabel><Input value={String(value.message ?? "")} onChange={(event) => onChange({ ...value, message: event.target.value })} placeholder="显示给工单处理人的原因" /></Field> : null}
     </div>;
   }
   return <div className={`grid gap-3 rounded-lg border p-3 ${depth ? "bg-muted/30" : "bg-muted/15"}`} data-rule-group>
     <div className="flex items-center justify-between gap-2"><div><strong className="text-sm">{operator === "OR" ? "任意条件（OR）" : "全部条件（AND）"}</strong><p className="text-xs text-muted-foreground">{operator === "OR" ? "任一条件满足即可" : "所有条件都需要满足"}</p></div><div className="flex items-center gap-2"><Select value={operator} onValueChange={(next) => { if (next) onChange({ ...value, operator: next }); }}><SelectTrigger aria-label="条件组合方式" className="w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="AND">全部条件（AND）</SelectItem><SelectItem value="OR">任意条件（OR）</SelectItem></SelectContent></Select>{onRemove ? <Button size="icon-sm" variant="ghost" aria-label="删除规则组" onClick={onRemove}><RiDeleteBinLine /></Button> : null}</div></div>
-    <div className="grid gap-2">{children.map((child, index) => <CompletionRuleEditor key={index} value={child} fieldOptions={fieldOptions} nodeOptions={nodeOptions} depth={depth + 1} onChange={(next) => updateChild(index, next)} onRemove={() => updateChildren(children.filter((_, itemIndex) => itemIndex !== index))} />)}</div>
-    {!children.length ? <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">暂无规则。空规则组默认视为满足。</p> : null}
+    <div className="grid gap-2">{children.map((child, index) => <CompletionRuleEditor key={index} value={child} fieldOptions={fieldOptions} nodeOptions={nodeOptions} visibilitySources={visibilitySources} currentNodeId={currentNodeId} depth={depth + 1} onChange={(next) => updateChild(index, next)} onRemove={() => updateChildren(children.filter((_, itemIndex) => itemIndex !== index))} />)}</div>
+    {!children.length ? <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">{visibilitySources ? "请添加至少一个显示条件。" : "暂无规则。空规则组默认视为满足。"}</p> : null}
     <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={addRule}><RiAddLine data-icon="inline-start" />新增规则</Button><Button size="sm" variant="outline" onClick={addGroup}>新增规则组</Button></div>
   </div>;
 }
 
 export function WorkflowEdgeEditor({ edge, index, nodes, onChange, onRemove }: { edge: WorkflowEdge; index: number; nodes: WorkflowNode[]; onChange: (edge: WorkflowEdge) => void; onRemove: () => void }) {
   const source = nodes.find((node) => node.id === edge.source_node_id);
-  const condition = (edge.condition ?? null) as RuleRecord | null;
-  const mode = !condition ? "unconditional" : condition.negate ? "unless" : "conditional";
+  const savedRule = edge.condition as RuleRecord | null;
+  const mode = edge.condition_mode ?? (!savedRule ? "unconditional" : savedRule.negate ? "unless" : "conditional");
+  const condition = mode === "unconditional" ? null : { ...(savedRule ?? { type: "group", operator: "AND", children: [] }) };
+  if (mode === "unless" && condition) delete condition.negate;
   const fields = source?.form_schema.fields.map((field) => ({ value: field.id, label: `${field.label} · ${field.id}` })) ?? [];
   const nodeOptions = nodes.map((node) => ({ value: node.id, label: `${node.name} · ${node.key}` }));
   const setConditionMode = (next: string) => {
     if (next === "unconditional") onChange({ ...edge, condition: null, condition_mode: next });
-    else onChange({ ...edge, condition: { ...(condition ?? { type: "group", operator: "AND", children: [] }), negate: next === "unless" }, condition_mode: next });
+    else onChange({ ...edge, condition: { ...(condition ?? { type: "group", operator: "AND", children: [] }), negate: false }, condition_mode: next });
   };
   return <section className="grid gap-3 rounded-lg border bg-background p-3" data-edge-id={edge.id}>
     <header className="flex items-center justify-between"><strong className="text-sm">分支 {index + 1}</strong><Button size="icon-sm" variant="ghost" aria-label="删除分支" onClick={onRemove}><RiDeleteBinLine /></Button></header>
     <Field><FieldLabel>后继节点</FieldLabel><Select value={edge.target_node_id} onValueChange={(value) => value && onChange({ ...edge, target_node_id: value })}><SelectTrigger className="w-full"><SelectValue placeholder="选择下一个节点" /></SelectTrigger><SelectContent>{nodes.filter((node) => node.id !== edge.source_node_id).map((node) => <SelectItem key={node.id} value={node.id}>{node.name} · {node.key}</SelectItem>)}</SelectContent></Select></Field>
     <Field><FieldLabel>执行顺序</FieldLabel><Input type="number" min={0} max={999} value={String(edge.priority ?? 0)} onChange={(event) => onChange({ ...edge, priority: Number(event.target.value) || 0 })} /></Field>
     <Field><FieldLabel>进入条件</FieldLabel><Select value={mode} onValueChange={(value) => value && setConditionMode(value)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="unconditional">无条件进入</SelectItem><SelectItem value="conditional">满足条件后进入</SelectItem><SelectItem value="unless">不满足条件后进入</SelectItem></SelectContent></Select></Field>
-    {condition ? <CompletionRuleEditor value={condition} fieldOptions={fields} nodeOptions={nodeOptions} onChange={(next) => onChange({ ...edge, condition: next, condition_mode: next.negate ? "unless" : "conditional" })} /> : null}
+    {condition ? <CompletionRuleEditor value={condition} fieldOptions={fields} nodeOptions={nodeOptions} onChange={(next) => onChange({ ...edge, condition: next, condition_mode: mode })} /> : null}
   </section>;
 }
 

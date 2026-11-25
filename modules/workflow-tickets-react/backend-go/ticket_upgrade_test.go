@@ -137,7 +137,7 @@ func TestUpgradeWorkflowRefreshesChangedScript(t *testing.T) {
 	node := asRecords(ticket["node_instances"])[1]
 	node["values"] = record{"draft": "保留草稿"}
 	const now = "2026-11-24T01:00:00.000Z"
-	state.prepareRuntimeResources(ticket, node, oldNode, now)
+	state.prepareRuntimeResources(ticket, state.ticketVersion(ticket), node, oldNode, now)
 	old := state.entities["temporary_resources"][0]
 	same := state.entities["temporary_resources"][1]
 	result, err := state.upgradeTicketWorkflow(ticket, record{"source_version_id": "v1", "target_version_id": "v2"}, "处理人", now)

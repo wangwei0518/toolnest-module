@@ -246,6 +246,9 @@ func normalizeNode(raw record) record {
 			"readonly": truthy(field["readonly"]), "hidden": truthy(field["hidden"]), "options": options,
 			"items": items, "config": objectOrEmpty(field["config"]),
 		}
+		if rule, exists := field["visibility_rule"]; exists && rule != nil {
+			normalized["visibility_rule"] = rule
+		}
 		if value, ok := field["default"]; ok {
 			normalized["default"] = value
 		}
@@ -347,6 +350,9 @@ func (state *workflowState) publishWorkflow(workflow, body record, now string) (
 		return nil, failure(409, "只有草稿版本可以发布")
 	}
 	if err := validateGraph(asRecords(version["nodes"]), asRecords(version["edges"])); err != nil {
+		return nil, err
+	}
+	if err := validateVisibilityRules(asRecords(version["nodes"]), asRecords(version["edges"])); err != nil {
 		return nil, err
 	}
 	for _, item := range versions {

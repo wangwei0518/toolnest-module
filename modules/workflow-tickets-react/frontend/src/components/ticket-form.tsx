@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import type { FormField, RelatedResource, Ticket, TicketAttachment, TicketNode, WorkflowEdge, WorkflowNode } from "../api";
 import type { WorkflowApi } from "../api";
 import { notifyModule } from "../module-notifications";
+import { conditionalHiddenFields, hasFormValue as hasValue, withoutConditionalFields } from "../lib/form-visibility";
 
 type Values = Record<string, unknown>;
 type RuntimeContext = { ticket: Ticket; current: { values: Values; node: TicketNode }; nodes: Record<string, { values: Values; status: string; outputs?: unknown[]; resources?: Record<string, unknown> }> };
@@ -57,7 +58,6 @@ function executableCommand(url: string, filename: string, language: string): str
   if (language === "typescript") return `curl -fsSL ${shellQuote(url)} -o ${shellQuote(filename)} && tsx ${shellQuote(filename)}`;
   return `curl -fsSL ${shellQuote(url)} | bash`;
 }
-function hasValue(value: unknown): boolean { return value === false || value === 0 || (Array.isArray(value) ? value.length > 0 : value != null && text(value).trim() !== ""); }
 function asObject(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function asArray(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
 function formatBytes(value: number): string { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`; return `${(value / 1024 / 1024).toFixed(1)} MB`; }
@@ -69,7 +69,16 @@ export function buildRuntimeNodes(ticket: Ticket, workflowNodes: WorkflowNode[] 
   const definitions = new Map(workflowNodes.map((item) => [item.id, item]));
   return Object.fromEntries(ticket.node_instances.flatMap((item) => {
     const definition = definitions.get(item.node_id);
-    const value = { values: item.values, status: item.status, outputs: item.outputs, resources: item.resources };
+    const hidden = definition ? conditionalHiddenFields(definition, item.values, ticket.node_instances, workflowNodes) : new Set<string>();
+    const value = {
+      values: withoutConditionalFields(item.values, hidden),
+      status: item.status,
+      outputs: hidden.size ? item.outputs.map((output) => {
+        if (output.key !== "result" || !output.value || typeof output.value !== "object" || Array.isArray(output.value)) return output;
+        return { ...output, value: withoutConditionalFields(asObject(output.value), hidden) };
+      }) : item.outputs,
+      resources: withoutConditionalFields(item.resources, hidden),
+    };
     return [[item.node_id, value], ...(definition ? [[definition.key, value] as const] : [])];
   }));
 }
@@ -100,26 +109,34 @@ function compare(left: unknown, operator: string, right: unknown): boolean {
   return comparisonOperators.has(operator) ? String(left ?? null) === String(right ?? null) : hasValue(left);
 }
 
-type RuleEvaluation = { passed: boolean; reasons: string[] };
+type RuleEvaluation = { passed: boolean; reasons: string[]; applicable?: boolean };
 
-export function evaluateNodeCompletion(definition: WorkflowNode, values: Values, ticket: Ticket, node: TicketNode): RuleEvaluation {
+export function requiredFormErrors(definition: WorkflowNode, values: Values, ticket: Ticket, workflowNodes: WorkflowNode[]): Record<string, string> {
+  const hidden = conditionalHiddenFields(definition, values, ticket.node_instances, workflowNodes);
+  return Object.fromEntries(definition.form_schema.fields.filter((field) => field.required && !hidden.has(field.id) && !hasValue(values[field.id])).map((field) => [field.id, `请填写${field.label}`]));
+}
+
+export function evaluateNodeCompletion(definition: WorkflowNode, values: Values, ticket: Ticket, node: TicketNode, workflowNodes: WorkflowNode[]): RuleEvaluation {
+  const hidden = conditionalHiddenFields(definition, values, ticket.node_instances, workflowNodes);
   const nodes = Object.fromEntries(ticket.node_instances.map((item) => [item.node_id, item.status]));
   const attachments = (ticket.attachments ?? []).filter((item) => item.ticket_node_id === node.id);
   const countAttachments = (fieldId: string) => {
-    const fields = definition.form_schema.fields.filter((field) => ["file", "image"].includes(field.type) && (!fieldId || field.id === fieldId));
+    const fields = definition.form_schema.fields.filter((field) => ["file", "image"].includes(field.type) && !hidden.has(field.id) && (!fieldId || field.id === fieldId));
     return fields.reduce((count, field) => count + (values[field.id] === undefined ? attachments.filter((item) => item.field_id === field.id).length : asArray(values[field.id]).length), 0);
   };
-  return evaluateCompletionRule(definition.completion_rule, values, nodes, countAttachments);
+  return evaluateCompletionRule(definition.completion_rule, values, nodes, countAttachments, hidden);
 }
 
-function evaluateCompletionRule(rule: Record<string, unknown> | undefined, values: Values, nodes: Record<string, string>, countAttachments: (fieldId: string) => number): RuleEvaluation {
+function evaluateCompletionRule(rule: Record<string, unknown> | undefined, values: Values, nodes: Record<string, string>, countAttachments: (fieldId: string) => number, hidden: Set<string>): RuleEvaluation {
   if (!rule || Object.keys(rule).length === 0) return { passed: true, reasons: [] };
   const kind = text(rule.kind || rule.type);
+  if (kind !== "node_status" && hidden.has(text(rule.field_id))) return { passed: true, reasons: [], applicable: false };
   let passed = true;
   let reason = text(rule.message || rule.label);
   if (kind === "group" || Array.isArray(rule.children) || Array.isArray(rule.rules)) {
     const children = asArray(Array.isArray(rule.children) ? rule.children : rule.rules);
-    const results = children.map((child) => evaluateCompletionRule(asObject(child), values, nodes, countAttachments));
+    const results = children.map((child) => evaluateCompletionRule(asObject(child), values, nodes, countAttachments, hidden)).filter((item) => item.applicable !== false);
+    if (children.length && !results.length) return { passed: true, reasons: [], applicable: false };
     passed = text(rule.operator).toUpperCase() === "OR" ? results.some((item) => item.passed) : results.every((item) => item.passed);
     if (!passed) reason = reason || (text(rule.operator).toUpperCase() === "OR" ? "至少满足一个完成条件" : "所有完成条件都必须满足");
   } else if (kind === "field_filled") { passed = hasValue(values[text(rule.field_id)]); reason = reason || `填写“${text(rule.field_id)}”`; }
@@ -194,8 +211,9 @@ function readableFieldValue(field: FormField, value: unknown): string {
   return value != null && typeof value === "object" ? JSON.stringify(value, null, 2) : text(value);
 }
 
-export function nodeContentsForCopy(definition: WorkflowNode, values: Values, node: TicketNode): string {
-  const fields = definition.form_schema.fields.filter(visibleField).map((field) => {
+export function nodeContentsForCopy(definition: WorkflowNode, values: Values, node: TicketNode, ticket: Ticket, workflowNodes: WorkflowNode[]): string {
+  const hidden = conditionalHiddenFields(definition, values, ticket.node_instances, workflowNodes);
+  const fields = definition.form_schema.fields.filter((field) => visibleField(field) && !hidden.has(field.id)).map((field) => {
     const value = field.type === "script" ? text(asObject(node.resources[field.id]).content) : readableFieldValue(field, values[field.id]);
     return value.trim() ? `${field.label}：${value.includes("\n") ? "\n" : ""}${value}` : "";
   }).filter(Boolean);
@@ -264,11 +282,12 @@ function ExecutableResourceField({ field, resource }: { field: FormField; resour
 }
 
 export function TicketFormRenderer({ api, ticket, node, definition, workflowNodes = [], values, onChange, resources, readonly, errors }: { api: WorkflowApi; ticket: Ticket; node: TicketNode; definition: WorkflowNode; workflowNodes?: WorkflowNode[]; values: Values; onChange: (values: Values) => void; resources: RelatedResource[]; readonly: boolean; errors?: Record<string, string> }) {
+  const hidden = useMemo(() => conditionalHiddenFields(definition, values, ticket.node_instances, workflowNodes), [definition, values, ticket.node_instances, workflowNodes]);
   const context = useMemo<RuntimeContext>(() => {
-    return { ticket, current: { values, node }, nodes: buildRuntimeNodes(ticket, workflowNodes) };
-  }, [ticket, node, values, workflowNodes]);
+    return { ticket, current: { values: withoutConditionalFields(values, hidden), node }, nodes: buildRuntimeNodes(ticket, workflowNodes) };
+  }, [ticket, node, values, workflowNodes, hidden]);
   const setValue = (field: FormField, next: unknown) => onChange({ ...values, [field.id]: next });
-  return <FieldGroup>{definition.form_schema.fields.filter(visibleField).map((field) => { const value = values[field.id] ?? (field.reference?.path ? resolvePath(context, field.reference.path) : undefined); const fieldReadonly = readonly || Boolean(field.readonly || field.reference?.path); const placeholder = field.placeholder ? templateValue(field.placeholder, context) : undefined; const common = { field, value, readonly: fieldReadonly, onChange: (next: unknown) => setValue(field, next) }; if (field.type === "textarea") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><Textarea id={`ticket-field-${field.id}`} rows={Number(field.config?.rows) || 4} value={text(value)} onChange={(event) => setValue(field, event.target.value)} placeholder={placeholder} readOnly={fieldReadonly} /></FieldShell>; if (field.type === "markdown") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><MarkdownField field={field} value={value} onChange={(next) => setValue(field, next)} readonly={fieldReadonly} /></FieldShell>; if (field.type === "code" || field.type === "json") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><CodeField {...common} /></FieldShell>; if (field.type === "script") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><ExecutableResourceField field={field} resource={node.resources[field.id]} /></FieldShell>; if (field.type === "number") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><Input id={`ticket-field-${field.id}`} type="number" value={value == null ? "" : text(value)} min={text(field.config?.min)} max={text(field.config?.max)} step={text(field.config?.step) || "any"} onChange={(event) => setValue(field, event.target.value === "" ? "" : Number(event.target.value))} placeholder={placeholder} readOnly={fieldReadonly} /></FieldShell>; if (fieldReadonly && ["switch", "select", "radio", "multiselect", "checklist", "todo"].includes(field.type)) return <FieldShell key={field.id} field={field}><p id={`ticket-field-${field.id}`} className="select-text break-words text-sm text-foreground">{readableFieldValue(field, value) || "—"}</p></FieldShell>; if (field.type === "switch") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><label className="flex items-center gap-2 text-sm"><Checkbox checked={value === true} onCheckedChange={(next) => setValue(field, next === true)} />{value === true ? "已开启" : "未开启"}</label></FieldShell>; if (field.type === "select") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><SelectField {...common} /></FieldShell>; if (field.type === "radio") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><OptionButtons {...common} /></FieldShell>; if (field.type === "multiselect") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><OptionButtons {...common} multiple /></FieldShell>; if (field.type === "checklist" || field.type === "todo") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><ChecklistField field={field} value={value} onChange={(next) => setValue(field, next)} readonly={fieldReadonly} /></FieldShell>; if (field.type === "file" || field.type === "image") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><AttachmentField api={api} ticket={ticket} node={node} field={field} value={value} onChange={(next) => setValue(field, next)} readonly={fieldReadonly} /></FieldShell>; if (field.type === "date") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><DatePicker id={`ticket-field-${field.id}`} value={text(value).slice(0, 10)} onChange={(date) => setValue(field, date)} readOnly={fieldReadonly} /></FieldShell>; return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><Input id={`ticket-field-${field.id}`} type={field.type === "url" ? "url" : "text"} value={text(value)} onChange={(event) => setValue(field, event.target.value)} placeholder={placeholder} readOnly={fieldReadonly} /></FieldShell>; })}</FieldGroup>;
+  return <FieldGroup>{definition.form_schema.fields.filter((field) => visibleField(field) && !hidden.has(field.id)).map((field) => { const value = values[field.id] ?? (field.reference?.path ? resolvePath(context, field.reference.path) : undefined); const fieldReadonly = readonly || Boolean(field.readonly || field.reference?.path); const placeholder = field.placeholder ? templateValue(field.placeholder, context) : undefined; const common = { field, value, readonly: fieldReadonly, onChange: (next: unknown) => setValue(field, next) }; if (field.type === "textarea") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><Textarea id={`ticket-field-${field.id}`} rows={Number(field.config?.rows) || 4} value={text(value)} onChange={(event) => setValue(field, event.target.value)} placeholder={placeholder} readOnly={fieldReadonly} /></FieldShell>; if (field.type === "markdown") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><MarkdownField field={field} value={value} onChange={(next) => setValue(field, next)} readonly={fieldReadonly} /></FieldShell>; if (field.type === "code" || field.type === "json") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><CodeField {...common} /></FieldShell>; if (field.type === "script") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><ExecutableResourceField field={field} resource={node.resources[field.id]} /></FieldShell>; if (field.type === "number") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><Input id={`ticket-field-${field.id}`} type="number" value={value == null ? "" : text(value)} min={text(field.config?.min)} max={text(field.config?.max)} step={text(field.config?.step) || "any"} onChange={(event) => setValue(field, event.target.value === "" ? "" : Number(event.target.value))} placeholder={placeholder} readOnly={fieldReadonly} /></FieldShell>; if (fieldReadonly && ["switch", "select", "radio", "multiselect", "checklist", "todo"].includes(field.type)) return <FieldShell key={field.id} field={field}><p id={`ticket-field-${field.id}`} className="select-text break-words text-sm text-foreground">{readableFieldValue(field, value) || "—"}</p></FieldShell>; if (field.type === "switch") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><label className="flex items-center gap-2 text-sm"><Checkbox checked={value === true} onCheckedChange={(next) => setValue(field, next === true)} />{value === true ? "已开启" : "未开启"}</label></FieldShell>; if (field.type === "select") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><SelectField {...common} /></FieldShell>; if (field.type === "radio") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><OptionButtons {...common} /></FieldShell>; if (field.type === "multiselect") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><OptionButtons {...common} multiple /></FieldShell>; if (field.type === "checklist" || field.type === "todo") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><ChecklistField field={field} value={value} onChange={(next) => setValue(field, next)} readonly={fieldReadonly} /></FieldShell>; if (field.type === "file" || field.type === "image") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><AttachmentField api={api} ticket={ticket} node={node} field={field} value={value} onChange={(next) => setValue(field, next)} readonly={fieldReadonly} /></FieldShell>; if (field.type === "date") return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><DatePicker id={`ticket-field-${field.id}`} value={text(value).slice(0, 10)} onChange={(date) => setValue(field, date)} readOnly={fieldReadonly} /></FieldShell>; return <FieldShell key={field.id} field={field} error={errors?.[field.id]}><Input id={`ticket-field-${field.id}`} type={field.type === "url" ? "url" : "text"} value={text(value)} onChange={(event) => setValue(field, event.target.value)} placeholder={placeholder} readOnly={fieldReadonly} /></FieldShell>; })}</FieldGroup>;
 }
 
 function nodeKind(node: WorkflowNode, incoming: number, outgoing: number): "start" | "merge" | "parallel" | "end" | "node" { if (incoming === 0) return "start"; if (outgoing === 0) return "end"; if (incoming > 1) return "merge"; if (outgoing > 1) return "parallel"; return "node"; }

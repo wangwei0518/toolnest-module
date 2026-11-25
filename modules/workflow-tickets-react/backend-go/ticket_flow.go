@@ -133,8 +133,8 @@ func (state *workflowState) createTicketFromVersion(workflow, version, input rec
 	ticket["node_instances"] = nodeInstances
 	if first != nil {
 		first["values"] = maps.Clone(objectOrEmpty(input["initial_values"]))
-		hydrateDefaults(ticket, first, firstDefinition)
-		state.prepareRuntimeResources(ticket, first, firstDefinition, now)
+		hydrateDefaults(ticket, version, first, firstDefinition)
+		state.prepareRuntimeResources(ticket, version, first, firstDefinition, now)
 	}
 	if actionable == 0 {
 		finishSummary(ticket, version, now)
@@ -190,19 +190,27 @@ func (state *workflowState) executableNode(ticketID, nodeID string) (ticket, nod
 }
 
 func (state *workflowState) saveNode(ticketID, nodeID string, values record, now string) (record, error) {
-	ticket, node, _, definition, err := state.executableNode(ticketID, nodeID)
+	ticket, node, version, definition, err := state.executableNode(ticketID, nodeID)
 	if err != nil {
 		return nil, err
 	}
-	if node["status"] == "pending" {
+	if node["status"] == "pending" || node["status"] == "skipped" {
 		return nil, failure(409, "节点尚未满足前序条件")
 	}
-	fields := asRecords(asRecord(definition["form_schema"])["fields"])
+	hidden := conditionalHiddenFields(ticket, version, node, values)
+	fields := formFieldsForValidation(definition, hidden)
 	if problems := validateValues(fields, values, false); len(problems) > 0 {
 		return nil, failure(422, strings.Join(problems, "；"))
 	}
+	for field := range hidden {
+		if _, submitted := values[field]; !submitted {
+			if draft, saved := asRecord(node["values"])[field]; saved {
+				values[field] = draft
+			}
+		}
+	}
 	node["values"] = values
-	state.prepareRuntimeResources(ticket, node, definition, now)
+	state.prepareRuntimeResources(ticket, version, node, definition, now)
 	switch node["status"] {
 	case "ready", "blocked", "waiting":
 		node["status"] = "in_progress"
@@ -220,18 +228,22 @@ func (state *workflowState) completeNode(ticketID, nodeID, now string) (record, 
 	if err != nil {
 		return nil, err
 	}
-	fields := asRecords(asRecord(definition["form_schema"])["fields"])
+	if node["status"] == "pending" || finishedNode(node["status"]) {
+		return nil, failure(409, "该节点当前无法完成")
+	}
 	values := asRecord(node["values"])
+	hidden := conditionalHiddenFields(ticket, version, node, values)
+	fields := formFieldsForValidation(definition, hidden)
 	if problems := validateValues(fields, values, true); len(problems) > 0 {
 		state.executeNodeActions(ticket, node, definition, "on_fail", now)
 		return nil, &committedFailure{failure(422, strings.Join(problems, "；"))}
 	}
-	if !state.evaluateRule(asRecord(definition["completion_rule"]), ticket, node) {
+	if passed, applicable := state.evaluateFormRule(asRecord(definition["completion_rule"]), ticket, node, hidden, true); applicable && !passed {
 		state.executeNodeActions(ticket, node, definition, "on_fail", now)
 		return nil, &committedFailure{failure(422, "完成条件尚未满足")}
 	}
 	node["status"], node["completed_at"] = "completed", now
-	node["outputs"] = []record{{"key": "result", "value": maps.Clone(values)}}
+	node["outputs"] = []record{{"key": "result", "value": maps.Clone(withoutConditionalFields(values, hidden))}}
 	title := fmt.Sprintf("节点「%s」已完成", node["name"])
 	state.ticketEvent(ticket, node, "node_completed", title, now)
 	state.executeNodeActions(ticket, node, definition, "on_complete", now)
@@ -266,51 +278,101 @@ func (state *workflowState) activateNodes(ticket, version record, now string, fo
 
 func (state *workflowState) activateConnectedNodes(ticket, version record, now string, force, recordEvents bool) []record {
 	var activated []record
-	edges := asRecords(version["edges"])
-	for _, node := range asRecords(ticket["node_instances"]) {
-		if node["status"] != "pending" {
-			continue
-		}
-		definition := findRecord(asRecords(version["nodes"]), stringValue(node["node_id"]))
-		if definition == nil || definition["node_type"] == "summary" {
-			continue
-		}
-		if !force && !predecessorsSatisfied(ticket, asRecord(definition["predecessor_rule"])) {
-			continue
-		}
-		eligible := []record{}
-		for _, edge := range edges {
-			if edge["target_node_id"] != node["node_id"] {
-				continue
-			}
-			source := nodeByDefinition(ticket, stringValue(edge["source_node_id"]))
-			if source["status"] == "completed" {
-				eligible = append(eligible, edge)
-			}
-		}
-		slices.SortStableFunc(eligible, func(a, b record) int {
+	nodes := asRecords(ticket["node_instances"])
+	incoming := map[string][]record{}
+	for _, edge := range asRecords(version["edges"]) {
+		id := stringValue(edge["target_node_id"])
+		incoming[id] = append(incoming[id], edge)
+	}
+	for _, edges := range incoming {
+		slices.SortStableFunc(edges, func(a, b record) int {
 			return intCompare(numeric(a["priority"]), numeric(b["priority"]))
 		})
-		for _, edge := range eligible {
-			mode := edge["condition_mode"]
-			source := nodeByDefinition(ticket, stringValue(edge["source_node_id"]))
-			satisfied := mode == "unconditional" || edge["condition"] == nil || state.evaluateRule(asRecord(edge["condition"]), ticket, source)
-			if satisfied == (mode == "unless") {
+	}
+	resolveIdle := false
+	for {
+		changed := false
+		hasRunnable := hasRunnableNode(nodes)
+		for _, node := range nodes {
+			if node["status"] != "pending" {
 				continue
 			}
-			node["status"] = "ready"
-			hydrateDefaults(ticket, node, definition)
-			if recordEvents || len(asRecord(node["resources"])) == 0 {
-				state.prepareRuntimeResources(ticket, node, definition, now)
+			id := stringValue(node["node_id"])
+			definition := findRecord(asRecords(version["nodes"]), id)
+			edges := incoming[id]
+			if definition == nil || definition["node_type"] == "summary" || len(edges) == 0 {
+				continue
 			}
-			activated = append(activated, node)
-			if recordEvents {
-				state.ticketEvent(ticket, node, "node_ready", fmt.Sprintf("节点「%s」已进入待处理", node["name"]), now)
+			settled, matched := true, false
+			for _, edge := range edges {
+				source := nodeByDefinition(ticket, stringValue(edge["source_node_id"]))
+				if source["status"] == "completed" {
+					rule := asRecord(edge["condition"])
+					matched = matched || state.edgeMatches(edge, ticket, version, source)
+					if !resolveIdle && edge["condition_mode"] != "unconditional" && !routingRuleSettled(rule, ticket, id) {
+						settled = false
+					}
+				} else if !finishedNode(source["status"]) {
+					settled = false
+				}
 			}
-			break
+			if matched && (force || predecessorsSatisfied(ticket, asRecord(definition["predecessor_rule"]))) {
+				node["status"] = "ready"
+				hydrateDefaults(ticket, version, node, definition)
+				if recordEvents || len(asRecord(node["resources"])) == 0 {
+					state.prepareRuntimeResources(ticket, version, node, definition, now)
+				}
+				activated = append(activated, node)
+				if recordEvents {
+					state.ticketEvent(ticket, node, "node_ready", fmt.Sprintf("节点「%s」已进入待处理", node["name"]), now)
+				}
+				hasRunnable, changed = true, true
+			} else if settled {
+				node["status"] = "skipped"
+				changed = true
+			}
+		}
+		if !changed {
+			if !hasRunnable && !resolveIdle {
+				resolveIdle = true
+				continue
+			}
+			return activated
+		}
+		if hasRunnable {
+			resolveIdle = false
 		}
 	}
-	return activated
+}
+
+func (state *workflowState) edgeMatches(edge, ticket, version, source record) bool {
+	mode, rule := edge["condition_mode"], asRecord(edge["condition"])
+	if mode == "unconditional" || len(rule) == 0 {
+		return mode != "unless"
+	}
+	if mode == "unless" {
+		// The earlier designer also wrote negate on unless rules.
+		rule = maps.Clone(rule)
+		delete(rule, "negate")
+	}
+	hidden := conditionalHiddenFields(ticket, version, source, asRecord(source["values"]))
+	passed, known := state.evaluateFormRule(rule, ticket, source, hidden, false)
+	return known && passed != (mode == "unless")
+}
+
+func routingRuleSettled(rule, ticket record, targetID string) bool {
+	if rule["kind"] == "node_status" {
+		id := stringOr(rule["node_id"], stringValue(rule["field_id"]))
+		return id == targetID || finishedNode(nodeByDefinition(ticket, id)["status"])
+	}
+	for _, key := range []string{"children", "rules"} {
+		for _, child := range asRecords(rule[key]) {
+			if !routingRuleSettled(child, ticket, targetID) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func intCompare(left, right float64) int {
@@ -358,9 +420,9 @@ func finishSummary(ticket, version record, now string) {
 		if definition["node_type"] != "summary" {
 			continue
 		}
-		hydrateDefaults(ticket, node, definition)
+		hydrateDefaults(ticket, version, node, definition)
 		node["status"], node["started_at"], node["completed_at"], node["blocked_reason"] = "completed", nil, now, ""
-		node["outputs"] = []record{{"key": "result", "value": maps.Clone(asRecord(node["values"]))}}
+		node["outputs"] = []record{{"key": "result", "value": maps.Clone(withoutConditionalFields(asRecord(node["values"]), conditionalHiddenFields(ticket, version, node, asRecord(node["values"]))))}}
 	}
 }
 

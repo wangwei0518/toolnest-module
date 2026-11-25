@@ -90,6 +90,13 @@ func nodeByDefinition(ticket record, id string) record {
 }
 
 func (state *workflowState) evaluateRule(rule, ticket, node record) bool {
+	result, _ := state.evaluateFormRule(rule, ticket, node, nil, true)
+	return result
+}
+
+// An inapplicable leaf is omitted from completion checks. For routing it is
+// unknown, so neither an affirmative nor an inverse edge can match it alone.
+func (state *workflowState) evaluateFormRule(rule, ticket, node record, hidden map[string]bool, completion bool) (bool, bool) {
 	children, hasGroup := rule["children"].([]any)
 	if !hasGroup {
 		children, hasGroup = rule["rules"].([]any)
@@ -110,19 +117,32 @@ func (state *workflowState) evaluateRule(rule, ticket, node record) bool {
 	if hasGroup {
 		any := strings.EqualFold(stringValue(rule["operator"]), "OR")
 		result = !any
+		applicable, unknown := len(children) == 0, false
 		for _, child := range children {
-			if state.evaluateRule(asRecord(child), ticket, node) == any {
+			passed, known := state.evaluateFormRule(asRecord(child), ticket, node, hidden, completion)
+			if !known {
+				unknown = true
+				continue
+			}
+			applicable = true
+			if passed == any {
 				result = any
 				break
 			}
 		}
+		if !applicable || (!completion && unknown && result != any) {
+			return false, false
+		}
 	} else {
-		result = state.evaluateLeaf(rule, ticket, node)
+		if rule["kind"] != "node_status" && hidden[stringValue(rule["field_id"])] {
+			return false, false
+		}
+		result = state.evaluateLeaf(rule, ticket, node, hidden)
 	}
-	return result != (rule["negate"] == true)
+	return result != (rule["negate"] == true), true
 }
 
-func (state *workflowState) evaluateLeaf(rule, ticket, node record) bool {
+func (state *workflowState) evaluateLeaf(rule, ticket, node record, hidden map[string]bool) bool {
 	field := stringValue(rule["field_id"])
 	value := asRecord(node["values"])[field]
 	switch rule["kind"] {
@@ -152,7 +172,7 @@ func (state *workflowState) evaluateLeaf(rule, ticket, node record) bool {
 	case "attachment_count":
 		count := 0
 		for _, item := range state.entities["attachments"] {
-			if item["ticket_node_id"] == node["id"] && (field == "" || item["field_id"] == field) {
+			if item["ticket_node_id"] == node["id"] && !hidden[stringValue(item["field_id"])] && (field == "" || item["field_id"] == field) {
 				count++
 			}
 		}
@@ -281,21 +301,24 @@ func resolveReference(ticket record, reference string) (any, bool) {
 	return nil, false
 }
 
-func hydrateDefaults(ticket, node, definition record) {
+func hydrateDefaults(ticket, version, node, definition record) {
 	values := objectOrEmpty(node["values"])
+	node["values"] = values
 	for _, field := range asRecords(asRecord(definition["form_schema"])["fields"]) {
 		key := stringValue(field["id"])
 		if _, set := values[key]; set {
 			continue
 		}
 		if reference := stringValue(asRecord(field["reference"])["path"]); reference != "" {
-			if value, exists := resolveReference(ticket, reference); exists {
+			context, _ := templateFormContext(ticket, version, node)
+			if value, exists := resolveReference(context, reference); exists {
 				values[key] = value
 			}
 		} else if value, exists := field["default"]; exists {
 			values[key] = value
 		} else if template := stringValue(field["default_template"]); template != "" {
-			values[key] = renderTemplate(template, ticket, node)
+			context, current := templateFormContext(ticket, version, node)
+			values[key] = renderTemplate(template, context, current)
 		} else {
 			switch field["type"] {
 			case "switch":

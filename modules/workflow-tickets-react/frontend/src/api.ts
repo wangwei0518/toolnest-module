@@ -3,7 +3,18 @@ import type { ToolNestModuleApiClient } from "@toolnest/react-module-sdk";
 export type Id = string;
 export type Status = string;
 
-export interface FormField { id: string; type: string; label: string; description?: string; placeholder?: string; required?: boolean; readonly?: boolean; hidden?: boolean; default?: unknown; default_template?: string; options?: Array<{ label: string; value: string | number }>; items?: Array<{ id: string; label: string }>; config?: Record<string, unknown>; reference?: { path?: string; mode?: string } }
+export type VisibilityRule = {
+  type?: string;
+  kind?: string;
+  field_id?: string;
+  node_id?: string;
+  operator?: string;
+  operator_value?: string;
+  value?: unknown;
+  children?: VisibilityRule[];
+};
+
+export interface FormField { id: string; type: string; label: string; description?: string; placeholder?: string; required?: boolean; readonly?: boolean; hidden?: boolean; visibility_rule?: VisibilityRule | null; default?: unknown; default_template?: string; options?: Array<{ label: string; value: string | number }>; items?: Array<{ id: string; label: string }>; config?: Record<string, unknown>; reference?: { path?: string; mode?: string } }
 export interface WorkflowNode { id: Id; name: string; key: string; description: string; node_type: "general" | "summary"; position: { x: number; y: number }; form_schema: { fields: FormField[] }; completion_rule: Record<string, unknown>; predecessor_rule?: Record<string, unknown> | null; actions: Array<Record<string, unknown>>; inputs: Array<Record<string, unknown>>; outputs: Array<Record<string, unknown>> }
 export interface WorkflowEdge { id: Id; source_node_id: Id; target_node_id: Id; source_side?: string; target_side?: string; priority?: number; condition?: Record<string, unknown> | null; condition_mode?: string }
 export interface WorkflowVersion { id: Id; workflow_id: Id; version: number; status: Status; change_note: string; publish_note: string; source_version_id?: Id | null; created_at: string; published_at?: string | null; nodes: WorkflowNode[]; edges: WorkflowEdge[]; ticket_count: number }

@@ -26,12 +26,27 @@ func temporaryResourceActive(item record, now time.Time) bool {
 		(limit == nil || numeric(item["access_count"]) < numeric(limit))
 }
 
-func (state *workflowState) prepareRuntimeResources(ticket, node, definition record, now string) {
-	fields := asRecords(asRecord(definition["form_schema"])["fields"])
-	for _, field := range fields {
-		if field["type"] == "script" && stringValue(asRecord(field["config"])["execution_template"]) != "" {
-			state.prepareRuntimeResource(ticket, node, field, now)
+func (state *workflowState) prepareRuntimeResources(ticket, version, node, definition record, now string) {
+	var hidden map[string]bool
+	var context, current record
+	for _, field := range formFields(definition) {
+		template := stringValue(asRecord(field["config"])["execution_template"])
+		if field["type"] != "script" || template == "" {
+			continue
 		}
+		if hidden == nil {
+			hidden = conditionalHiddenFields(ticket, version, node, asRecord(node["values"]))
+		}
+		id := stringValue(field["id"])
+		if hidden[id] {
+			state.revokeRuntimeResource(ticket, node, field)
+			delete(asRecord(node["resources"]), id)
+			continue
+		}
+		if context == nil {
+			context, current = templateFormContext(ticket, version, node)
+		}
+		state.prepareRuntimeResource(ticket, node, field, renderTemplate(template, context, current), now)
 	}
 }
 
@@ -43,10 +58,9 @@ func (state *workflowState) revokeRuntimeResource(ticket, node, field record) {
 	}
 }
 
-func (state *workflowState) prepareRuntimeResource(ticket, node, field record, now string) {
+func (state *workflowState) prepareRuntimeResource(ticket, node, field record, content, now string) {
 	at := scheduleTimestamp(now)
 	config := asRecord(field["config"])
-	template := stringValue(config["execution_template"])
 	state.revokeRuntimeResource(ticket, node, field)
 	language := stringValue(config["language"])
 	filename, mimeType := "run.txt", "text/plain"
@@ -67,7 +81,7 @@ func (state *workflowState) prepareRuntimeResource(ticket, node, field record, n
 	}
 	item := record{
 		"id": newID(), "token": newID(), "ticket_id": ticket["id"], "ticket_node_id": node["id"], "field_id": field["id"],
-		"filename": stringOr(config["filename"], filename), "mime_type": mimeType, "content": renderTemplate(template, ticket, node),
+		"filename": stringOr(config["filename"], filename), "mime_type": mimeType, "content": content,
 		"expires_at":       timestamp(at.Add(time.Duration(numeric(settings["temporary_resource_days"])) * 24 * time.Hour)),
 		"max_access_count": limit, "access_count": 0, "revoked": false,
 	}
