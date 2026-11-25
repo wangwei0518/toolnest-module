@@ -101,32 +101,32 @@
     {
       "id": "workflow-tickets-react",
       "name": "工单模板",
-      "version": "0.1.144",
+      "version": "0.1.145",
       "description": "工作流工单与项目协作",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-83-1-7dfd596 发布。",
+      "release_notes": "由 module-release-84-1-153785e 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-24T10:23:01.527Z",
+      "published_at": "2026-11-25T09:57:30.661Z",
       "packages": {
         "linux/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-83-1-7dfd596/workflow-tickets-react-0.1.144-linux-amd64.tnmod",
-          "sha256": "a86469b775455ace09e73a81588588b2651e78153949478d2258531444a74132",
-          "size_bytes": 5301457
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-84-1-153785e/workflow-tickets-react-0.1.145-linux-amd64.tnmod",
+          "sha256": "ed77b8755a9d6d8a55b8de81c7d5f6ac5adc0322bb30b25512e21cde279a4fbb",
+          "size_bytes": 5322045
         },
         "linux/arm64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-83-1-7dfd596/workflow-tickets-react-0.1.144-linux-arm64.tnmod",
-          "sha256": "5a9187b86abf8f0696c90068739956b10ffb6335a041619389f4f4f1f4f9f443",
-          "size_bytes": 4847792
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-84-1-153785e/workflow-tickets-react-0.1.145-linux-arm64.tnmod",
+          "sha256": "4ebd0a7ce4cb9769124f86f362740a44deaea190e47729f4c74be9f6f5609b81",
+          "size_bytes": 4865288
         },
         "windows/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-83-1-7dfd596/workflow-tickets-react-0.1.144-windows-amd64.tnmod",
-          "sha256": "aeb8b6b41ba7c5a46f6da03ea71585e1e735a30a19bb7925d4babf7c892a9c28",
-          "size_bytes": 5446812
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-84-1-153785e/workflow-tickets-react-0.1.145-windows-amd64.tnmod",
+          "sha256": "7926527c1342c2df6400d6085267625108fa549b7fcace94b394279c6821fbea",
+          "size_bytes": 5469336
         }
       }
     },
