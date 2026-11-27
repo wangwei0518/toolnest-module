@@ -81,13 +81,14 @@ func (s *snapshot) normalize(now time.Time) error {
 	if !validCompany(s.CompanyID) {
 		return errors.New("companyId 应为有效的十进制部队 ID")
 	}
-	if _, err := time.Parse(time.DateOnly, s.Date); err != nil || s.Date > now.In(beijing).Format(time.DateOnly) {
-		return errors.New("date 应为有效的北京时间日期")
+	if s.GeneratedAt.IsZero() || s.GeneratedAt.Year() < 2010 || s.GeneratedAt.After(now.Add(5*time.Minute)) {
+		return errors.New("generatedAt 必须有效，且不能晚于当前时间五分钟")
 	}
-	if s.GeneratedAt.IsZero() || s.GeneratedAt.After(now.Add(5*time.Minute)) ||
-		s.GeneratedAt.Year() < 2010 || s.Date != s.GeneratedAt.In(beijing).Format(time.DateOnly) {
-		return errors.New("generatedAt 应对应账本日期，且不能晚于当前时间五分钟")
+	incomeDate := s.GeneratedAt.In(beijing).Format(time.DateOnly)
+	if incomeDate > now.In(beijing).Format(time.DateOnly) {
+		return errors.New("generatedAt 对应的北京时间日期不能晚于今天")
 	}
+	s.Date = incomeDate
 	s.GeneratedAt = s.GeneratedAt.UTC()
 	if s.Trigger != "manual" && s.Trigger != "completion" {
 		return errors.New("trigger 无效")

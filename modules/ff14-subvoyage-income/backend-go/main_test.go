@@ -57,7 +57,7 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	call("GET", "/companies", nil, false, "", http.StatusForbidden)
 	next := now.Add(time.Hour).Unix()
 	price, subtotal := int64(2000), int64(6000)
-	s := snapshot{Version: 1, Event: "subvoyage.income.summary", CompanyID: id, Date: "2026-11-27", GeneratedAt: now.Add(-time.Hour),
+	s := snapshot{Version: 1, Event: "subvoyage.income.summary", CompanyID: id, Date: "2026-11-27", GeneratedAt: time.Date(2026, 11, 27, 1, 0, 0, 0, beijing),
 		Trigger: "manual", Total: 6000, Items: []item{{ID: 5060, Name: "玄钢锭", Quantity: 3, Price: &price, Subtotal: &subtotal}, {ID: 100, Name: "待估价", Quantity: 1}},
 		Vessels: []vessel{{Slot: 1, Name: "苍蓝号", Next: &next}}}
 	call("POST", "/public/reports", s, false, "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG", http.StatusUnauthorized)
@@ -101,6 +101,32 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	if view.Fleet == nil || view.Fleet.Vessels == nil || len(view.Fleet.Vessels) != 0 {
 		t.Fatal("empty fleet must clear earlier vessels")
 	}
+
+	backfill := s
+	backfill.Date = "2026-11-27"
+	backfill.GeneratedAt = time.Date(2026, 11, 25, 16, 15, 0, 0, time.UTC)
+	backfill.Total = subtotal
+	backfill.Items = []item{{ID: 5060, Name: "玄钢锭", Quantity: 3, Price: &price, Subtotal: &subtotal}}
+	backfill.Vessels = nil
+	if got := call("POST", "/public/reports", backfill, false, token, http.StatusOK); !bytes.Contains(got, []byte("accepted")) {
+		t.Fatal(string(got))
+	}
+	var saved *snapshot
+	if err := json.Unmarshal(call("GET", "/reports/2026-11-26?companyId="+id, nil, true, "", http.StatusOK), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved == nil || saved.Date != "2026-11-26" || saved.Total != backfill.Total || !saved.GeneratedAt.Equal(backfill.GeneratedAt) {
+		t.Fatalf("backfilled report must use the Beijing generation date and retain the generation time: %+v", saved)
+	}
+	if err := json.Unmarshal(call("GET", "/dashboard?companyId="+id, nil, true, "", http.StatusOK), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.YesterdayTotal == nil || *view.YesterdayTotal != backfill.Total || view.TodayReport == nil || view.TodayReport.Total != 0 {
+		t.Fatalf("backfilled income must only count toward the generation date: %+v", view)
+	}
+	backfill.GeneratedAt = now.Add(6 * time.Minute)
+	call("POST", "/public/reports", backfill, false, token, http.StatusBadRequest)
+
 	call("GET", "/trend?companyId="+id+"&from=2026-11-26&to=2026-11-27", nil, true, "", http.StatusOK)
 	call("GET", "/trend?companyId="+id+"&from=2026-11-01&to=2026-11-28", nil, true, "", http.StatusBadRequest)
 	second := s
