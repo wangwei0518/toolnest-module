@@ -5,7 +5,7 @@ import path from 'node:path'
 const repository = process.env.GITHUB_REPOSITORY ?? 'wangwei0518/toolnest-module'
 const releaseTag = process.env.RELEASE_TAG
 if (!releaseTag) throw new Error('缺少 RELEASE_TAG')
-const output = process.env.CATALOG_OUTPUT ?? 'catalog-v2.json'
+const output = process.env.CATALOG_OUTPUT ?? 'catalog.json'
 const plan = readJson('module-release-plan.json')
 const previous = readJson(existsSync(output) ? output : 'catalog.json')
 const modules = new Map(previous.modules.map(item => [item.id, item]))

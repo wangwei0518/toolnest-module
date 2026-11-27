@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
@@ -26,12 +26,12 @@ if (mode === '--build') {
 if (mode !== '--prepare') throw new Error('未知的模块发布阶段')
 const head = process.env.RELEASE_HEAD_SHA || 'HEAD'
 const requestedBase = process.env.RELEASE_BASE_SHA?.trim()
-const lastPublished = gitLines(['log', '-1', '--format=%H', '--', existsSync('catalog-v2.json') ? 'catalog-v2.json' : 'catalog.json'])[0]
+const catalogFile = 'catalog.json'
+const lastPublished = gitLines(['log', '-1', '--format=%H', '--', catalogFile])[0]
 const base = resolveBase(lastPublished || requestedBase, head)
 const changedFiles = base ? gitLines(['diff', '--name-only', `${base}..${head}`]) : []
 const sharedInputsChanged = changedFiles.some(isSharedReleaseInput)
-const catalogPath = path.join(rootDir, 'catalog-v2.json')
-const previous = existsSync(catalogPath) ? JSON.parse(readFileSync(catalogPath, 'utf8')) : JSON.parse(readFileSync('catalog.json', 'utf8'))
+const previous = JSON.parse(readFileSync(catalogFile, 'utf8'))
 const existingV2 = previous.schema_version === 2
 const plan = []
 const moduleDirs = readdirSync(modulesDir)

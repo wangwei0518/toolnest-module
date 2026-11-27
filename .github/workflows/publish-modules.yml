@@ -155,6 +155,6 @@ jobs:
           gh release download "$tag" --pattern '*.tnmod' --dir verified-assets
           for file in release-assets/*.tnmod; do cmp "$file" "verified-assets/${file##*/}"; done
           gh release edit "$tag" --draft=false
-          git add catalog-v2.json
-          git commit -m "发布模块目录 v2 $tag [skip ci]"
+          git add catalog.json
+          git commit -m "发布模块目录 $tag [skip ci]"
           git push origin HEAD:main
