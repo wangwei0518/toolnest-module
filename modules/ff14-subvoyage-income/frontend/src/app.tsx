@@ -221,7 +221,7 @@ export function ModuleApp() {
           : tab === "overview" ? <>
               <div className="subv-overview">
                 <TodayCard today={view?.todayReport ?? null} yesterday={yesterday} configured={!needsCompany} onOpen={() => openDay(today)}/>
-                <CompanyCard company={company} vessels={view?.fleet?.submersibles} onSettings={() => setTab("settings")}/>
+                <CompanyCard company={company} onSettings={() => setTab("settings")}/>
                 <SummaryCard count={received} missing={missing} pending={pending} next={next}/>
               </div>
               {analysis}

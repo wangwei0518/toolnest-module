@@ -84,11 +84,13 @@ func (s *snapshot) normalize(now time.Time) error {
 	if s.GeneratedAt.IsZero() || s.GeneratedAt.Year() < 2010 || s.GeneratedAt.After(now.Add(5*time.Minute)) {
 		return errors.New("generatedAt 必须有效，且不能晚于当前时间五分钟")
 	}
-	incomeDate := s.GeneratedAt.In(beijing).Format(time.DateOnly)
-	if incomeDate > now.In(beijing).Format(time.DateOnly) {
-		return errors.New("generatedAt 对应的北京时间日期不能晚于今天")
+	generatedDate := s.GeneratedAt.In(beijing).Format(time.DateOnly)
+	if _, err := time.Parse(time.DateOnly, s.Date); err != nil || s.Date > generatedDate {
+		s.Date = generatedDate
 	}
-	s.Date = incomeDate
+	if s.Date > now.In(beijing).Format(time.DateOnly) {
+		return errors.New("收益的北京时间日期不能晚于今天")
+	}
 	s.GeneratedAt = s.GeneratedAt.UTC()
 	if s.Trigger != "manual" && s.Trigger != "completion" {
 		return errors.New("trigger 无效")

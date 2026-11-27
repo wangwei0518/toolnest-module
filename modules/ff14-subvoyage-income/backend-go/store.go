@@ -45,7 +45,18 @@ CREATE TABLE IF NOT EXISTS daily (
 CREATE INDEX IF NOT EXISTS daily_generated ON daily(company,generated DESC);
 CREATE TABLE IF NOT EXISTS fleets (
  company TEXT PRIMARY KEY REFERENCES companies(id), generated TEXT NOT NULL, payload BLOB NOT NULL
-);`)
+);
+CREATE TABLE IF NOT EXISTS company_members (
+ company TEXT PRIMARY KEY REFERENCES companies(id), generated TEXT NOT NULL, members INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO company_members(company,generated,members)
+SELECT c.id,d.generated,json_extract(CAST(d.payload AS TEXT),'$.companyTotalMembers')
+FROM companies c
+JOIN daily d ON d.rowid=(
+ SELECT rowid FROM daily WHERE company=c.id AND json_type(CAST(payload AS TEXT),'$.companyTotalMembers')='integer'
+ ORDER BY generated DESC LIMIT 1
+)
+WHERE NOT EXISTS (SELECT 1 FROM company_members WHERE company=c.id);`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -114,6 +125,14 @@ func (s *store) saveReport(ctx context.Context, token string, report snapshot) (
 		}
 		status = "accepted"
 	}
+	if report.TotalMembers != nil {
+		_, err = tx.ExecContext(ctx, `INSERT INTO company_members(company,generated,members) VALUES(?,?,?)
+ON CONFLICT(company) DO UPDATE SET generated=excluded.generated,members=excluded.members
+WHERE excluded.generated>company_members.generated`, report.CompanyID, generated, *report.TotalMembers)
+		if err != nil {
+			return "", err
+		}
+	}
 	if report.Vessels != nil {
 		fleetJSON, err := json.Marshal(fleet{report.GeneratedAt, report.Vessels})
 		if err != nil {
@@ -144,7 +163,9 @@ func readJSON[T any](row *sql.Row) (*T, error) {
 const latestQuery = "SELECT payload FROM daily WHERE company=? ORDER BY generated DESC LIMIT 1"
 
 func (s *store) listCompanies(ctx context.Context) ([]company, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,alias,(SELECT payload FROM daily WHERE company=companies.id ORDER BY generated DESC LIMIT 1) FROM companies ORDER BY alias,id")
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id,c.alias,
+(SELECT payload FROM daily WHERE company=c.id ORDER BY generated DESC LIMIT 1),m.members
+FROM companies c LEFT JOIN company_members m ON m.company=c.id ORDER BY c.alias,c.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +174,8 @@ func (s *store) listCompanies(ctx context.Context) ([]company, error) {
 	for rows.Next() {
 		var c company
 		var data []byte
-		if err := rows.Scan(&c.ID, &c.Alias, &data); err != nil {
+		var members *int
+		if err := rows.Scan(&c.ID, &c.Alias, &data, &members); err != nil {
 			return nil, err
 		}
 		if len(data) > 0 {
@@ -163,6 +185,7 @@ func (s *store) listCompanies(ctx context.Context) ([]company, error) {
 			}
 			c.profile = latest.profile
 		}
+		c.TotalMembers = members
 		result = append(result, c)
 	}
 	return result, rows.Err()
@@ -185,7 +208,9 @@ func (s *store) view(ctx context.Context, id, month string, now time.Time) (*vie
 	defer tx.Rollback()
 	today := now.In(beijing).Format(time.DateOnly)
 	result := &view{dashboard: dashboard{Today: today, Now: now, Month: month, Company: company{ID: id}, Months: []string{}, Reports: []snapshot{}}, Trend: []trendPoint{}}
-	if err = tx.QueryRowContext(ctx, "SELECT alias FROM companies WHERE id=?", id).Scan(&result.Company.Alias); err != nil {
+	var members *int
+	if err = tx.QueryRowContext(ctx, `SELECT c.alias,m.members FROM companies c
+LEFT JOIN company_members m ON m.company=c.id WHERE c.id=?`, id).Scan(&result.Company.Alias, &members); err != nil {
 		return nil, err
 	}
 	result.Latest, err = readJSON[snapshot](tx.QueryRowContext(ctx, latestQuery, id))
@@ -195,6 +220,7 @@ func (s *store) view(ctx context.Context, id, month string, now time.Time) (*vie
 	if result.Latest != nil {
 		result.Company.profile = result.Latest.profile
 	}
+	result.Company.TotalMembers = members
 	result.TodayReport, err = readJSON[snapshot](tx.QueryRowContext(ctx, "SELECT payload FROM daily WHERE company=? AND day=?", id, today))
 	if err != nil {
 		return nil, err

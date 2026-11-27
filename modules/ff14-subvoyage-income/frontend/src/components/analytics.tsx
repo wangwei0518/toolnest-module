@@ -74,7 +74,6 @@ export function Trend({ view, today, month, range, onRange, onDay, custom, resul
   view: Dashboard | undefined; today: string; month: string; range: Range; onRange: (range: Range) => void; onDay: (date: string) => void;
   custom: DateRange | null; result: { data?: TrendPoint[]; error?: string } | undefined; onCustom: (range: DateRange) => void;
 }) {
-  const [focused, setFocused] = useState("");
   const end = calendar(month).end;
   const latest = custom?.to ?? (end < today ? end : today);
   const count = custom ? Math.round((Date.parse(custom.to) - Date.parse(custom.from)) / 86400000) + 1 : range;
@@ -92,7 +91,6 @@ export function Trend({ view, today, month, range, onRange, onDay, custom, resul
   const y = (value: number) => 100 * (1 - value / ceiling);
   const ticks = [0, 1, 2, 3, 4, 5];
   const skip = Math.max(1, Math.ceil(count / 7));
-  const active = data.some(point => point.date === focused) ? focused : data.at(-1)?.date;
   const groups: { x: number; y: number }[][] = [];
   let group: { x: number; y: number }[] = [];
   days.forEach((day, index) => {
@@ -126,10 +124,8 @@ export function Trend({ view, today, month, range, onRange, onDay, custom, resul
           </svg>
           {!data.length && <div className="subv-chart-empty"><p>{view ? "所选日期范围暂无上报" : "收到收益上报后显示趋势"}</p></div>}
           {days.map((point, index) => point.value !== undefined && <button key={point.date} type="button" className="subv-point"
-            style={{ left: x(index) + "%", top: y(point.value) + "%" }} data-active={point.date === active} data-end={index > days.length / 2}
+            style={{ left: x(index) + "%", top: y(point.value) + "%" }} data-end={index > days.length / 2}
             aria-label={point.date + " " + gil(point.value) + "，查看当日道具"}
-            onFocus={() => setFocused(point.date)} onBlur={() => setFocused("")}
-            onPointerEnter={() => setFocused(point.date)} onPointerLeave={() => setFocused("")}
             onClick={() => onDay(point.date)}><span className="subv-point-tip" aria-hidden="true">{point.date.slice(5)}<b>{gil(point.value)}</b></span></button>)}
         </div>
         <div className="subv-axis-x" aria-hidden="true">{days.map((point, index) => (index === days.length - 1 || index % skip === 0 && index < days.length - skip)

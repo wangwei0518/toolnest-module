@@ -190,15 +190,18 @@
 .tn-ff14-subvoyage-income .subv-fill-bottom { stop-color: var(--subv-violet); stop-opacity: .08; }
 .tn-ff14-subvoyage-income .subv-point { position: absolute; transform: translate(-50%,-50%); width: .72rem; height: .72rem; cursor: pointer; }
 .tn-ff14-subvoyage-income .subv-point::before { content: ""; position: absolute; inset: .21rem; background: var(--subv-violet); border-radius: 50%; border: 1px solid var(--card); }
-.tn-ff14-subvoyage-income .subv-point[data-active="true"] { z-index: 1; }
-.tn-ff14-subvoyage-income .subv-point[data-active="true"]::before { inset: .08rem; }
+.tn-ff14-subvoyage-income .subv-point:last-of-type::before { inset: .08rem; }
 .tn-ff14-subvoyage-income .subv-point-tip {
   display: none; position: absolute; bottom: calc(100% + var(--subv-spacing)); padding: var(--subv-spacing) var(--subv-s2);
   border-radius: var(--radius); border: 1px solid var(--subv-violet); color: var(--foreground);
   background: var(--popover); pointer-events: none; font-size: .7rem; white-space: nowrap; text-align: left;
 }
 .tn-ff14-subvoyage-income .subv-point-tip b { display: block; }
-.tn-ff14-subvoyage-income .subv-point[data-active="true"] .subv-point-tip { display: block; }
+@media (hover: hover) {
+  .tn-ff14-subvoyage-income .subv-point:hover { z-index: 1; }
+  .tn-ff14-subvoyage-income .subv-point:hover::before { inset: .08rem; }
+  .tn-ff14-subvoyage-income .subv-point:hover .subv-point-tip { display: block; }
+}
 .tn-ff14-subvoyage-income .subv-point[data-end="true"] .subv-point-tip { right: 0; }
 .tn-ff14-subvoyage-income .subv-vessels { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--subv-s2); }
 .tn-ff14-subvoyage-income .subv-vessel { position: relative; background: color-mix(in srgb, var(--subv-surface), var(--muted) 26%); }

@@ -15,7 +15,9 @@ ToolNest FF14 部队潜水艇模块。按部队和统计月份查看今日收入
 
 上报入口为 **POST /api/v1/modules/ff14-subvoyage-income/public/reports**，兼容 subvoyage.income.summary v1 和缺少 submersibles 的早期快照。收入按部队与北京时间日期保留最新完整快照。艇队字段为 null 时保留最近有效艇队，空数组清除旧艇队。待估价道具计入数量，金额仅累计已知 NPC 估价。数据库位于 TOOLNEST_PLUGIN_DATA_DIR/subvoyage.sqlite。道具图标按 ID 从 FFCafe 获取，加载失败时显示占位图。
 
-补报历史收益时，`generatedAt` 填快照原始生成时间。服务端将该时间换算为北京时间日期，写入 `date` 并据此入账。即使快照隔日才到达，同一部队同一天也按 `generatedAt` 保留最新一份。
+补报历史收益时，`date` 填原始收益的北京时间日期，`generatedAt` 填快照实际生成时间。服务端保留有效且早于或等于生成日的 `date`。如果 `date` 缺失、无效或晚于生成日，则使用 `generatedAt` 对应的北京时间日期入账。同一部队同一天按 `generatedAt` 保留最新一份。
+
+部队人数取自最近一次包含 `companyTotalMembers` 的上报。后续上报缺少该字段或传入 `null` 时，沿用最近已知的人数。
 
 ## 管理 API
 

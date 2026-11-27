@@ -50,7 +50,7 @@ export function TodayCard({ today, yesterday, onOpen, configured = true }: { tod
     </CardContent>
   </Card>;
 }
-export function CompanyCard({ company, vessels, onSettings }: { company: Company | undefined; vessels: Vessel[] | undefined; onSettings: () => void }) {
+export function CompanyCard({ company, onSettings }: { company: Company | undefined; onSettings: () => void }) {
   const name = company ? companyName(company) : "尚未收到部队上报";
   return <Card className="subv-panel" aria-label="部队概况">
     <CardContent className="subv-panel-content subv-company-body"><div className="subv-company-profile">
@@ -59,7 +59,7 @@ export function CompanyCard({ company, vessels, onSettings }: { company: Company
       <h2 title={name}>{name}</h2>
       <dl className="subv-profile-list">
         <div><dt>服务器</dt><dd>{company?.companyWorld || "—"}</dd></div>
-        <div><dt>公司规模</dt><dd>{vessels === undefined ? "—" : vessels.length + " 艘潜水艇"} · {company?.companyTotalMembers != null ? company.companyTotalMembers + " 人" : "—"}</dd></div>
+        <div><dt>部队人数</dt><dd>{company?.companyTotalMembers != null ? company.companyTotalMembers + " 人" : "—"}</dd></div>
         <div><dt>等级／军队</dt><dd>{company?.companyRank ?? "—"} ／ {company?.companyGrandCompany ?? "—"}</dd></div>
         <div><dt>会长</dt><dd>{company?.companyLeaderName ?? "—"}</dd></div>
         <div><dt>部队 ID</dt><dd>{company?.companyId ?? "—"}</dd></div>
