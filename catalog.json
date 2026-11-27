@@ -37,32 +37,32 @@
     {
       "id": "ff14-subvoyage-income",
       "name": "潜航控制台",
-      "version": "0.1.5",
+      "version": "0.1.11",
       "description": "最终幻想14部队潜水艇收益、返航与道具分析",
       "author": "ToolNest",
       "icon": "box",
       "minimum_core_version": ">=0.1.0",
-      "release_notes": "由 module-release-86-1-c5ed7d9 发布。",
+      "release_notes": "由 module-release-87-1-b660c54 发布。",
       "tags": [
         "ToolNest",
         "模块"
       ],
-      "published_at": "2026-11-27T03:14:39.421Z",
+      "published_at": "2026-11-27T07:11:29.489Z",
       "packages": {
         "linux/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-86-1-c5ed7d9/ff14-subvoyage-income-0.1.5-linux-amd64.tnmod",
-          "sha256": "0096ffa27a4f718bf1d8c13a314979d2c4f1c6e0d212078a8a1c047341ad9c13",
-          "size_bytes": 5191056
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-87-1-b660c54/ff14-subvoyage-income-0.1.11-linux-amd64.tnmod",
+          "sha256": "15ba59c00ab1c90c336b6ae792684b262d3d1653fc3d55e2a4139b1b60b4e40c",
+          "size_bytes": 5200342
         },
         "linux/arm64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-86-1-c5ed7d9/ff14-subvoyage-income-0.1.5-linux-arm64.tnmod",
-          "sha256": "68feae240a81f7ef6eb3a8ab309dad92b0d82ce0176e8f45bb26a6f71c2a41f8",
-          "size_bytes": 4778968
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-87-1-b660c54/ff14-subvoyage-income-0.1.11-linux-arm64.tnmod",
+          "sha256": "a1dd825c49473f889fb5a9b9c5cce4a604542e87d62901c6d90536bbe283a8eb",
+          "size_bytes": 4787916
         },
         "windows/amd64": {
-          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-86-1-c5ed7d9/ff14-subvoyage-income-0.1.5-windows-amd64.tnmod",
-          "sha256": "c72e6a9a74227e8858edff7e51e6a0cc83b6258efd2c3e1a15151352df7003e4",
-          "size_bytes": 5218239
+          "url": "https://github.com/wangwei0518/toolnest-module/releases/download/module-release-87-1-b660c54/ff14-subvoyage-income-0.1.11-windows-amd64.tnmod",
+          "sha256": "fb033dae889dc9ecb64ff0b1d08ed8da81d2b20ac3145ddcaffeaffa9eceffb9",
+          "size_bytes": 5227118
         }
       }
     },
