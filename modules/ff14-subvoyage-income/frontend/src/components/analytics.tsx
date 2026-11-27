@@ -1,6 +1,7 @@
 import { Fragment, useState, type FormEvent } from "react";
 import { RiArrowRightLine, RiBarChartGroupedLine, RiCalendarLine, RiStackLine } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
@@ -28,7 +29,7 @@ export function HeatMap({ view, today, month, total, onMonth, onDay }: {
           const usable = date.startsWith(month) && date <= today;
           const value = values.get(date);
           const level = !usable ? "outside" : value === undefined ? "missing" : value === 0 ? "zero" : value >= 60e6 ? 4 : value >= 40e6 ? 3 : value >= 20e6 ? 2 : 1;
-          const label = date + (date > today ? " 未到日期" : !view ? " 待配置部队" : value === undefined ? " 未上报" : " " + gil(value));
+          const label = date + (date > today ? " 未到日期" : !view ? " 等待首次上报" : value === undefined ? " 未上报" : " " + gil(value));
           return <Button variant="ghost" size="sm" key={date} type="button" data-heat={level} className="subv-day"
             disabled={!view || !usable} aria-current={date === today ? "date" : undefined} aria-label={label} title={label}
             onClick={() => onDay(date)}>{Number(date.slice(8))}</Button>;
@@ -100,8 +101,13 @@ export function Trend({ view, today, month, range, onRange, onDay, custom, resul
   });
   if (group.length) groups.push(group);
   return <Panel title={custom ? "自定义日期收益趋势" : "近" + range + "日打捞收益趋势"} id="subv-trend" icon={RiBarChartGroupedLine} action={
-    <div className="subv-actions"><div className="subv-segments" role="group" aria-label="趋势范围">{([7, 30, 90] as const).map(value =>
-      <Button key={value} size="sm" variant="ghost" aria-pressed={!custom && value === range} onClick={() => onRange(value)}>近{value}日</Button>)}</div>{view && <RangePicker today={today} value={custom ?? { from: shiftDay(latest, 1 - count), to: latest }} onChange={onCustom}/>}</div>
+    <div className="subv-actions">
+      <ButtonGroup className="subv-trend-range" aria-label="趋势范围">
+        {([7, 30, 90] as const).map(value => <Button key={value} size="sm" variant="outline"
+          aria-pressed={!custom && value === range} onClick={() => onRange(value)}>近{value}日</Button>)}
+      </ButtonGroup>
+      {view && <RangePicker today={today} value={custom ?? { from: shiftDay(latest, 1 - count), to: latest }} onChange={onCustom}/>}
+    </div>
   }>
     {custom && !result ? <p className="subv-empty" role="status">正在加载收益趋势…</p> : result?.error ? <p className="subv-empty" role="alert">{result.error}</p> : <div className="subv-chart" aria-label="每日 NPC 估值">
       <div className="subv-axis-y" aria-hidden="true">{ticks.map(index => <span key={index} style={{ top: index * 20 + "%" }}>{data.length ? number.format(ceiling - index * step) : "—"}</span>)}</div>
@@ -133,8 +139,8 @@ export function Trend({ view, today, month, range, onRange, onDay, custom, resul
   </Panel>;
 }
 
-export function ItemsPanel({ children, onOpen, hasItems }: { children: React.ReactNode; onOpen: () => void; hasItems: boolean }) {
+export function ItemsPanel({ children, onOpen, hasItems }: { children: React.ReactNode; onOpen: (() => void) | undefined; hasItems: boolean }) {
   return <Panel title="打捞物品分析（本月）" id="subv-loot" icon={RiStackLine} action={
-    <Button variant="ghost" size="sm" disabled={!hasItems} onClick={onOpen}>查看全部物品 <RiArrowRightLine data-icon="inline-end"/></Button>
+    onOpen && <Button variant="ghost" size="sm" disabled={!hasItems} onClick={onOpen}>查看全部物品 <RiArrowRightLine data-icon="inline-end"/></Button>
   }>{children}</Panel>;
 }

@@ -67,9 +67,10 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /health/shutdown", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204); s.stop() })
 	mux.HandleFunc("POST /public/reports", s.receive)
 	mux.HandleFunc("GET /companies", s.companies)
-	mux.HandleFunc("POST /companies", s.create)
 	mux.HandleFunc("PATCH /companies/{id}", s.update)
-	mux.HandleFunc("POST /companies/{id}/token", s.rotate)
+	mux.HandleFunc("GET /webhook", s.webhookStatus)
+	mux.HandleFunc("POST /webhook/token", s.issueWebhookToken)
+	mux.HandleFunc("PUT /webhook/token", s.issueWebhookToken)
 	mux.HandleFunc("GET /dashboard", s.dashboard)
 	mux.HandleFunc("GET /trend", s.trend)
 	mux.HandleFunc("GET /reports/{date}", s.report)
@@ -135,26 +136,39 @@ func validateCompany(w http.ResponseWriter, c *companyInput) bool {
 	}
 	return true
 }
-func (s *server) create(w http.ResponseWriter, r *http.Request) {
-	var c companyInput
-	if !decode(w, r, &c) || !validateCompany(w, &c) {
+func (s *server) webhookStatus(w http.ResponseWriter, r *http.Request) {
+	var configured bool
+	if err := s.store.db.QueryRowContext(r.Context(), "SELECT EXISTS(SELECT 1 FROM webhook WHERE id=1)").Scan(&configured); err != nil {
+		failure(w, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]bool{"configured": configured})
+}
+
+func (s *server) issueWebhookToken(w http.ResponseWriter, r *http.Request) {
 	token, hash, err := newToken()
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	result, err := s.store.db.ExecContext(r.Context(), "INSERT INTO companies(id,alias,token) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING", c.ID, c.Alias, hash[:])
+	query, status := "INSERT INTO webhook(id,token) VALUES(1,?) ON CONFLICT(id) DO NOTHING", http.StatusCreated
+	if r.Method == http.MethodPut {
+		query, status = "UPDATE webhook SET token=? WHERE id=1", http.StatusOK
+	}
+	result, err := s.store.db.ExecContext(r.Context(), query, hash[:])
 	if err != nil {
 		failure(w, err)
 		return
 	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		fail(w, 409, "该部队已配置")
+	if affected, err := result.RowsAffected(); err != nil {
+		failure(w, err)
+		return
+	} else if affected == 0 {
+		fail(w, http.StatusConflict, "上报令牌状态已变化，请刷新设置")
 		return
 	}
-	writeJSON(w, 201, map[string]string{"companyId": c.ID, "token": token})
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, status, map[string]string{"token": token})
 }
 func (s *server) update(w http.ResponseWriter, r *http.Request) {
 	var c companyInput
@@ -175,28 +189,6 @@ func (s *server) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, c)
-}
-func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if !validCompany(id) {
-		fail(w, 400, "部队 ID 无效")
-		return
-	}
-	token, hash, err := newToken()
-	if err != nil {
-		failure(w, err)
-		return
-	}
-	result, err := s.store.db.ExecContext(r.Context(), "UPDATE companies SET token=? WHERE id=?", hash[:], id)
-	if err != nil {
-		failure(w, err)
-		return
-	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		fail(w, 404, "部队不存在")
-		return
-	}
-	writeJSON(w, 200, map[string]string{"companyId": id, "token": token})
 }
 func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	id, month := r.URL.Query().Get("companyId"), r.URL.Query().Get("month")

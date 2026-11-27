@@ -8,7 +8,7 @@ import "./styles.css";
 
 const module: ToolNestReactFrontendModule = {
   id: "ff14-subvoyage-income",
-  version: "0.1.5",
+  version: "0.1.11",
   layout: { content: "padded" },
   install(context) {
     setModuleApiClient(context.apiClient);

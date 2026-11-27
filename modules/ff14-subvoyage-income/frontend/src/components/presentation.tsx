@@ -46,17 +46,17 @@ export function TodayCard({ today, yesterday, onOpen, configured = true }: { tod
         {delta !== null && <span data-delta={delta < 0 ? "negative" : delta > 0 ? "positive" : "flat"}>较昨日 {delta > 0 ? "+" : ""}{percent.format(delta)}</span>}
         {today && <Button variant="ghost" size="sm" onClick={onOpen}>道具明细 <RiArrowRightLine data-icon="inline-end"/></Button>}
       </div>
-      <p className="subv-muted subv-small">{today ? displayTime(today.generatedAt) + " · " + triggerName(today.trigger) : configured ? "今日尚未收到上报" : "配置部队后接收收益上报"}</p>
+      <p className="subv-muted subv-small">{today ? displayTime(today.generatedAt) + " · " + triggerName(today.trigger) : configured ? "今日尚未收到上报" : "等待插件首次上报"}</p>
     </CardContent>
   </Card>;
 }
 export function CompanyCard({ company, vessels, onSettings }: { company: Company | undefined; vessels: Vessel[] | undefined; onSettings: () => void }) {
-  const name = company ? companyName(company) : "尚未配置部队";
-  return <Panel title="公司概况" action={<Button variant={company ? "ghost" : "default"} size="sm"
-    className="subv-company-settings" data-variant={company ? "ghost" : "default"} onClick={onSettings}>{company ? "设置" : "配置部队"}</Button>}><div className="subv-company-profile">
+  const name = company ? companyName(company) : "尚未收到部队上报";
+  return <Card className="subv-panel" aria-label="部队概况">
+    <CardContent className="subv-panel-content subv-company-body"><div className="subv-company-profile">
     <RiAnchorLine aria-hidden className="subv-company-icon"/>
     <div>
-      <h3 title={name}>{name}</h3>
+      <h2 title={name}>{name}</h2>
       <dl className="subv-profile-list">
         <div><dt>服务器</dt><dd>{company?.companyWorld || "—"}</dd></div>
         <div><dt>公司规模</dt><dd>{vessels === undefined ? "—" : vessels.length + " 艘潜水艇"} · {company?.companyTotalMembers != null ? company.companyTotalMembers + " 人" : "—"}</dd></div>
@@ -65,7 +65,10 @@ export function CompanyCard({ company, vessels, onSettings }: { company: Company
         <div><dt>部队 ID</dt><dd>{company?.companyId ?? "—"}</dd></div>
       </dl>
     </div>
-  </div></Panel>;
+    </div>
+    {!company && <Button size="sm" className="subv-company-settings" onClick={onSettings}>配置上报</Button>}
+    </CardContent>
+  </Card>;
 }
 export function SummaryCard({ count, missing, pending, next }: { count: number | null; missing: number | null; pending: number | null; next: Vessel | undefined }) {
   return <Card className="subv-panel subv-summary" aria-label="统计摘要"><CardContent className="subv-panel-content"><dl>
@@ -85,7 +88,7 @@ function VesselDrawing() {
 export function FleetRows({ view, now }: { view: Dashboard | undefined; now: number }) {
   if (!view?.fleet) return <div className="subv-empty subv-fleet-empty">
     <VesselDrawing/>
-    <p>{view ? "尚未收到舰队快照。请在部队工房内触发一次插件上报。" : "收到舰队快照后显示预计返航和剩余时间。"}</p>
+    <p>{view ? "尚未收到潜水艇快照。请在部队工房内触发一次插件上报。" : "收到潜水艇快照后显示预计返航和剩余时间。"}</p>
   </div>;
   const inherited = view.latest?.submersibles === null && view.latest.generatedAt !== view.fleet.generatedAt;
   return <>
@@ -97,12 +100,12 @@ export function FleetRows({ view, now }: { view: Dashboard | undefined; now: num
         <VesselDrawing/>
         <CardContent><dl><div><dt>预计返航</dt><dd>{info.time}</dd></div><div><dt>剩余时间</dt><dd className="subv-countdown">{info.remaining}</dd></div></dl></CardContent>
       </Card>;
-    })}</div> : <p className="subv-empty">已读取舰队，暂无登记潜艇。</p>}
-    <p className="subv-muted subv-small subv-fleet-source">{inherited ? "沿用舰队快照 · " : "舰队快照 · "}{displayTime(view.fleet.generatedAt)}</p>
+    })}</div> : <p className="subv-empty">暂无已登记的潜水艇。</p>}
+    <p className="subv-muted subv-small subv-fleet-source">{inherited ? "沿用历史快照 · " : "潜水艇快照 · "}{displayTime(view.fleet.generatedAt)}</p>
   </>;
 }
-export function FleetPanel({ view, now, onOpen }: { view: Dashboard | undefined; now: number; onOpen: () => void }) {
-  return <Panel title="舰队返航计划" id="subv-fleet" icon={RiShipLine} action={<Button variant="ghost" size="sm" disabled={!view} onClick={onOpen}>舰队管理 <RiArrowRightLine data-icon="inline-end"/></Button>}>
+export function FleetPanel({ view, now, onOpen }: { view: Dashboard | undefined; now: number; onOpen: (() => void) | undefined }) {
+  return <Panel title="潜水艇返航计划" id="subv-fleet" icon={RiShipLine} action={onOpen && <Button variant="ghost" size="sm" onClick={onOpen}>查看潜水艇 <RiArrowRightLine data-icon="inline-end"/></Button>}>
     <FleetRows view={view} now={now}/>
   </Panel>;
 }
@@ -119,7 +122,7 @@ export function LootTable({ rows, total, onPrice, limit }: {
 }) {
   const visible = limit ? rows.slice(0, limit) : rows;
   return <TableContainer><Table className="subv-loot-table">
-    <caption className="sr-only">打捞物品明细</caption>
+    <caption className="subv:sr-only">打捞物品明细</caption>
     <colgroup><col className="subv-name-col"/><col/><col/><col/><col className="subv-share-col"/></colgroup>
     <TableHeader><TableRow><TableHead scope="col">物品名称</TableHead><TableHead scope="col">上报数量</TableHead>
       <TableHead scope="col">NPC 单价 (Gil)</TableHead><TableHead scope="col">总估价 (Gil)</TableHead><TableHead scope="col">收入占比</TableHead></TableRow></TableHeader>

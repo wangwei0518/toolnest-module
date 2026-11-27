@@ -9,7 +9,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       type={type}
       data-slot="input"
       className={cn(
-        "h-7 w-full min-w-0 rounded-md border border-input bg-input/20 px-2 py-0.5 text-sm transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-xs/relaxed file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 lg:text-xs/relaxed dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        "subv:h-7 subv:w-full subv:min-w-0 subv:rounded-md subv:border subv:border-input subv:bg-input/20 subv:px-2 subv:py-0.5 subv:text-sm subv:transition-colors subv:outline-none subv:file:inline-flex subv:file:h-6 subv:file:border-0 subv:file:bg-transparent subv:file:text-xs/relaxed subv:file:font-medium subv:file:text-foreground subv:placeholder:text-muted-foreground subv:focus-visible:border-ring subv:focus-visible:ring-2 subv:focus-visible:ring-ring/30 subv:disabled:pointer-events-none subv:disabled:cursor-not-allowed subv:disabled:opacity-50 subv:aria-invalid:border-destructive subv:aria-invalid:ring-2 subv:aria-invalid:ring-destructive/20 subv:lg:text-xs/relaxed subv:dark:bg-input/30 subv:dark:aria-invalid:border-destructive/50 subv:dark:aria-invalid:ring-destructive/40",
         className
       )}
       {...props}

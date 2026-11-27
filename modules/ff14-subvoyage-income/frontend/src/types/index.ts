@@ -53,6 +53,5 @@ export interface Dashboard {
   trend: TrendPoint[];
 }
 export interface Credential {
-  companyId: string;
   token: string;
 }

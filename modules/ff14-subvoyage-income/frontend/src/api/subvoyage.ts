@@ -12,14 +12,14 @@ export function dashboard(companyId: string, month: string) {
 export function report(companyId: string, date: string) {
   return getModuleApiClient().get<Report | null>(base + "/reports/" + date + "?" + new URLSearchParams({ companyId }));
 }
-export function createCompany(companyId: string, alias: string) {
-  return getModuleApiClient().post<Credential>(base + "/companies", { companyId, alias });
+export function webhookStatus() {
+  return getModuleApiClient().get<{ configured: boolean }>(base + "/webhook");
 }
-export function editCompany(companyId: string, alias: string) {
-  return getModuleApiClient().patch(base + "/companies/" + companyId, { alias });
+export function createWebhookToken() {
+  return getModuleApiClient().post<Credential>(base + "/webhook/token");
 }
-export function rotateToken(companyId: string) {
-  return getModuleApiClient().post<Credential>(base + "/companies/" + companyId + "/token");
+export function rotateWebhookToken() {
+  return getModuleApiClient().put<Credential>(base + "/webhook/token");
 }
 export function publicUrl() {
   return new URL(webBase() + "/public/reports", window.location.origin).toString();

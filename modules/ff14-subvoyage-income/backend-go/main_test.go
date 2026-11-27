@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -40,17 +41,32 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	}
 	var credentials map[string]string
 	id := "18446744073709551615"
-	create := call("POST", "/companies", companyInput{ID: id, Alias: "示例部队"}, true, "", http.StatusCreated)
+	call("POST", "/companies", companyInput{ID: id}, true, "", http.StatusMethodNotAllowed)
+	call("POST", "/webhook/token", nil, false, "", http.StatusForbidden)
+	call("PUT", "/webhook/token", nil, true, "", http.StatusConflict)
+	create := call("POST", "/webhook/token", nil, true, "", http.StatusCreated)
 	if err = json.Unmarshal(create, &credentials); err != nil {
 		t.Fatal(err)
 	}
 	token := credentials["token"]
+	call("POST", "/webhook/token", nil, true, "", http.StatusConflict)
+	status := call("GET", "/webhook", nil, true, "", http.StatusOK)
+	if string(bytes.TrimSpace(status)) != `{"configured":true}` {
+		t.Fatalf("status must only expose whether a webhook is configured: %s", status)
+	}
 	call("GET", "/companies", nil, false, "", http.StatusForbidden)
 	next := now.Add(time.Hour).Unix()
 	price, subtotal := int64(2000), int64(6000)
 	s := snapshot{Version: 1, Event: "subvoyage.income.summary", CompanyID: id, Date: "2026-11-27", GeneratedAt: now.Add(-time.Hour),
 		Trigger: "manual", Total: 6000, Items: []item{{ID: 5060, Name: "玄钢锭", Quantity: 3, Price: &price, Subtotal: &subtotal}, {ID: 100, Name: "待估价", Quantity: 1}},
 		Vessels: []vessel{{Slot: 1, Name: "苍蓝号", Next: &next}}}
+	call("POST", "/public/reports", s, false, "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG", http.StatusUnauthorized)
+	malformed := s
+	malformed.Total++
+	call("POST", "/public/reports", malformed, false, token, http.StatusBadRequest)
+	if got := call("GET", "/companies", nil, true, "", http.StatusOK); string(bytes.TrimSpace(got)) != "[]" {
+		t.Fatalf("only a valid first report may create a company: %s", got)
+	}
 	if got := call("POST", "/public/reports", s, false, token, http.StatusOK); !bytes.Contains(got, []byte("accepted")) {
 		t.Fatal(string(got))
 	}
@@ -87,6 +103,28 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	}
 	call("GET", "/trend?companyId="+id+"&from=2026-11-26&to=2026-11-27", nil, true, "", http.StatusOK)
 	call("GET", "/trend?companyId="+id+"&from=2026-11-01&to=2026-11-28", nil, true, "", http.StatusBadRequest)
-	call("POST", "/companies/"+id+"/token", nil, true, "", http.StatusOK)
+	second := s
+	second.CompanyID = "472"
+	call("POST", "/public/reports", second, false, token, http.StatusOK)
+	call("GET", "/dashboard?companyId="+second.CompanyID, nil, true, "", http.StatusOK)
+
+	legacyToken, legacyDigest, err := newToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.ExecContext(context.Background(), "INSERT INTO companies(id,alias,token) VALUES('73','旧部队',?)", legacyDigest[:]); err != nil {
+		t.Fatal(err)
+	}
+	call("POST", "/public/reports", s, false, legacyToken, http.StatusUnauthorized)
+	legacy := s
+	legacy.CompanyID = "73"
+	call("POST", "/public/reports", legacy, false, legacyToken, http.StatusOK)
+
+	rotation := call("PUT", "/webhook/token", nil, true, "", http.StatusOK)
+	if err := json.Unmarshal(rotation, &credentials); err != nil {
+		t.Fatal(err)
+	}
 	call("POST", "/public/reports", s, false, token, http.StatusUnauthorized)
+	call("POST", "/public/reports", s, false, credentials["token"], http.StatusOK)
+	call("POST", "/public/reports", legacy, false, legacyToken, http.StatusOK)
 }

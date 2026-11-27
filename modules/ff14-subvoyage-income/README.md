@@ -4,12 +4,14 @@ ToolNest FF14 部队潜水艇模块。按部队和统计月份查看今日收入
 
 ## 插件对接
 
-1. 在「公司设置」添加游戏部队 ID，复制一次性显示的令牌。
+1. 在「设置 → 上报配置」获取上报 URL，生成并复制一次性显示的令牌。
 2. 在 SubVoyage 的「今日收益 Webhook」启用推送，填入模块提供的 URL。
-3. 鉴权选择「自定义请求头」，请求头名填 X-ToolNest-Token，值填该部队令牌。
-4. 在工房内点击「查看今日收益」。舰队时间只会在客户端能读取工房时更新。
+3. 鉴权选择「自定义请求头」，请求头名填 X-ToolNest-Token，值填上报令牌。同一令牌可用于本模块接收多支部队的上报。
+4. 在工房内点击「查看今日收益」。首次有效上报会根据 `companyId` 自动建档，潜水艇返航时间在客户端能读取工房时更新。
 
 升级到支持 Bearer 上报的 ToolNest 宿主后，也可以在插件中选择「Bearer」，填入同一枚上报令牌。该模式会发送 `Authorization: Bearer <令牌>`。已有的自定义请求头配置可以继续使用。
+
+从旧版升级后，原先按部队签发的令牌仍可用于各自的部队。轮换上报配置中的令牌只会使上一枚模块级令牌失效。
 
 上报入口为 **POST /api/v1/modules/ff14-subvoyage-income/public/reports**，兼容 subvoyage.income.summary v1 和缺少 submersibles 的早期快照。收入按部队与北京时间日期保留最新完整快照。艇队字段为 null 时保留最近有效艇队，空数组清除旧艇队。待估价道具计入数量，金额仅累计已知 NPC 估价。数据库位于 TOOLNEST_PLUGIN_DATA_DIR/subvoyage.sqlite。道具图标按 ID 从 FFCafe 获取，加载失败时显示占位图。
 
@@ -19,10 +21,11 @@ ToolNest FF14 部队潜水艇模块。按部队和统计月份查看今日收入
 
 | 请求 | 说明 |
 | --- | --- |
-| GET /companies | 列出已配置部队 |
-| POST /companies | 创建部队并返回一次性令牌 |
+| GET /companies | 列出已建档部队 |
 | PATCH /companies/{id} | 更新别名 |
-| POST /companies/{id}/token | 生成新令牌，旧令牌立即失效 |
+| GET /webhook | 查看是否已生成模块级上报令牌 |
+| POST /webhook/token | 首次生成令牌，仅本次返回明文 |
+| PUT /webhook/token | 轮换模块级令牌，上一枚立即失效 |
 | GET /dashboard?companyId=…&month=YYYY-MM | 当前状态、选中月快照和近 90 日汇总 |
 | GET /trend?companyId=…&from=YYYY-MM-DD&to=YYYY-MM-DD | 查询含起止日的日收益，最多 366 天 |
 | GET /reports/{date}?companyId=… | 查询某日快照，缺报返回 JSON null |

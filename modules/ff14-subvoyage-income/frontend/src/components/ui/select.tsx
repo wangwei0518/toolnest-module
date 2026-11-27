@@ -12,7 +12,7 @@ function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
     <SelectPrimitive.Group
       data-slot="select-group"
-      className={cn("scroll-my-1 p-1", className)}
+      className={cn("subv:scroll-my-1 subv:p-1", className)}
       {...props}
     />
   )
@@ -22,7 +22,7 @@ function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   return (
     <SelectPrimitive.Value
       data-slot="select-value"
-      className={cn("flex flex-1 text-left", className)}
+      className={cn("subv:flex subv:flex-1 subv:text-left", className)}
       {...props}
     />
   )
@@ -41,7 +41,7 @@ function SelectTrigger({
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-1.5 rounded-md border border-input bg-input/20 px-2 py-1.5 text-xs/relaxed whitespace-nowrap transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-7 data-[size=sm]:h-6 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "subv:flex subv:w-fit subv:items-center subv:justify-between subv:gap-1.5 subv:rounded-md subv:border subv:border-input subv:bg-input/20 subv:px-2 subv:py-1.5 subv:text-xs/relaxed subv:whitespace-nowrap subv:transition-colors subv:outline-none subv:focus-visible:border-ring subv:focus-visible:ring-2 subv:focus-visible:ring-ring/30 subv:disabled:cursor-not-allowed subv:disabled:opacity-50 subv:aria-invalid:border-destructive subv:aria-invalid:ring-2 subv:aria-invalid:ring-destructive/20 subv:data-placeholder:text-muted-foreground subv:data-[size=default]:h-7 subv:data-[size=sm]:h-6 subv:*:data-[slot=select-value]:line-clamp-1 subv:*:data-[slot=select-value]:flex subv:*:data-[slot=select-value]:items-center subv:*:data-[slot=select-value]:gap-1.5 subv:dark:bg-input/30 subv:dark:hover:bg-input/50 subv:dark:aria-invalid:border-destructive/50 subv:dark:aria-invalid:ring-destructive/40 subv:[&_svg]:pointer-events-none subv:[&_svg]:shrink-0 subv:[&_svg:not([class*='size-'])]:size-3.5",
         className
       )}
       {...props}
@@ -49,7 +49,7 @@ function SelectTrigger({
       {children}
       <SelectPrimitive.Icon
         render={
-          <RiArrowDownSLine className="pointer-events-none size-3.5 text-muted-foreground" />
+          <RiArrowDownSLine className="subv:pointer-events-none subv:size-3.5 subv:text-muted-foreground" />
         }
       />
     </SelectPrimitive.Trigger>
@@ -78,12 +78,12 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
-        className="isolate z-50"
+        className="subv:isolate subv:z-50"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
-          className={cn("tn-motion-overlay relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+          className={cn("tn-motion-overlay subv:relative subv:isolate subv:z-50 subv:max-h-(--available-height) subv:w-(--anchor-width) subv:min-w-32 subv:origin-(--transform-origin) subv:overflow-x-hidden subv:overflow-y-auto subv:rounded-lg subv:bg-popover subv:text-popover-foreground subv:shadow-md subv:ring-1 subv:ring-foreground/10 subv:duration-100 subv:data-[align-trigger=true]:animate-none subv:data-[side=bottom]:slide-in-from-top-2 subv:data-[side=inline-end]:slide-in-from-left-2 subv:data-[side=inline-start]:slide-in-from-right-2 subv:data-[side=left]:slide-in-from-right-2 subv:data-[side=right]:slide-in-from-left-2 subv:data-[side=top]:slide-in-from-bottom-2 subv:data-open:animate-in subv:data-open:fade-in-0 subv:data-open:zoom-in-95 subv:data-closed:animate-out subv:data-closed:fade-out-0 subv:data-closed:zoom-out-95", className )}
           {...props}
         >
           <SelectScrollUpButton />
@@ -102,7 +102,7 @@ function SelectLabel({
   return (
     <SelectPrimitive.GroupLabel
       data-slot="select-label"
-      className={cn("px-2 py-1.5 text-xs text-muted-foreground", className)}
+      className={cn("subv:px-2 subv:py-1.5 subv:text-xs subv:text-muted-foreground", className)}
       {...props}
     />
   )
@@ -117,20 +117,20 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex min-h-7 w-full cursor-default items-center gap-2 rounded-md px-2 py-1 text-xs/relaxed outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "subv:relative subv:flex subv:min-h-7 subv:w-full subv:cursor-default subv:items-center subv:gap-2 subv:rounded-md subv:px-2 subv:py-1 subv:text-xs/relaxed subv:outline-hidden subv:select-none subv:focus:bg-accent subv:focus:text-accent-foreground subv:not-data-[variant=destructive]:focus:**:text-accent-foreground subv:data-disabled:pointer-events-none subv:data-disabled:opacity-50 subv:[&_svg]:pointer-events-none subv:[&_svg]:shrink-0 subv:[&_svg:not([class*='size-'])]:size-3.5 subv:*:[span]:last:flex subv:*:[span]:last:items-center subv:*:[span]:last:gap-2",
         className
       )}
       {...props}
     >
-      <SelectPrimitive.ItemText className="flex flex-1 shrink-0 gap-2 whitespace-nowrap">
+      <SelectPrimitive.ItemText className="subv:flex subv:flex-1 subv:shrink-0 subv:gap-2 subv:whitespace-nowrap">
         {children}
       </SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator
         render={
-          <span className="pointer-events-none absolute right-2 flex items-center justify-center" />
+          <span className="subv:pointer-events-none subv:absolute subv:right-2 subv:flex subv:items-center subv:justify-center" />
         }
       >
-        <RiCheckLine className="pointer-events-none" />
+        <RiCheckLine className="subv:pointer-events-none" />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   )
@@ -144,7 +144,7 @@ function SelectSeparator({
     <SelectPrimitive.Separator
       data-slot="select-separator"
       className={cn(
-        "pointer-events-none -mx-1 my-1 h-px bg-border/50",
+        "subv:pointer-events-none subv:-mx-1 subv:my-1 subv:h-px subv:bg-border/50",
         className
       )}
       {...props}
@@ -160,7 +160,7 @@ function SelectScrollUpButton({
     <SelectPrimitive.ScrollUpArrow
       data-slot="select-scroll-up-button"
       className={cn(
-        "top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-3.5",
+        "subv:top-0 subv:z-10 subv:flex subv:w-full subv:cursor-default subv:items-center subv:justify-center subv:bg-popover subv:py-1 subv:[&_svg:not([class*='size-'])]:size-3.5",
         className
       )}
       {...props}
@@ -179,7 +179,7 @@ function SelectScrollDownButton({
     <SelectPrimitive.ScrollDownArrow
       data-slot="select-scroll-down-button"
       className={cn(
-        "bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-3.5",
+        "subv:bottom-0 subv:z-10 subv:flex subv:w-full subv:cursor-default subv:items-center subv:justify-center subv:bg-popover subv:py-1 subv:[&_svg:not([class*='size-'])]:size-3.5",
         className
       )}
       {...props}

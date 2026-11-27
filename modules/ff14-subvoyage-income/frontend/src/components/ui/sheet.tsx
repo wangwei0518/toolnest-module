@@ -26,7 +26,7 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
     <SheetPrimitive.Backdrop
       data-slot="sheet-overlay"
       className={cn(
-        "tn-motion-overlay fixed inset-0 z-50 bg-black/20 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-sm",
+        "tn-motion-overlay subv:fixed subv:inset-0 subv:z-50 subv:bg-black/20 subv:transition-opacity subv:duration-150 subv:data-ending-style:opacity-0 subv:data-starting-style:opacity-0 subv:supports-backdrop-filter:backdrop-blur-sm",
         className
       )}
       {...props}
@@ -51,7 +51,7 @@ function SheetContent({
         data-slot="sheet-content"
         data-side={side}
         className={cn(
-          "tn-motion-overlay fixed z-50 flex flex-col bg-popover bg-clip-padding text-xs/relaxed text-popover-foreground shadow-lg transition duration-200 ease-in-out data-ending-style:opacity-0 data-starting-style:opacity-0 data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-ending-style:translate-y-[2.5rem] data-[side=bottom]:data-starting-style:translate-y-[2.5rem] data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-ending-style:translate-x-[-2.5rem] data-[side=left]:data-starting-style:translate-x-[-2.5rem] data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-full max-lg:data-[side=right]:max-w-none lg:data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-ending-style:translate-x-[2.5rem] data-[side=right]:data-starting-style:translate-x-[2.5rem] data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-ending-style:translate-y-[-2.5rem] data-[side=top]:data-starting-style:translate-y-[-2.5rem] data-[side=left]:sm:max-w-sm data-[side=right]:lg:max-w-sm",
+          "tn-motion-overlay subv:fixed subv:z-50 subv:flex subv:flex-col subv:bg-popover subv:bg-clip-padding subv:text-xs/relaxed subv:text-popover-foreground subv:shadow-lg subv:transition subv:duration-200 subv:ease-in-out subv:data-ending-style:opacity-0 subv:data-starting-style:opacity-0 subv:data-[side=bottom]:inset-x-0 subv:data-[side=bottom]:bottom-0 subv:data-[side=bottom]:h-auto subv:data-[side=bottom]:border-t subv:data-[side=bottom]:data-ending-style:translate-y-[2.5rem] subv:data-[side=bottom]:data-starting-style:translate-y-[2.5rem] subv:data-[side=left]:inset-y-0 subv:data-[side=left]:left-0 subv:data-[side=left]:h-full subv:data-[side=left]:w-3/4 subv:data-[side=left]:border-r subv:data-[side=left]:data-ending-style:translate-x-[-2.5rem] subv:data-[side=left]:data-starting-style:translate-x-[-2.5rem] subv:data-[side=right]:inset-y-0 subv:data-[side=right]:right-0 subv:data-[side=right]:h-full subv:data-[side=right]:w-full subv:max-lg:data-[side=right]:max-w-none subv:lg:data-[side=right]:w-3/4 subv:data-[side=right]:border-l subv:data-[side=right]:data-ending-style:translate-x-[2.5rem] subv:data-[side=right]:data-starting-style:translate-x-[2.5rem] subv:data-[side=top]:inset-x-0 subv:data-[side=top]:top-0 subv:data-[side=top]:h-auto subv:data-[side=top]:border-b subv:data-[side=top]:data-ending-style:translate-y-[-2.5rem] subv:data-[side=top]:data-starting-style:translate-y-[-2.5rem] subv:data-[side=left]:sm:max-w-sm subv:data-[side=right]:lg:max-w-sm",
           className
         )}
         {...props}
@@ -63,14 +63,14 @@ function SheetContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-4 right-4"
+                className="subv:absolute subv:top-4 subv:right-4"
                 size="icon-sm"
               />
             }
           >
             <RiCloseLine
             />
-            <span className="sr-only">Close</span>
+            <span className="subv:sr-only">Close</span>
           </SheetPrimitive.Close>
         )}
       </SheetPrimitive.Popup>
@@ -82,7 +82,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 p-6", className)}
+      className={cn("subv:flex subv:flex-col subv:gap-1.5 subv:p-6", className)}
       {...props}
     />
   )
@@ -92,7 +92,7 @@ function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-footer"
-      className={cn("mt-auto flex flex-col gap-2 p-6", className)}
+      className={cn("subv:mt-auto subv:flex subv:flex-col subv:gap-2 subv:p-6", className)}
       {...props}
     />
   )
@@ -103,7 +103,7 @@ function SheetTitle({ className, ...props }: SheetPrimitive.Title.Props) {
     <SheetPrimitive.Title
       data-slot="sheet-title"
       className={cn(
-        "font-heading text-sm font-medium text-foreground",
+        "subv:font-heading subv:text-sm subv:font-medium subv:text-foreground",
         className
       )}
       {...props}
@@ -118,7 +118,7 @@ function SheetDescription({
   return (
     <SheetPrimitive.Description
       data-slot="sheet-description"
-      className={cn("text-xs/relaxed text-muted-foreground", className)}
+      className={cn("subv:text-xs/relaxed subv:text-muted-foreground", className)}
       {...props}
     />
   )

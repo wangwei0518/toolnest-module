@@ -37,6 +37,7 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;
 CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, alias TEXT NOT NULL, token BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS webhook (id INTEGER PRIMARY KEY CHECK(id=1), token BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS daily (
  company TEXT NOT NULL REFERENCES companies(id), day TEXT NOT NULL, generated TEXT NOT NULL, total INTEGER NOT NULL,
  payload BLOB NOT NULL, PRIMARY KEY(company,day)
@@ -67,13 +68,26 @@ func (s *store) saveReport(ctx context.Context, token string, report snapshot) (
 	}
 	defer tx.Rollback()
 	var expected []byte
-	err = tx.QueryRowContext(ctx, "SELECT token FROM companies WHERE id=?", report.CompanyID).Scan(&expected)
+	err = tx.QueryRowContext(ctx, "SELECT token FROM webhook WHERE id=1").Scan(&expected)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", err
 	}
 	actual := sha256.Sum256([]byte(token))
-	if subtle.ConstantTimeCompare(expected, actual[:]) != 1 {
-		return "", errUnauthorized
+	if subtle.ConstantTimeCompare(expected, actual[:]) == 1 {
+		// Keep the legacy token column so existing SQLite files and credentials remain valid.
+		_, err = tx.ExecContext(ctx, "INSERT INTO companies(id,alias,token) VALUES(?,'',X'') ON CONFLICT(id) DO NOTHING", report.CompanyID)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		expected = nil
+		err = tx.QueryRowContext(ctx, "SELECT token FROM companies WHERE id=?", report.CompanyID).Scan(&expected)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+		if subtle.ConstantTimeCompare(expected, actual[:]) != 1 {
+			return "", errUnauthorized
+		}
 	}
 	payload, err := json.Marshal(report)
 	if err != nil {
