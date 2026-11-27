@@ -9,6 +9,8 @@ ToolNest FF14 部队潜水艇模块。按部队和统计月份查看今日收入
 3. 鉴权选择「自定义请求头」，请求头名填 X-ToolNest-Token，值填该部队令牌。
 4. 在工房内点击「查看今日收益」。舰队时间只会在客户端能读取工房时更新。
 
+升级到支持 Bearer 上报的 ToolNest 宿主后，也可以在插件中选择「Bearer」，填入同一枚上报令牌。该模式会发送 `Authorization: Bearer <令牌>`。已有的自定义请求头配置可以继续使用。
+
 上报入口为 **POST /api/v1/modules/ff14-subvoyage-income/public/reports**，兼容 subvoyage.income.summary v1 和缺少 submersibles 的早期快照。收入按部队与北京时间日期保留最新完整快照。艇队字段为 null 时保留最近有效艇队，空数组清除旧艇队。待估价道具计入数量，金额仅累计已知 NPC 估价。数据库位于 TOOLNEST_PLUGIN_DATA_DIR/subvoyage.sqlite。道具图标按 ID 从 FFCafe 获取，加载失败时显示占位图。
 
 ## 管理 API
