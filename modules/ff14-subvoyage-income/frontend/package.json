@@ -1,6 +1,6 @@
 {
   "name": "@toolnest/ff14-subvoyage-income-react-frontend",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "private": true,
   "type": "module",
   "scripts": {
