@@ -1,0 +1,61 @@
+{
+  "platform": "toolnest-react-backend",
+  "manifest_version": 1,
+  "id": "ff14-subvoyage-income",
+  "name": "潜航控制台",
+  "version": "0.1.4",
+  "description": "最终幻想14部队潜水艇收益、返航与道具分析",
+  "author": "ToolNest",
+  "icon": "box",
+  "minimum_core_version": ">=0.1.0",
+  "runtime": {
+    "kind": "native",
+    "transport": "http",
+    "startup": "lazy",
+    "startup_timeout_ms": 15000,
+    "shutdown_timeout_ms": 20000,
+    "request_timeout_ms": 30000,
+    "restart_policy": "on-failure",
+    "max_restart_count": 3,
+    "public_paths": [
+      "/public/reports"
+    ],
+    "http_shutdown": true,
+    "executables": {
+      "linux/amd64": "backend/bin/ff14-subvoyage-linux-amd64",
+      "linux/arm64": "backend/bin/ff14-subvoyage-linux-arm64",
+      "windows/amd64": "backend/bin/ff14-subvoyage-windows-amd64.exe"
+    }
+  },
+  "api": {
+    "base_path": "/api/v1/modules/ff14-subvoyage-income"
+  },
+  "frontend": {
+    "framework": "react",
+    "entry": "frontend/dist/index.js",
+    "style": "frontend/dist/style.css",
+    "shared_dependencies": [
+      "react",
+      "react-dom",
+      "react/jsx-runtime",
+      "@toolnest/react-module-sdk"
+    ]
+  },
+  "permissions": [
+    "ff14.subvoyage.income.read",
+    "ff14.subvoyage.income.manage"
+  ],
+  "capabilities": [
+    "ff14.subvoyage.income.basic"
+  ],
+  "menus": [
+    {
+      "key": "ff14-subvoyage-income",
+      "label": "潜航控制台",
+      "path": "",
+      "icon": "box",
+      "order": 100
+    }
+  ],
+  "settings": []
+}
