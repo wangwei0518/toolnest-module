@@ -10,7 +10,7 @@ import "./styles.css";
 
 const module: ToolNestReactFrontendModule = {
   id: "anime-calendar-react",
-  version: "0.1.61",
+  version: "0.1.62",
   layout: { content: "padded" },
   install(context) {
     setModuleApiClient(context.apiClient);
