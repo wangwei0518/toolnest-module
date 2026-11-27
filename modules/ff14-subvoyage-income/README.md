@@ -1,6 +1,6 @@
 # 潜航控制台
 
-ToolNest FF14 部队潜水艇模块。按部队和统计月份查看今日收入、部队概况、月度热力图、收入趋势、逐艇预计返航与道具贡献。管理员可以查阅每日快照和导出当月 CSV。
+ToolNest FF14 部队潜水艇模块。查看最近一日的打捞收入、部队概况、月度热力图、收入趋势、逐艇预计返航与道具贡献。管理员可以按统计月份查阅每日快照并导出 CSV。
 
 ## 插件对接
 
@@ -30,9 +30,10 @@ ToolNest FF14 部队潜水艇模块。按部队和统计月份查看今日收入
 | GET /webhook | 查看是否已生成模块级上报令牌 |
 | POST /webhook/token | 首次生成令牌，仅本次返回明文 |
 | PUT /webhook/token | 轮换模块级令牌，上一枚立即失效 |
-| GET /dashboard?companyId=…&month=YYYY-MM | 当前状态、选中月快照和近 90 日汇总 |
+| GET /dashboard?companyId=…&month=YYYY-MM | 当前状态、最近有记录收益日的 `currentIncome`、选中月快照和近 90 日汇总 |
 | GET /trend?companyId=…&from=YYYY-MM-DD&to=YYYY-MM-DD | 查询含起止日的日收益，最多 366 天 |
 | GET /reports/{date}?companyId=… | 查询某日快照，缺报返回 JSON null |
+| DELETE /reports/{date}?companyId=…&generatedAt=… | 删除该部队当日的指定快照。成功返回 204，快照已更新或删除时返回 409 |
 | GET /items/{id}/icon | 代理道具 PNG |
 
 模块由 React Module SDK 安装，通过宿主 Gateway 访问独立的原生 Go 进程。

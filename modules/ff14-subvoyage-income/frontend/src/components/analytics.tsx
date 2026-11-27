@@ -5,6 +5,7 @@ import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Dashboard, TrendPoint } from "@/types";
 import { calendar, displayMonth, gil, number, shiftDay } from "@/lib/income";
 import { Panel, SelectField } from "./presentation";
@@ -135,8 +136,26 @@ export function Trend({ view, today, month, range, onRange, onDay, custom, resul
   </Panel>;
 }
 
-export function ItemsPanel({ children, onOpen, hasItems }: { children: React.ReactNode; onOpen: (() => void) | undefined; hasItems: boolean }) {
-  return <Panel title="打捞物品分析（本月）" id="subv-loot" icon={RiStackLine} action={
-    onOpen && <Button variant="ghost" size="sm" disabled={!hasItems} onClick={onOpen}>查看全部物品 <RiArrowRightLine data-icon="inline-end"/></Button>
-  }>{children}</Panel>;
+export type ItemsScope = "current" | "month";
+
+export function ItemsPanel({ scope, onScope, current, month, onOpen, hasItems }: {
+  scope: ItemsScope; onScope: (scope: ItemsScope) => void; current: React.ReactNode; month: React.ReactNode;
+  onOpen: (() => void) | undefined; hasItems: boolean;
+}) {
+  return <Tabs value={scope} onValueChange={value => {
+    if (value === "current" || value === "month") onScope(value);
+  }} className="subv:min-w-0">
+    <Panel title="打捞物品分析" id="subv-loot" icon={RiStackLine} action={
+      <div className="subv-actions">
+        <TabsList aria-label="物品分析范围">
+          <TabsTrigger value="current">当前</TabsTrigger>
+          <TabsTrigger value="month">本月</TabsTrigger>
+        </TabsList>
+        {onOpen && <Button variant="ghost" size="sm" disabled={!hasItems} onClick={onOpen}>查看全部物品 <RiArrowRightLine data-icon="inline-end"/></Button>}
+      </div>
+    }>
+      <TabsContent value="current">{current}</TabsContent>
+      <TabsContent value="month">{month}</TabsContent>
+    </Panel>
+  </Tabs>;
 }

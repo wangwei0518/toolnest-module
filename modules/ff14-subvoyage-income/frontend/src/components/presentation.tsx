@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { iconUrl } from "@/api/subvoyage";
 import { companyName, displayTime, gil, number, percent, schedule, triggerName, type Loot } from "@/lib/income";
-import type { Company, Dashboard, Report, Vessel } from "@/types";
+import type { Company, Dashboard, IncomeSummary, Vessel } from "@/types";
 
 type Icon = typeof RiAnchorLine;
 export function Panel({ title, id, icon: Mark, action, children, className = "" }: {
@@ -35,18 +35,22 @@ export function StatusTag({ tone = "neutral", children }: {
   return <Badge variant="outline" className="subv-status" data-tone={tone}>{children}</Badge>;
 }
 
-export function TodayCard({ today, yesterday, onOpen, configured = true }: { today: Report | null; yesterday: number | undefined; onOpen: () => void; configured?: boolean }) {
-  const delta = today && yesterday !== undefined && yesterday > 0 ? (today.totalGil - yesterday) / yesterday : null;
+export function CurrentIncomeCard({ income, today, yesterday, onOpen, configured }: {
+  income: IncomeSummary | null; today: string; yesterday: number | undefined; onOpen: (date: string) => void; configured: boolean;
+}) {
+  const delta = income?.date === today && yesterday !== undefined && yesterday > 0 ? (income.totalGil - yesterday) / yesterday : null;
   return <Card className="subv-income">
-    <CardHeader><CardTitle><h2>今日潜艇打捞总收入</h2></CardTitle></CardHeader>
+    <CardHeader><CardTitle><h2>当前潜艇打捞总收入</h2></CardTitle></CardHeader>
     <CardContent className="subv-income-body">
-      <div className="subv-income-total">{today ? number.format(today.totalGil) : "—"} <small>Gil</small></div>
+      <div className="subv-income-total">{income ? number.format(income.totalGil) : "—"} <small>Gil</small></div>
       <div className="subv-income-meta">
         <span>NPC 估值</span>
         {delta !== null && <span data-delta={delta < 0 ? "negative" : delta > 0 ? "positive" : "flat"}>较昨日 {delta > 0 ? "+" : ""}{percent.format(delta)}</span>}
-        {today && <Button variant="ghost" size="sm" onClick={onOpen}>道具明细 <RiArrowRightLine data-icon="inline-end"/></Button>}
+        {income && <Button variant="ghost" size="sm" onClick={() => onOpen(income.date)}>道具明细 <RiArrowRightLine data-icon="inline-end"/></Button>}
       </div>
-      <p className="subv-muted subv-small">{today ? displayTime(today.generatedAt) + " · " + triggerName(today.trigger) : configured ? "今日尚未收到上报" : "等待插件首次上报"}</p>
+      <p className="subv-muted subv-small">{income ? <>
+        <time dateTime={income.date}>收益日 {income.date}</time> · {displayTime(income.generatedAt)} · {triggerName(income.trigger)}
+      </> : configured ? "暂无收益上报" : "等待插件首次上报"}</p>
     </CardContent>
   </Card>;
 }

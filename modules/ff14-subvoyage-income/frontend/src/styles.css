@@ -241,9 +241,9 @@
 .tn-ff14-subvoyage-income .subv-form button { justify-self: start; }
 .tn-ff14-subvoyage-income .subv-day-total { display: grid; gap: var(--subv-spacing); }
 .tn-ff14-subvoyage-income .subv-day-total strong { font-size: 1.5rem; color: var(--subv-gold); }
-.tn-ff14-subvoyage-income .subv-report-list button,
+.tn-ff14-subvoyage-income .subv-report-details,
 .tn-ff14-subvoyage-income .subv-detail-list div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--subv-s2); }
-.tn-ff14-subvoyage-income .subv-report-list button { height: auto; min-height: 2rem; }
+.tn-ff14-subvoyage-income .subv-report-details { height: auto; min-height: 2rem; }
 @container subv-shell (max-width: 906px) {
   .tn-ff14-subvoyage-income .subv-overview { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .tn-ff14-subvoyage-income .subv-summary { grid-column: 1/-1; }

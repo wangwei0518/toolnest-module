@@ -74,6 +74,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /dashboard", s.dashboard)
 	mux.HandleFunc("GET /trend", s.trend)
 	mux.HandleFunc("GET /reports/{date}", s.report)
+	mux.HandleFunc("DELETE /reports/{date}", s.deleteReport)
 	mux.HandleFunc("GET /items/{id}/icon", s.icons.serve)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Toolnest-Internal-Token")), []byte(s.token)) != 1 {
@@ -257,6 +258,35 @@ func (s *server) report(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, result)
+}
+
+func (s *server) deleteReport(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	id, date := query.Get("companyId"), r.PathValue("date")
+	if _, err := time.Parse(time.DateOnly, date); err != nil || !validCompany(id) {
+		fail(w, 400, "部队或日期无效")
+		return
+	}
+	generatedAt, err := time.Parse(time.RFC3339Nano, query.Get("generatedAt"))
+	if err != nil || generatedAt.IsZero() {
+		fail(w, 400, "快照生成时间无效")
+		return
+	}
+	result, err := s.store.db.ExecContext(r.Context(), "DELETE FROM daily WHERE company=? AND day=? AND generated=?", id, date, timeKey(generatedAt))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	if deleted == 0 {
+		fail(w, 409, "该上报记录已更新或删除，请查看最新列表。")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 const iconHost = "https://xivapi-v2.xivcdn.com"

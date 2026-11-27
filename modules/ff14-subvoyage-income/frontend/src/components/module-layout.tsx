@@ -3,7 +3,7 @@ import { RiAnchorLine, RiBarChartGroupedLine, RiFileList2Line, RiSettings3Line, 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const pages = {
-  overview: { title: "总览", description: "查看今日打捞收入、部队概况与潜水艇返航。", Icon: RiAnchorLine },
+  overview: { title: "总览", description: "查看最近一日打捞收入、部队概况与潜水艇返航。", Icon: RiAnchorLine },
   fleet: { title: "潜水艇", description: "查看预计返航与剩余时间。", Icon: RiShipLine },
   income: { title: "收益", description: "按月或日期区间查看打捞收益。", Icon: RiBarChartGroupedLine },
   items: { title: "物品", description: "查看本月道具数量、NPC 估价与收入占比。", Icon: RiStackLine },

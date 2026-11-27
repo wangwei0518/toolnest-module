@@ -49,22 +49,29 @@ type fleet struct {
 	GeneratedAt time.Time `json:"generatedAt"`
 	Vessels     []vessel  `json:"submersibles"`
 }
+type incomeSummary struct {
+	Date        string    `json:"date"`
+	GeneratedAt time.Time `json:"generatedAt"`
+	Trigger     string    `json:"trigger"`
+	Total       int64     `json:"totalGil"`
+}
 type company struct {
 	ID    string `json:"companyId"`
 	Alias string `json:"alias"`
 	profile
 }
 type dashboard struct {
-	YesterdayTotal *int64     `json:"yesterdayTotalGil"`
-	Today          string     `json:"today"`
-	Now            time.Time  `json:"now"`
-	Month          string     `json:"month"`
-	Months         []string   `json:"months"`
-	Company        company    `json:"company"`
-	Latest         *snapshot  `json:"latest"`
-	TodayReport    *snapshot  `json:"todayReport"`
-	Fleet          *fleet     `json:"fleet"`
-	Reports        []snapshot `json:"reports"`
+	YesterdayTotal *int64         `json:"yesterdayTotalGil"`
+	Today          string         `json:"today"`
+	Now            time.Time      `json:"now"`
+	Month          string         `json:"month"`
+	Months         []string       `json:"months"`
+	Company        company        `json:"company"`
+	Latest         *snapshot      `json:"latest"`
+	TodayReport    *snapshot      `json:"todayReport"`
+	CurrentIncome  *incomeSummary `json:"currentIncome"`
+	Fleet          *fleet         `json:"fleet"`
+	Reports        []snapshot     `json:"reports"`
 }
 
 func validCompany(s string) bool {

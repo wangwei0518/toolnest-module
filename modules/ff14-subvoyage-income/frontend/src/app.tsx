@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
-import { RiCheckLine, RiDownload2Line, RiErrorWarningLine, RiRefreshLine } from "@remixicon/react";
+import { useEffect, useRef, useState } from "react";
+import { RiCheckLine, RiDeleteBinLine, RiDownload2Line, RiErrorWarningLine, RiMoreLine, RiRefreshLine } from "@remixicon/react";
 import * as api from "@/api/subvoyage";
-import { HeatMap, ItemsPanel, Trend, type DateRange, type Range } from "@/components/analytics";
-import { CompanyCard, FleetPanel, LootTable, Panel, SelectField, StatusTag, SummaryCard, TodayCard } from "@/components/presentation";
+import { HeatMap, ItemsPanel, Trend, type DateRange, type ItemsScope, type Range } from "@/components/analytics";
+import { CompanyCard, CurrentIncomeCard, FleetPanel, LootTable, Panel, SelectField, StatusTag, SummaryCard } from "@/components/presentation";
 import { ModuleLayout, type ModuleTab } from "@/components/module-layout";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -128,11 +131,65 @@ function DrawerBody({ drawer, companyId, onPrice, onDrawer }: {
   </div>;
 }
 
-function ReportList({ reports, onDay }: { reports: Report[]; onDay: (date: string) => void }) {
-  return reports.length ? <div className="subv-report-list">{[...reports].reverse().map(row =>
-    <Button size="sm" variant="outline" key={row.date} onClick={() => onDay(row.date)}>
-      <span>{row.date}</span><span>{displayTime(row.generatedAt)} · {triggerName(row.trigger)}</span><b>{gil(row.totalGil)}</b>
-    </Button>)}</div> : <p className="subv-empty">该月份暂无上报。</p>;
+function ReportList({ reports, name, onDay, onRefresh }: {
+  reports: Report[]; name: string; onDay: (date: string) => void; onRefresh: () => void;
+}) {
+  const [target, setTarget] = useState<Report | null>(null);
+  const [pending, setPending] = useState(false);
+  const [status, setStatus] = useState<{ text: string; error?: boolean }>();
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const reportList = useRef<HTMLDivElement>(null);
+
+  async function removeReport() {
+    if (!target || pending) return;
+    setPending(true);
+    try {
+      await api.deleteReport(target);
+      setStatus({ text: "已删除 " + target.date + " 的上报记录。" });
+    } catch (error) {
+      setStatus({ text: api.errorText(error, "删除上报记录失败，请重试。"), error: true });
+    } finally {
+      setTarget(null);
+      setPending(false);
+      onRefresh();
+    }
+  }
+
+  return <div ref={reportList} tabIndex={-1} className="subv-report-list">
+    {status?.error ? <ErrorNotice message={status.text}/> : status && <p className="subv-small" role="status">{status.text}</p>}
+    {reports.length ? [...reports].reverse().map(row =>
+      <div key={row.date} className="subv:grid subv:grid-cols-[minmax(0,1fr)_auto] subv:items-center subv:gap-1">
+        <Button size="sm" variant="outline" className="subv-report-details" onClick={() => onDay(row.date)}>
+          <span>{row.date}</span><span>{displayTime(row.generatedAt)} · {triggerName(row.trigger)}</span><b>{gil(row.totalGil)}</b>
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="icon" variant="ghost" aria-label={row.date + " 上报记录更多操作"}/>}>
+            <RiMoreLine aria-hidden/>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuGroup>
+              <DropdownMenuItem variant="destructive" onClick={() => setTarget(row)}><RiDeleteBinLine aria-hidden/>删除上报记录</DropdownMenuItem>
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>) : <p className="subv-empty">该月份暂无上报。</p>}
+    <AlertDialog open={target !== null} onOpenChange={open => { if (!open && !pending) setTarget(null); }}>
+      <AlertDialogContent initialFocus={cancelButton} finalFocus={reportList}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>删除上报记录</AlertDialogTitle>
+          <AlertDialogDescription>
+            将删除「{name}」{target?.date} 的收益和道具明细。删除后，该记录将从统计中移除，且无法撤销。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel ref={cancelButton} disabled={pending}>取消</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={pending} onClick={() => void removeReport()}>
+            {pending ? "正在删除…" : "确认删除"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </div>;
 }
 
 export function ModuleApp() {
@@ -140,6 +197,7 @@ export function ModuleApp() {
   const [selected, setSelected] = useState("");
   const [month, setMonth] = useState("");
   const [range, setRange] = useState<Range>(30);
+  const [itemsScope, setItemsScope] = useState<ItemsScope>("current");
   const [custom, setCustom] = useState<DateRange | null>(null);
   const [revision, setRevision] = useState(0);
   const [drawer, setDrawer] = useState<Drawer | null>(null);
@@ -155,6 +213,14 @@ export function ModuleApp() {
   const company = view?.company ?? companies?.data?.find(value => value.companyId === companyId);
   const today = view?.today ?? chinaToday();
   const activeMonth = view?.month ?? (month || today.slice(0, 7));
+  const currentIncome = view?.currentIncome ?? view?.todayReport;
+  const currentDate = currentIncome?.date;
+  const includedReport = view?.todayReport ?? view?.reports.find(report => report.date === currentDate);
+  const needsCurrentReport = (tab === "overview" || tab === "items") && itemsScope === "current" && currentIncome && !includedReport;
+  const currentReportResult = useLoad(needsCurrentReport ? [companyId, currentIncome.date, currentIncome.generatedAt].join(":") : "", revision,
+    () => api.report(companyId, currentDate!), "当前物品明细加载失败。");
+  const currentReport = includedReport ?? currentReportResult?.data;
+  const currentRows = currentReport ? aggregate([currentReport]) : [];
   const received = view?.reports.length ?? null;
   const monthlyTotal = view?.reports.length ? view.reports.reduce((sum, row) => sum + row.totalGil, 0) : null;
   const rows = aggregate(view?.reports ?? []);
@@ -182,9 +248,17 @@ export function ModuleApp() {
     <Trend view={view} today={today} month={activeMonth} range={range} custom={custom} result={customTrend} onCustom={setCustom} onRange={value => { setRange(value); setCustom(null); }} onDay={openDay}/>
   </div>;
   const fleet = <FleetPanel view={view} now={now} onOpen={tab === "overview" ? () => setTab("fleet") : undefined}/>;
-  const items = <ItemsPanel hasItems={rows.length > 0} onOpen={tab === "overview" ? () => setTab("items") : undefined}>
-    <LootTable rows={rows} total={monthlyTotal} onPrice={openPrice} {...(tab === "overview" ? { limit: 5 } : {})}/>
-  </ItemsPanel>;
+  const itemsPreview = tab === "overview" ? { limit: 5 } : {};
+  const items = <ItemsPanel scope={itemsScope} onScope={setItemsScope} hasItems={(itemsScope === "current" ? currentRows : rows).length > 0}
+    onOpen={tab === "overview" ? () => setTab("items") : undefined} current={<>
+      {currentDate && <p className="subv:mb-2 subv-muted subv-small"><time dateTime={currentDate}>收益日 {currentDate}</time></p>}
+      {currentReportResult?.error ? <ErrorNotice message={currentReportResult.error} retry={refresh}/>
+        : needsCurrentReport && !currentReportResult ? <p className="subv-empty" role="status">正在加载当前物品明细…</p>
+        : <LootTable rows={currentRows} total={currentReport?.totalGil ?? null} onPrice={openPrice} {...itemsPreview}/>}
+    </>} month={<>
+      {activeMonth !== today.slice(0, 7) && <p className="subv:mb-2 subv-muted subv-small">统计月份 {displayMonth(activeMonth)}</p>}
+      <LootTable rows={rows} total={monthlyTotal} onPrice={openPrice} {...itemsPreview}/>
+    </>}/>;
   const busy = !companies || (!view && !needsCompany);
   const failure = companies?.error ?? data?.error;
   return <ModuleLayout activeTab={tab} onTabChange={setTab}>
@@ -220,7 +294,8 @@ export function ModuleApp() {
           : busy ? <div className="subv-skeleton"><Skeleton/><Skeleton/><Skeleton/></div>
           : tab === "overview" ? <>
               <div className="subv-overview">
-                <TodayCard today={view?.todayReport ?? null} yesterday={yesterday} configured={!needsCompany} onOpen={() => openDay(today)}/>
+                <CurrentIncomeCard income={currentIncome ?? null} today={today}
+                  yesterday={yesterday} configured={!needsCompany} onOpen={openDay}/>
                 <CompanyCard company={company} onSettings={() => setTab("settings")}/>
                 <SummaryCard count={received} missing={missing} pending={pending} next={next}/>
               </div>
@@ -230,7 +305,8 @@ export function ModuleApp() {
           : tab === "fleet" ? fleet
           : tab === "income" ? analysis
           : tab === "items" ? items
-          : <Panel title="本月上报"><ReportList reports={view?.reports ?? []} onDay={openDay}/></Panel>}
+          : <Panel title="本月上报"><ReportList key={companyId + ":" + activeMonth} reports={view?.reports ?? []}
+              name={company ? companyName(company) : companyId} onDay={openDay} onRefresh={refresh}/></Panel>}
       </TabsContent>
     </div>
     <Sheet open={drawer !== null} onOpenChange={open => { if (!open) setDrawer(null); }}>

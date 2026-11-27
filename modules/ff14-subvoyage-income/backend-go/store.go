@@ -221,9 +221,15 @@ LEFT JOIN company_members m ON m.company=c.id WHERE c.id=?`, id).Scan(&result.Co
 		result.Company.profile = result.Latest.profile
 	}
 	result.Company.TotalMembers = members
-	result.TodayReport, err = readJSON[snapshot](tx.QueryRowContext(ctx, "SELECT payload FROM daily WHERE company=? AND day=?", id, today))
+	current, err := readJSON[snapshot](tx.QueryRowContext(ctx, "SELECT payload FROM daily WHERE company=? AND day<=? ORDER BY day DESC LIMIT 1", id, today))
 	if err != nil {
 		return nil, err
+	}
+	if current != nil {
+		result.CurrentIncome = &incomeSummary{Date: current.Date, GeneratedAt: current.GeneratedAt, Trigger: current.Trigger, Total: current.Total}
+		if current.Date == today {
+			result.TodayReport = current
+		}
 	}
 	var yesterday int64
 	err = tx.QueryRowContext(ctx, "SELECT total FROM daily WHERE company=? AND day=?", id, now.In(beijing).AddDate(0, 0, -1).Format(time.DateOnly)).Scan(&yesterday)

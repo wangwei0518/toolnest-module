@@ -136,7 +136,7 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	}
 
 	backfill.Date = "2026-11-26"
-	backfill.GeneratedAt = now
+	backfill.GeneratedAt = now.Add(time.Second)
 	amount := int64(927159)
 	backfill.Total = amount
 	backfill.Items = []item{{ID: 5060, Name: "玄钢锭", Quantity: 1, Price: &amount, Subtotal: &amount}}
@@ -155,6 +155,10 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	}
 	if view.YesterdayTotal == nil || *view.YesterdayTotal != backfill.Total || view.TodayReport == nil || view.TodayReport.Total != 0 {
 		t.Fatalf("backfilled income must count toward yesterday while preserving today's report: %+v", view)
+	}
+	if view.Latest == nil || view.Latest.Date != backfill.Date || view.CurrentIncome == nil ||
+		view.CurrentIncome.Date != s.Date || view.CurrentIncome.Total != 0 {
+		t.Fatalf("current income must prefer today's report even when a backfill was generated later: %+v", view)
 	}
 	backfill.GeneratedAt = now.Add(6 * time.Minute)
 	call("POST", "/public/reports", backfill, false, token, http.StatusBadRequest)
@@ -191,6 +195,35 @@ func TestSnapshotsThroughRoutes(t *testing.T) {
 	call("POST", "/public/reports", s, false, token, http.StatusUnauthorized)
 	call("POST", "/public/reports", s, false, credentials["token"], http.StatusOK)
 	call("POST", "/public/reports", legacy, false, legacyToken, http.StatusOK)
+
+	reportPath := "/reports/2026-11-27?companyId=" + id
+	target := reportPath + "&generatedAt=" + s.GeneratedAt.Format(time.RFC3339Nano)
+	call("DELETE", target, nil, false, credentials["token"], http.StatusForbidden)
+	call("DELETE", reportPath, nil, true, "", http.StatusBadRequest)
+	call("DELETE", reportPath+"&generatedAt="+s.GeneratedAt.Add(-time.Minute).Format(time.RFC3339Nano), nil, true, "", http.StatusConflict)
+	call("DELETE", target, nil, true, "", http.StatusNoContent)
+	call("DELETE", target, nil, true, "", http.StatusConflict)
+	if got := call("GET", reportPath, nil, true, "", http.StatusOK); string(bytes.TrimSpace(got)) != "null" {
+		t.Fatalf("deleted report must be absent: %s", got)
+	}
+	remaining := view
+	if err := json.Unmarshal(call("GET", "/dashboard?companyId="+id, nil, true, "", http.StatusOK), &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining.TodayReport != nil || remaining.YesterdayTotal == nil || *remaining.YesterdayTotal != amount ||
+		len(remaining.Reports) != 1 || remaining.Reports[0].Date != "2026-11-26" || remaining.Fleet == nil ||
+		remaining.CurrentIncome == nil || remaining.CurrentIncome.Date != "2026-11-26" || remaining.CurrentIncome.Total != amount {
+		t.Fatalf("deletion must only remove the selected daily report: %+v", remaining)
+	}
+	if err := json.Unmarshal(call("GET", "/dashboard?month=2026-10&companyId="+id, nil, true, "", http.StatusOK), &remaining); err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining.Reports) != 0 || remaining.CurrentIncome == nil || remaining.CurrentIncome.Date != "2026-11-26" {
+		t.Fatalf("current income must be independent of the selected statistics month: %+v", remaining)
+	}
+	if got := call("GET", "/reports/2026-11-27?companyId="+second.CompanyID, nil, true, "", http.StatusOK); string(bytes.TrimSpace(got)) == "null" {
+		t.Fatal("the same date for another company must be preserved")
+	}
 }
 
 func TestMemberCountFromExistingSnapshots(t *testing.T) {

@@ -12,6 +12,10 @@ export function dashboard(companyId: string, month: string) {
 export function report(companyId: string, date: string) {
   return getModuleApiClient().get<Report | null>(base + "/reports/" + date + "?" + new URLSearchParams({ companyId }));
 }
+export function deleteReport({ companyId, date, generatedAt }: Report) {
+  const params = new URLSearchParams({ companyId, generatedAt });
+  return getModuleApiClient().delete<void>(base + "/reports/" + date + "?" + params);
+}
 export function webhookStatus() {
   return getModuleApiClient().get<{ configured: boolean }>(base + "/webhook");
 }

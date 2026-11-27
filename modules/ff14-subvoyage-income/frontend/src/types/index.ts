@@ -39,6 +39,7 @@ export interface TrendPoint {
   date: string;
   totalGil: number;
 }
+export type IncomeSummary = Pick<Report, "date" | "generatedAt" | "trigger" | "totalGil">;
 export interface Dashboard {
   company: Company;
   latest: Report | null;
@@ -47,6 +48,7 @@ export interface Dashboard {
   month: string;
   months: string[];
   todayReport: Report | null;
+  currentIncome: IncomeSummary | null;
   yesterdayTotalGil: number | null;
   fleet: Fleet | null;
   reports: Report[];
