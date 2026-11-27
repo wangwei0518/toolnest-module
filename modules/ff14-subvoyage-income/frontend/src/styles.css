@@ -55,6 +55,7 @@
   grid-template-columns: clamp(7rem, 11%, 9rem) minmax(0, 1fr);
   grid-template-areas: "navigation content";
   gap: var(--subv-s3);
+  padding: var(--subv-s3);
   container: subv-shell / inline-size;
 }
 .tn-ff14-subvoyage-income .subv-nav { grid-area: navigation; display: flex; flex-direction: column; align-items: stretch; gap: var(--subv-s2); }
@@ -103,6 +104,10 @@
 .tn-ff14-subvoyage-income [data-delta="negative"] { color: var(--destructive); font-weight: 650; }
 .tn-ff14-subvoyage-income .subv-company-profile { display: flex; align-items: center; gap: var(--subv-s3); }
 .tn-ff14-subvoyage-income .subv-company-profile > div { min-width: 0; }
+.tn-ff14-subvoyage-income .subv-company-settings { padding-inline: var(--subv-s3); border-radius: var(--radius); }
+.tn-ff14-subvoyage-income .subv-company-settings[data-variant="default"] { background: var(--subv-violet); color: var(--color-white); }
+.tn-ff14-subvoyage-income .subv-company-settings[data-variant="default"]:hover { background: color-mix(in srgb, var(--subv-violet), var(--foreground) 15%); }
+.dark .tn-ff14-subvoyage-income .subv-company-settings[data-variant="default"] { color: var(--color-slate-950); }
 .tn-ff14-subvoyage-income .subv-company-icon { width: 2.6rem; height: 2.6rem; flex: none; color: var(--subv-gold); }
 .tn-ff14-subvoyage-income .subv-company-profile h3 { font-size: 1.04rem; font-weight: 670; margin-bottom: var(--subv-s2); overflow-wrap: anywhere; }
 .tn-ff14-subvoyage-income .subv-profile-list > div { display: grid; grid-template-columns: 4.55rem minmax(0,1fr); gap: var(--subv-s2); }
@@ -151,6 +156,8 @@
 .tn-ff14-subvoyage-income .subv-axis-x span { bottom: 0; transform: translateX(-50%); }
 .tn-ff14-subvoyage-income .subv-plot { border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .tn-ff14-subvoyage-income .subv-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tn-ff14-subvoyage-income .subv-chart-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted-foreground); text-align: center; }
+.tn-ff14-subvoyage-income .subv-chart-empty p { background: var(--subv-surface); padding: var(--spacing) var(--subv-s2); border-radius: var(--radius); }
 .tn-ff14-subvoyage-income .subv-gridline { stroke: var(--subv-line); stroke-width: 1; }
 .tn-ff14-subvoyage-income .subv-plot-line { stroke: var(--subv-violet); stroke-width: 1.4; fill: none; }
 .tn-ff14-subvoyage-income .subv-fill-top { stop-color: var(--subv-violet); stop-opacity: .45; }
@@ -194,9 +201,8 @@
 .tn-ff14-subvoyage-income .subv-share i > span { display: block; height: 100%; background: var(--subv-gold); }
 .tn-ff14-subvoyage-income .subv-price { color: var(--subv-violet); }
 .tn-ff14-subvoyage-income .subv-empty { color: var(--muted-foreground); padding-block: var(--subv-s4); text-align: center; }
-.tn-ff14-subvoyage-income .subv-empty-start { display: grid; justify-items: center; gap: var(--subv-s3); border: 1px dashed var(--border); border-radius: var(--radius); }
-.tn-ff14-subvoyage-income .subv-empty-start svg { width: 2rem; height: 2rem; color: var(--subv-gold); }
-.tn-ff14-subvoyage-income .subv-empty-start h2 { color: var(--foreground); font-weight: 650; }
+.tn-ff14-subvoyage-income .subv-fleet-empty { display: grid; gap: var(--subv-s2); justify-items: center; }
+.tn-ff14-subvoyage-income .subv-fleet-empty .subv-vessel-mark { margin: 0; }
 .tn-ff14-subvoyage-income .subv-skeleton { display: grid; gap: var(--subv-s3); }
 .tn-ff14-subvoyage-income .subv-skeleton > *,.tn-ff14-subvoyage-income .subv-detail-skeleton { min-height: 8rem; }
 .tn-ff14-subvoyage-income.subv-sheet { max-width: min(42rem, 100%); overflow-y: auto; }

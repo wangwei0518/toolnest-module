@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "ff14-subvoyage-income",
   "name": "潜航控制台",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "最终幻想14部队潜水艇收益、返航与道具分析",
   "author": "ToolNest",
   "icon": "box",

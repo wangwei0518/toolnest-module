@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { RiAnchorLine, RiBarChartGroupedLine, RiCheckLine, RiDownload2Line, RiErrorWarningLine, RiFileList2Line,
+import { RiBarChartGroupedLine, RiCheckLine, RiDownload2Line, RiErrorWarningLine, RiFileList2Line,
   RiHome5Line, RiRefreshLine, RiSettings3Line, RiShipLine, RiStackLine } from "@remixicon/react";
 import * as api from "@/api/subvoyage";
 import { HeatMap, ItemsPanel, Trend, type DateRange, type Range } from "@/components/analytics";
@@ -167,19 +167,22 @@ export function ModuleApp() {
   const now = useClock();
   const companies = useLoad("companies", revision, api.companies, "部队列表加载失败。");
   const companyId = selected || companies?.data?.[0]?.companyId || "";
+  const needsCompany = companies?.data?.length === 0 && !companyId;
   const data = useLoad(companyId && companyId + ":" + month, revision, () => api.dashboard(companyId, month), "看板数据加载失败。");
   const view = data?.data;
   const customTrend = useLoad(custom && companyId ? companyId + ":" + custom.from + ":" + custom.to : "", revision,
     () => api.trend(companyId, custom!.from, custom!.to), "自定义日期趋势加载失败。");
   const company = view?.company ?? companies?.data?.find(value => value.companyId === companyId);
-  const monthlyTotal = view?.reports.reduce((sum, row) => sum + row.totalGil, 0) ?? 0;
+  const today = view?.today ?? chinaToday();
+  const activeMonth = view?.month ?? (month || today.slice(0, 7));
+  const received = view?.reports.length ?? null;
+  const monthlyTotal = view?.reports.length ? view.reports.reduce((sum, row) => sum + row.totalGil, 0) : null;
   const rows = aggregate(view?.reports ?? []);
-  const received = view?.reports.length ?? 0;
-  const pending = rows.reduce((sum, row) => sum + row.pending, 0);
-  const missing = view ? Math.max(0, (view.month === view.today.slice(0, 7) ? Number(view.today.slice(8)) : calendar(view.month).days) - received) : 0;
+  const pending = received ? rows.reduce((sum, row) => sum + row.pending, 0) : null;
+  const missing = view?.latest && received !== null ? Math.max(0, (activeMonth === today.slice(0, 7) ? Number(today.slice(8)) : calendar(activeMonth).days) - received) : null;
   const next = view?.fleet?.submersibles.filter(vessel => (vessel.nextCompletionTimestamp ?? 0) * 1000 > now)
     .sort((a, b) => (a.nextCompletionTimestamp ?? 0) - (b.nextCompletionTimestamp ?? 0))[0];
-  const months = [...new Set([chinaToday().slice(0, 7), view?.month ?? "", ...(view?.months ?? [])].filter(Boolean))].sort().reverse();
+  const months = [...new Set([today.slice(0, 7), activeMonth, ...(view?.months ?? [])])].sort().reverse();
   const yesterday = view?.yesterdayTotalGil ?? undefined;
 
   useEffect(() => {
@@ -187,6 +190,7 @@ export function ModuleApp() {
     return () => window.clearInterval(timer);
   }, []);
   const refresh = () => setRevision(revision => revision + 1);
+  const openSettings = () => setDrawer({ kind: "settings" });
   const openDay = (date: string) => setDrawer({ kind: "day", date });
   const openPrice = (row: Loot) => setDrawer({ kind: "price", row, previous: drawer });
   function scrollTo(id: string) { document.getElementById(id)?.scrollIntoView({ block: "nearest" }); }
@@ -197,51 +201,49 @@ export function ModuleApp() {
   }
   const actions: [string, ReactNode, () => void, boolean][] = [
     ["总览看板", <RiHome5Line data-icon="inline-start"/>, () => scrollTo("subv-overview"), false],
-    ["舰队管理", <RiShipLine data-icon="inline-start"/>, () => scrollTo("subv-fleet"), !view],
-    ["收益分析", <RiBarChartGroupedLine data-icon="inline-start"/>, () => scrollTo("subv-trend"), !view],
-    ["物品分析", <RiStackLine data-icon="inline-start"/>, () => scrollTo("subv-loot"), !view],
+    ["舰队管理", <RiShipLine data-icon="inline-start"/>, () => scrollTo("subv-fleet"), !view && !needsCompany],
+    ["收益分析", <RiBarChartGroupedLine data-icon="inline-start"/>, () => scrollTo("subv-trend"), !view && !needsCompany],
+    ["物品分析", <RiStackLine data-icon="inline-start"/>, () => scrollTo("subv-loot"), !view && !needsCompany],
     ["上报记录", <RiFileList2Line data-icon="inline-start"/>, () => setDrawer({ kind: "reports" }), !view],
     ["数据导出", <RiDownload2Line data-icon="inline-start"/>, exportData, !view?.reports.length],
-    ["公司设置", <RiSettings3Line data-icon="inline-start"/>, () => setDrawer({ kind: "settings" }), !companies?.data],
+    ["公司设置", <RiSettings3Line data-icon="inline-start"/>, openSettings, !companies?.data],
   ];
   return <ModuleLayout actions={actions}>
     <div className="subv-console" id="subv-overview">
       <div className="subv-filters">
         <div className="subv-filter-controls">
-          {companies?.data?.length ? <>
-            <span>所属公司</span><SelectField label="所属公司" value={companyId} options={companies.data.map(value => ({ value: value.companyId, label: companyName(value) }))}
+          {companies?.data && <>
+            <span>所属公司</span><SelectField label="所属公司" value={needsCompany ? "unconfigured" : companyId} disabled={needsCompany}
+              options={needsCompany ? [{ value: "unconfigured", label: "尚未配置" }] : companies.data.map(value => ({ value: value.companyId, label: companyName(value) }))}
               onChange={value => { setSelected(value); setMonth(""); setCustom(null); setToast(""); }}/>
-            <span>统计日期</span><SelectField label="统计日期" value={view?.month ?? (month || months[0] || "")}
+            <span>统计日期</span><SelectField label="统计日期" value={activeMonth} disabled={needsCompany}
               options={months.map(value => ({ value, label: value }))} onChange={value => { setMonth(value); setCustom(null); }}/>
-          </> : null}
+          </>}
           <Button variant="ghost" size="icon-sm" aria-label="刷新数据" onClick={refresh}><RiRefreshLine/></Button>
         </div>
         {view && <div className="subv-filter-tags">
           <StatusTag><RiCheckLine/>已上报 {received} 天</StatusTag>
-          <StatusTag tone={missing ? "warning" : "neutral"}>缺报 {missing} 天</StatusTag>
-          <StatusTag>待估价 {number.format(pending)} 件</StatusTag>
+          {missing !== null && <StatusTag tone={missing ? "warning" : "neutral"}>缺报 {missing} 天</StatusTag>}
+          {pending !== null && <StatusTag>待估价 {number.format(pending)} 件</StatusTag>}
         </div>}
       </div>
       <span className="sr-only" role="status">{toast}</span>
       {companies?.error ? <ErrorNotice message={companies.error} retry={refresh}/>
-        : companies?.data?.length === 0 ? <div className="subv-empty subv-empty-start">
-          <RiAnchorLine aria-hidden/><h2>还没有配置部队</h2><p>新增部队并生成令牌后，即可接收潜艇收益上报。</p>
-          <Button size="sm" onClick={() => setDrawer({ kind: "settings" })}>配置部队</Button>
-        </div> : data?.error ? <ErrorNotice message={data.error} retry={refresh}/>
-          : !view ? <div className="subv-skeleton"><Skeleton/><Skeleton/><Skeleton/></div>
+        : data?.error ? <ErrorNotice message={data.error} retry={refresh}/>
+          : !view && !needsCompany ? <div className="subv-skeleton"><Skeleton/><Skeleton/><Skeleton/></div>
             : <>
               <div className="subv-overview">
-                <TodayCard today={view.todayReport} yesterday={yesterday} onOpen={() => openDay(view.today)}/>
-                <CompanyCard company={view.company} vessels={view.fleet?.submersibles}/>
+                <TodayCard today={view?.todayReport ?? null} yesterday={yesterday} configured={!needsCompany} onOpen={() => openDay(today)}/>
+                <CompanyCard company={company} vessels={view?.fleet?.submersibles} onSettings={openSettings}/>
                 <SummaryCard count={received} missing={missing} pending={pending} next={next}/>
               </div>
               <div className="subv-analysis">
-                <HeatMap view={view} total={monthlyTotal} onMonth={value => { setMonth(value); setCustom(null); }} onDay={openDay}/>
-                <Trend view={view} range={range} custom={custom} result={customTrend} onCustom={setCustom} onRange={value => { setRange(value); setCustom(null); }} onDay={openDay}/>
+                <HeatMap view={view} today={today} month={activeMonth} total={monthlyTotal} onMonth={value => { setMonth(value); setCustom(null); }} onDay={openDay}/>
+                <Trend view={view} today={today} month={activeMonth} range={range} custom={custom} result={customTrend} onCustom={setCustom} onRange={value => { setRange(value); setCustom(null); }} onDay={openDay}/>
               </div>
               <div className="subv-bottom">
                 <FleetPanel view={view} now={now} onOpen={() => setDrawer({ kind: "fleet" })}/>
-                <ItemsPanel onOpen={() => setDrawer({ kind: "loot" })}>
+                <ItemsPanel hasItems={rows.length > 0} onOpen={() => setDrawer({ kind: "loot" })}>
                   <LootTable rows={rows} total={monthlyTotal} onPrice={openPrice} limit={5}/>
                 </ItemsPanel>
               </div>
@@ -252,7 +254,7 @@ export function ModuleApp() {
         <SheetHeader><SheetTitle>{drawer?.kind === "day" ? drawer.date + " · 每日收益" : drawer ? sectionLabel[drawer.kind] : "潜航控制台"}</SheetTitle>
           <SheetDescription>{company ? companyName(company) + " · " : ""}北京时间</SheetDescription></SheetHeader>
         {drawer && <div className="subv-sheet-body"><DrawerBody drawer={drawer} current={company} companyId={companyId} view={view}
-          now={now} rows={rows} total={monthlyTotal} onChange={id => { if (id) { setSelected(id); setMonth(""); setCustom(null); } refresh(); }}
+          now={now} rows={rows} total={monthlyTotal ?? 0} onChange={id => { if (id) { setSelected(id); setMonth(""); setCustom(null); } refresh(); }}
           onDay={openDay} onPrice={openPrice} onDrawer={setDrawer}/></div>}
       </SheetContent>
     </Sheet>

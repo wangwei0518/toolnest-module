@@ -11,31 +11,32 @@ import { Panel, SelectField } from "./presentation";
 const colors = ["< 20,000,000", "20,000,000 – 39,999,999", "40,000,000 – 59,999,999", "≥ 60,000,000"];
 const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
-export function HeatMap({ view, total, onMonth, onDay }: {
-  view: Dashboard; total: number; onMonth: (month: string) => void; onDay: (date: string) => void;
+export function HeatMap({ view, today, month, total, onMonth, onDay }: {
+  view: Dashboard | undefined; today: string; month: string; total: number | null; onMonth: (month: string) => void; onDay: (date: string) => void;
 }) {
-  const values = new Map(view.reports.map(report => [report.date, report.totalGil]));
-  const dates = calendar(view.month);
-  const months = [...new Set([view.today.slice(0, 7), view.month, ...view.months])].sort().reverse();
+  const values = new Map(view?.reports.map(report => [report.date, report.totalGil]));
+  const dates = calendar(month);
+  const months = [...new Set([today.slice(0, 7), month, ...(view?.months ?? [])])].sort().reverse();
+  const received = view?.reports.length ?? 0;
   return <Panel title="月度收入热力图" icon={RiCalendarLine} action={
-    <SelectField label="热力图月份" value={view.month} onChange={onMonth} options={months.map(value => ({ value, label: displayMonth(value) }))} />
+    <SelectField label="热力图月份" value={month} onChange={onMonth} disabled={!view} options={months.map(value => ({ value, label: displayMonth(value) }))} />
   }>
     <div className="subv-heat-body">
       <div className="subv-heat" aria-label="月度收入日历">
         {weekdays.map(day => <span key={day} className="subv-weekday">{day}</span>)}
         {dates.cells.map(date => {
-          const usable = date.startsWith(view.month) && date <= view.today;
+          const usable = date.startsWith(month) && date <= today;
           const value = values.get(date);
           const level = !usable ? "outside" : value === undefined ? "missing" : value === 0 ? "zero" : value >= 60e6 ? 4 : value >= 40e6 ? 3 : value >= 20e6 ? 2 : 1;
-          const label = date + (date > view.today ? " 未到日期" : value === undefined ? " 未上报" : " " + gil(value));
+          const label = date + (date > today ? " 未到日期" : !view ? " 待配置部队" : value === undefined ? " 未上报" : " " + gil(value));
           return <Button variant="ghost" size="sm" key={date} type="button" data-heat={level} className="subv-day"
-            disabled={!usable} aria-current={date === view.today ? "date" : undefined} aria-label={label} title={label}
+            disabled={!view || !usable} aria-current={date === today ? "date" : undefined} aria-label={label} title={label}
             onClick={() => onDay(date)}>{Number(date.slice(8))}</Button>;
         })}
       </div>
       <dl className="subv-heat-legend">
-        <dt>当月总收入</dt><dd className="subv-gold subv-month-total">{gil(total)}</dd>
-        <dt>已上报日均</dt><dd>{view.reports.length ? gil(Math.round(total / view.reports.length)) : "—"}</dd>
+        <dt>当月总收入</dt><dd className="subv-gold subv-month-total">{total === null ? "—" : gil(total)}</dd>
+        <dt>已上报日均</dt><dd>{total !== null && received ? gil(Math.round(total / received)) : "—"}</dd>
         <div className="subv-colors">{[...colors].reverse().map((label, index) => <div key={label}><i data-heat={4 - index} />{label}</div>)}</div>
       </dl>
     </div>
@@ -68,15 +69,15 @@ function RangePicker({ today, value, onChange }: { today: string; value: DateRan
     </PopoverContent>
   </Popover>;
 }
-export function Trend({ view, range, onRange, onDay, custom, result, onCustom }: {
-  view: Dashboard; range: Range; onRange: (range: Range) => void; onDay: (date: string) => void;
+export function Trend({ view, today, month, range, onRange, onDay, custom, result, onCustom }: {
+  view: Dashboard | undefined; today: string; month: string; range: Range; onRange: (range: Range) => void; onDay: (date: string) => void;
   custom: DateRange | null; result: { data?: TrendPoint[]; error?: string } | undefined; onCustom: (range: DateRange) => void;
 }) {
   const [focused, setFocused] = useState("");
-  const end = calendar(view.month).end;
-  const latest = custom?.to ?? (end < view.today ? end : view.today);
+  const end = calendar(month).end;
+  const latest = custom?.to ?? (end < today ? end : today);
   const count = custom ? Math.round((Date.parse(custom.to) - Date.parse(custom.from)) / 86400000) + 1 : range;
-  const observed = new Map((custom ? result?.data ?? [] : view.trend).map(point => [point.date, point.totalGil]));
+  const observed = new Map((custom ? result?.data ?? [] : view?.trend ?? []).map(point => [point.date, point.totalGil]));
   const days = Array.from({ length: count }, (_, index) => {
     const date = shiftDay(latest, index + 1 - count);
     return { date, value: observed.get(date) };
@@ -100,10 +101,10 @@ export function Trend({ view, range, onRange, onDay, custom, result, onCustom }:
   if (group.length) groups.push(group);
   return <Panel title={custom ? "自定义日期收益趋势" : "近" + range + "日打捞收益趋势"} id="subv-trend" icon={RiBarChartGroupedLine} action={
     <div className="subv-actions"><div className="subv-segments" role="group" aria-label="趋势范围">{([7, 30, 90] as const).map(value =>
-      <Button key={value} size="sm" variant="ghost" aria-pressed={!custom && value === range} onClick={() => onRange(value)}>近{value}日</Button>)}</div><RangePicker today={view.today} value={custom ?? { from: shiftDay(latest, 1 - count), to: latest }} onChange={onCustom}/></div>
+      <Button key={value} size="sm" variant="ghost" aria-pressed={!custom && value === range} onClick={() => onRange(value)}>近{value}日</Button>)}</div>{view && <RangePicker today={today} value={custom ?? { from: shiftDay(latest, 1 - count), to: latest }} onChange={onCustom}/>}</div>
   }>
-    {custom && !result ? <p className="subv-empty" role="status">正在加载收益趋势…</p> : result?.error ? <p className="subv-empty" role="alert">{result.error}</p> : !data.length ? <p className="subv-empty">所选日期范围暂无上报。</p> : <div className="subv-chart" aria-label="每日 NPC 估值">
-      <div className="subv-axis-y" aria-hidden="true">{ticks.map(index => <span key={index} style={{ top: index * 20 + "%" }}>{number.format(ceiling - index * step)}</span>)}</div>
+    {custom && !result ? <p className="subv-empty" role="status">正在加载收益趋势…</p> : result?.error ? <p className="subv-empty" role="alert">{result.error}</p> : <div className="subv-chart" aria-label="每日 NPC 估值">
+      <div className="subv-axis-y" aria-hidden="true">{ticks.map(index => <span key={index} style={{ top: index * 20 + "%" }}>{data.length ? number.format(ceiling - index * step) : "—"}</span>)}</div>
       <div>
         <div className="subv-plot">
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -117,6 +118,7 @@ export function Trend({ view, range, onRange, onDay, custom, result, onCustom }:
               return <Fragment key={index}><polygon fill="url(#subv-fill)" points={first.x + ",100 " + list + " " + last.x + ",100"}/><polyline className="subv-plot-line" points={list} vectorEffect="non-scaling-stroke"/></Fragment>;
             })}
           </svg>
+          {!data.length && <div className="subv-chart-empty"><p>{view ? "所选日期范围暂无上报" : "收到收益上报后显示趋势"}</p></div>}
           {days.map((point, index) => point.value !== undefined && <button key={point.date} type="button" className="subv-point"
             style={{ left: x(index) + "%", top: y(point.value) + "%" }} data-active={point.date === active} data-end={index > days.length / 2}
             aria-label={point.date + " " + gil(point.value) + "，查看当日道具"}
@@ -131,8 +133,8 @@ export function Trend({ view, range, onRange, onDay, custom, result, onCustom }:
   </Panel>;
 }
 
-export function ItemsPanel({ children, onOpen }: { children: React.ReactNode; onOpen: () => void }) {
+export function ItemsPanel({ children, onOpen, hasItems }: { children: React.ReactNode; onOpen: () => void; hasItems: boolean }) {
   return <Panel title="打捞物品分析（本月）" id="subv-loot" icon={RiStackLine} action={
-    <Button variant="ghost" size="sm" onClick={onOpen}>查看全部物品 <RiArrowRightLine data-icon="inline-end"/></Button>
+    <Button variant="ghost" size="sm" disabled={!hasItems} onClick={onOpen}>查看全部物品 <RiArrowRightLine data-icon="inline-end"/></Button>
   }>{children}</Panel>;
 }
